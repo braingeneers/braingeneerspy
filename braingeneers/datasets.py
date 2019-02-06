@@ -5,6 +5,13 @@ import numpy as np
 archive_url = "https://s3.nautilus.optiputer.net/braingeneers/archive"
 
 
+def load_batch(batch_uuid):
+    """
+    Load the metadata for a batch of experiments and return as a dict
+    """
+    return requests.get("{}/derived/{}/metadata.json".format(archive_url, batch_uuid)).json()
+
+
 def load_experiment(path, max_segments=-1):
     """
     Load signal and metadata stored in S3 via the ingest notebook.
