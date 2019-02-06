@@ -49,19 +49,6 @@ class Organoid():
     The cells are assumed to be located at physical positions contained
     in the variable XY : um, but this is not used for anything other than
     display (simulated Ca2+ imaging etc).
-
-    Finally, the synaptic model involves one extra phase variable Isyn
-    as well as several additional parameters, most obviously the synaptic
-    connectivity matrix S. Several of these are used for modeling STDP
-    as described by Song (2000); these parameters are listed after those
-    necessary for basic operation.
-     Sij : pA peak postsynaptic current response at i to an AP in j
-     tau : ms time constant of the exponential synapse
-     tau_STDP : ms time constant for STDP
-     EPSC_max : pA maximum allowable value of EPSC
-     IPSC_max : pA biggest allowable absolute value of IPSC
-     alpha_plus : pA maximum increase in EPSC per STDP event
-     alpha_minus : pA maximum increase in IPSC per STDP event
     """
     def __init__(self, *args, XY, S,
                  a=0.02, b=0.2, c=-65, d=2, C=15, k=0.6, Vr=-70, Vt=-50,
@@ -79,11 +66,6 @@ class Organoid():
         self.d = d * np.ones(self.N)
         self.C, self.k, self.Vr, self.Vt = C, k, Vr, Vt
         self.tau = tau
-        self.EPSC_max = EPSC_max
-        self.IPSC_max = IPSC_max
-        self.tau_STDP = tau_STDP
-        self.alpha_plus = alpha_plus
-        self.alpha_minus = alpha_minus
         self.VUI = np.zeros((3, self.N))
         self.reset()
 
@@ -95,7 +77,7 @@ class Organoid():
         NAcurrent = self.k*(self.V - self.Vr)*(self.V - self.Vt)
         Vdot = (NAcurrent - self.U + self.Isyn + Iin) / self.C
         Udot = self.a * (self.b*(self.V - self.Vr) - self.U)
-        Idot = -self.tau * self.Isyn
+        Idot = -self.Isyn / self.tau
         return np.array([Vdot, Udot, Idot])
 
     def step(self, Iin=0):
