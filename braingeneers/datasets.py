@@ -1,8 +1,11 @@
+import os
 import requests
 import numpy as np
 
-# Base URL to the entire Braingeneers archive on PRP S3
-archive_url = "https://s3.nautilus.optiputer.net/braingeneers/archive"
+
+def get_archive_url():
+    return "{}/braingeneers/archive".format(
+        os.getenv("AWS_S3_ENDPOINT", "https://s3.nautilus.optiputer.net"))
 
 
 def load_batch(batch_uuid):
@@ -15,7 +18,7 @@ def load_batch(batch_uuid):
         UUID of batch of experiments within the Braingeneer's archive'
         Example: 2019-02-15, or d820d4a6-f59a-4565-bcd1-6469228e8e64
     """
-    return requests.get("{}/derived/{}/metadata.json".format(archive_url, batch_uuid)).json()
+    return requests.get("{}/derived/{}/metadata.json".format(get_archive_url(), batch_uuid)).json()
 
 
 def load_experiment(path):
@@ -36,7 +39,7 @@ def load_experiment(path):
     """
 
     # Each experiment has a metadata file with all *.rhd headers and other sample info
-    return requests.get("{}/{}".format(archive_url, path)).json()
+    return requests.get("{}/{}".format(get_archive_url(), path)).json()
 
 
 def load_blocks(metadata, start=0, stop=-1, step=1):
@@ -71,7 +74,7 @@ def load_blocks(metadata, start=0, stop=-1, step=1):
 
     # Load all the numpy files into a single matrix
     X = np.concatenate([
-        np.load(np.DataSource(None).open("{}/{}".format(archive_url, s["derived"]), "rb"))
+        np.load(np.DataSource(None).open("{}/{}".format(get_archive_url(), s["derived"]), "rb"))
         for s in metadata["samples"][start:stop]], axis=1)
 
     # Convert from the raw uint16 into float "units" via "offset" and "scaler"
