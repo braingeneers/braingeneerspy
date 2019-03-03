@@ -37,7 +37,6 @@ def load_experiment(path):
     metadata : dict
         All of the metadata associated with this batch
     """
-
     # Each experiment has a metadata file with all *.rhd headers and other sample info
     return requests.get("{}/{}".format(get_archive_url(), path)).json()
 
@@ -71,13 +70,19 @@ def load_blocks(metadata, start=0, stop=None):
     fs : float
         Sample rate in Hz
     """
-
     # Load all the numpy files into a single matrix
-    X = np.concatenate([
-        np.load(np.DataSource(None).open("{}/{}"
-                                         .format(get_archive_url(),
-                                                 s["derived"]), "rb"))
-        for s in metadata["samples"][start:stop]], axis=1)
+    if os.path.exists("/public/groups/braingeneers/archive"):
+        # Load from local archive
+        print("loading from file")
+        X = np.concatenate([
+            np.load("/public/groups/braingeneers/archive/{}".format(s["derived"]))
+            for s in metadata["samples"][start:stop]], axis=1)
+    else:
+        # Load from PRP S3
+        print("loading from url")
+        X = np.concatenate([
+            np.load(np.DataSource(None).open("{}/{}".format(get_archive_url(), s["derived"]), "rb"))
+            for s in metadata["samples"][start:stop]], axis=1)
 
     # Convert from the raw uint16 into float "units" via "offset" and "scaler"
     X = np.multiply(metadata["samples"][0]["scaler"],
