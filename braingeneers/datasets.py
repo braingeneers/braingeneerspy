@@ -73,13 +73,11 @@ def load_blocks(metadata, start=0, stop=None):
     # Load all the numpy files into a single matrix
     if os.path.exists("/public/groups/braingeneers/archive"):
         # Load from local archive
-        print("loading from file")
         X = np.concatenate([
             np.load("/public/groups/braingeneers/archive/{}".format(s["derived"]))
             for s in metadata["samples"][start:stop]], axis=1)
     else:
         # Load from PRP S3
-        print("loading from url")
         X = np.concatenate([
             np.load(np.DataSource(None).open("{}/{}".format(get_archive_url(), s["derived"]), "rb"))
             for s in metadata["samples"][start:stop]], axis=1)
