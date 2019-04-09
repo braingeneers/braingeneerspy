@@ -81,7 +81,7 @@ def load_blocks(metadata, start=0, stop=-1, step=1):
     X = np.multiply(metadata["samples"][0]["scaler"],
                     (X.astype(np.float32) - metadata["samples"][0]["offset"]))
 
-    # Extract sample rate for first channel and construct a time axis in seconds
+    # Extract sample rate for first channel and construct a time axis in ms
     fs = metadata["samples"][0]["frequency_parameters"]["amplifier_sample_rate"]
     t = np.linspace(0, 1000 * X.shape[1] / fs, X.shape[1])
 

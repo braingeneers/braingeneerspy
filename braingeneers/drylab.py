@@ -120,6 +120,33 @@ class Organoid():
         self.VUI[2,:] = value
 
 
+class Ca2tImaging():
+    """
+    Performs an IIR first-order low-pass filter on the list of firings
+    to compute the local average firing rate of each cell, then
+    illuminates them in proportion to their activity. (Exponentially:
+    they get 63% illumination if their firing rate is equal to the
+    reactivity.)
+    """
+    def __init__(self, N, firings, *args,
+                 interval=1, tau=100, reactivity=30):
+        self._firings = firings
+        self._interval = interval
+        self._tau = tau
+        self._N = N
+        self._alpha = reactivity
+
+    def __call__(self, T):
+        'Plots the output at frame number T'
+        w = np.zeros(self._N)
+        tmax = T * self._interval
+        for t,n in self._firings[:, self._firings[0,:] < tmax]:
+            w[n] += np.exp((t-tmax) / self._tau)
+        activation = 1 - np.exp(-self._alpha * w)
+
+        self.scat.set_array(activation)
+
+
 class Ca2tCamera():
     """
     Generate a Pyplot illustration of an Organoid, approximately simulating
@@ -234,20 +261,24 @@ class UtahArray():
         self.activation = activation
         self.radius = radius
 
-    def insert(self, n):
+    def insert(self, n, vr, alpha):
         """
         Insert this array into an organoid. Precomputes the connectivity
-        matrix from the array's inputs to the cells.
+        matrix from the array's inputs to the cells. You need to provide
+        the resting voltages vr and a per-cell scaling alpha as well.
         """
         # The distance from the ith cell to the jth probe.
         dij = n.XY.reshape((2,-1,1)) - self.points.reshape((2,1,-1))
-        dij = (dij**2).sum(axis=0) / self.radius
+        dij = abs(dij**2).sum(axis=0) / self.radius
         dij[dij < 1] = 1
         self.M = 1 / dij
         self.n = n
+        self.alpha = alpha
+        self.vr = vr
 
     def Vprobe(self):
-        return (self.M.T @ self.n.V) / self.M.sum(axis=0)
+        ve = self.alpha * (self.vr - self.n.V)
+        return (self.M.T @ ve) / self.M.sum(axis=0)
 
     def Iout(self, t):
         return self.M @ self.activation(t)
