@@ -85,10 +85,13 @@ class Organoid():
         self.V[fired] = self.c[fired]
         self.U[fired] += self.d[fired]
 
-        # Note that this means something a little strange: we store
-        # the total synaptic input to each cell and let that decay
-        # over time.  The reason is just so that this matmul has to
-        # happen only once per firing rather than once per update.
+        # Note that we store the total synaptic input to each cell and
+        # let that decay over time.  The reason is just so that this
+        # matmul has to happen only once per firing rather than once
+        # per update.  The disadvantage is that the synaptic time
+        # constant must be a global constant rather than per
+        # presynaptic cell (per postsynaptic cell would be possible,
+        # but doesn't make any sense).
         self.Isyn += self.S @ fired
 
         self.VUI += self.VUIdot(Iin) * 0.5#ms
@@ -269,16 +272,15 @@ class UtahArray():
         """
         # The distance from the ith cell to the jth probe.
         dij = n.XY.reshape((2,-1,1)) - self.points.reshape((2,1,-1))
-        dij = abs(dij**2).sum(axis=0) / self.radius
-        dij[dij < 1] = 1
-        self.M = 1 / dij
+        dij = np.linalg.norm(dij / self.radius, axis=0, ord=2)**2
+        self.M = 1 / np.maximum(1, dij)
+        self.M = np.diag(alpha) @ self.M
+        # self.alpha = alpha
         self.n = n
-        self.alpha = alpha
         self.vr = vr
 
     def Vprobe(self):
-        ve = self.alpha * (self.vr - self.n.V)
-        return (self.M.T @ ve) / self.M.sum(axis=0)
+        return self.M.T @ (self.vr - self.n.V)
 
     def Iout(self, t):
         return self.M @ self.activation(t)
