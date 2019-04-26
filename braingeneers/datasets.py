@@ -19,11 +19,11 @@ def load_batch(batch_uuid):
         Example: 2019-02-15, or d820d4a6-f59a-4565-bcd1-6469228e8e64
     """
     r = requests.get("{}/derived/{}/metadata.json".format(get_archive_url(), batch_uuid))
-    if not r:
+    if r.ok:
+        return r.json()
+    else:
         print("Unable to load {}, are you sure you have the correct batch uuid?".format(batch_uuid))
         r.raise_for_status()
-    else:
-        return r.json()
 
 
 def load_experiment(path):
@@ -44,11 +44,11 @@ def load_experiment(path):
     """
     # Each experiment has a metadata file with all *.rhd headers and other sample info
     r = requests.get("{}/{}".format(get_archive_url(), path))
-    if not r:
+    if r.ok:
+        return r.json()
+    else:
         print("Unable to load {}, are you sure you have the correct experiment path?".format(path))
         r.raise_for_status()
-    else:
-        return r.json()
 
 
 def load_blocks(metadata, start=0, stop=-1, step=1):
