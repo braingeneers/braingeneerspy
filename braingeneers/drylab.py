@@ -23,16 +23,14 @@ NEURON_TYPES = {
 
 class Organoid():
     """
-    A simulated 2D culture of cortical cells using models from Dynamical
-    Systems in Neuroscience, with synapses implemented as straightforward
+    A simulated 2D culture of cortical cells using models from
+    Dynamical Systems in Neuroscience, with synapses implemented as
     exponential PSPs for both excitatory and inhibitory cells.
 
-    The model represents the excitability of a neuron using two phase
-    variables: the membrane voltage v : mV, and the "recovery" or
-    "leakage" current u : pA.
-
-    There is a single bifurcation parameter which is assumed to vary
-    with time: the additional membrane current Iin.
+    The model represents the excitability of a neuron using three
+    phase variables: the membrane voltage v : mV, the "recovery" or
+    "leakage" current u : pA, and the total synaptic input to each
+    cell Isyn : pA.
 
     Additionally, the excitation model contains the following static
     parameters, all of which can be set globally by providing scalars,
@@ -43,34 +41,37 @@ class Organoid():
      d : pA bump to recovery current after a downstroke
      C : pF membrane capacitance
      k : nS/mV voltage-gated Na+ channel conductance
-     Vr: mV resting membrane voltage
+     Vr: mV resting membrane voltage when u=0
      Vt: mV threshold voltage when u=0
+     Vp: mV action potential peak, after which reset happens
 
     The cells are assumed to be located at physical positions contained
     in the variable XY : um, but this is not used for anything other than
-    display (simulated Ca2+ imaging etc).
+    display (simulated Ca2+ imaging etc) unless you use it to generate
+    the weight matrix S or something.
     """
     def __init__(self, *args, XY, S,
-                 a=0.02, b=0.2, c=-65, d=2, C=15, k=0.6, Vr=-70, Vt=-50,
-                 tau=3, tau_STDP=20, EPSC_max=7, IPSC_max=10,
-                 alpha_plus=0.02, alpha_minus=0.021):
+                 a=0.03, b=-2, c=-50, d=100, C=100, k=0.7,
+                 Vr=-60, Vt=-40, Vp=30, tau=3):
+        S = np.asarray(S)
+        XY = np.asarray(XY)
+
         self.N = S.shape[0]
-        assert S.shape==(self.N,self.N), 'S must be square!'
-        assert XY.shape==(2,self.N), 'XY and S have inconsistent size!'
-        assert tau >= 1, 'Forward Euler is unstable for small tau'
 
         self.S = S
         self.XY = XY
         self.a, self.b = a, b
         self.c = c * np.ones(self.N)
         self.d = d * np.ones(self.N)
-        self.C, self.k, self.Vr, self.Vt = C, k, Vr, Vt
+        self.C, self.k, = C, k
+        self.Vr, self.Vt, self.Vp = Vr, Vt, Vp
         self.tau = tau
         self.VUI = np.zeros((3, self.N))
         self.reset()
 
     def reset(self):
         self.VUI[0,:] = self.Vr
+        self._fired = self.V >= self.Vp
         self.VUI[1:,:] = 0
 
     def VUIdot(self, Iin):
@@ -80,8 +81,20 @@ class Organoid():
         Idot = -self.Isyn / self.tau
         return np.array([Vdot, Udot, Idot])
 
-    def step(self, Iin=0):
-        fired = self.V >= 30#mV
+    def step(self, Iin=0, dt=1):
+        """
+        Update the state of the organoid by 1ms, and return the current
+        organoid state and a boolean array indicating which cells fired.
+
+        The ODE is integrated by forward Euler since the dynamics are
+        so chaotic and the parameters so noisy that that degree of
+        numerical accuracy is completely redundant.
+        """
+
+        # Apply the correction to any cells that crossed the AP peak
+        # in the last update step, so that this step puts them into
+        # the start of the refractory period.
+        fired = self._fired
         self.V[fired] = self.c[fired]
         self.U[fired] += self.d[fired]
 
@@ -94,8 +107,21 @@ class Organoid():
         # but doesn't make any sense).
         self.Isyn += self.S @ fired
 
-        self.VUI += self.VUIdot(Iin) * 0.5#ms
-        self.VUI += self.VUIdot(Iin) * 0.5#ms
+        # Actually do the stepping, using the midpoint method for
+        # integration. This costs as much as halving the timestep
+        # would in forward Euler, but increases the order to 2.
+        k1 = self.VUIdot(Iin)
+        self.VUI += k1 * dt/2
+        k2 = self.VUIdot(Iin)
+        self.VUI += k2*dt - k1*dt/2
+
+
+        self._fired = self.V >= self.Vp
+        self.V[self._fired] = self.Vp
+
+        # Return a pointer to the current state plus an array of which
+        # cells fired during this update (NOT which cells are just about
+        # to fire, which is the current content of self._fired).
         return self.VUI, fired
 
     @property
@@ -122,32 +148,6 @@ class Organoid():
     def Isyn(self, value):
         self.VUI[2,:] = value
 
-
-class Ca2tImaging():
-    """
-    Performs an IIR first-order low-pass filter on the list of firings
-    to compute the local average firing rate of each cell, then
-    illuminates them in proportion to their activity. (Exponentially:
-    they get 63% illumination if their firing rate is equal to the
-    reactivity.)
-    """
-    def __init__(self, N, firings, *args,
-                 interval=1, tau=100, reactivity=30):
-        self._firings = firings
-        self._interval = interval
-        self._tau = tau
-        self._N = N
-        self._alpha = reactivity
-
-    def __call__(self, T):
-        'Plots the output at frame number T'
-        w = np.zeros(self._N)
-        tmax = T * self._interval
-        for t,n in self._firings[:, self._firings[0,:] < tmax]:
-            w[n] += np.exp((t-tmax) / self._tau)
-        activation = 1 - np.exp(-self._alpha * w)
-
-        self.scat.set_array(activation)
 
 
 class Ca2tCamera():
@@ -183,8 +183,8 @@ class Ca2tCamera():
         which are averaged to produce each frame you actually see.
 
         Reactivity determines what is considered a "long time"
-        between spikes: a cell lights up 60% if its average firing interval
-        is equal to the reactivity.
+        between spikes: a cell lights up 60% if its average
+        firing interval is equal to the reactivity.
         """
         self.window_size = window_size
         self.ticks_per_update = frameskip + 1
@@ -207,7 +207,8 @@ class Ca2tCamera():
         self.ax.set_aspect('equal')
         self.ax.patch.set_facecolor((0,0,0))
         self.scat = self.ax.scatter(self.n.XY[0,:], self.n.XY[1,:],
-                                    s=25, c=self.X.mean(axis=0), cmap='gray',
+                                    s=25, c=self.X.mean(axis=0),
+                                    cmap='gray',
                                     norm=colors.Normalize(vmax=1, vmin=0,
                                                           clip=True),
                                     **self.scatterargs)
@@ -231,7 +232,7 @@ class Ca2tCamera():
             return self.scat
 
 
-class UtahArray():
+class ElectrodeArray():
     """
     An electrical microelectrode array: a rectangular grid where
     each point stimulates nearby cells in a Neurons object.
@@ -272,10 +273,9 @@ class UtahArray():
         """
         # The distance from the ith cell to the jth probe.
         dij = n.XY.reshape((2,-1,1)) - self.points.reshape((2,1,-1))
-        dij = np.linalg.norm(dij / self.radius, axis=0, ord=2)**2
+        dij = np.linalg.norm(dij / self.radius, axis=0, ord=2)
         self.M = 1 / np.maximum(1, dij)
         self.M = np.diag(alpha) @ self.M
-        # self.alpha = alpha
         self.n = n
         self.vr = vr
 
