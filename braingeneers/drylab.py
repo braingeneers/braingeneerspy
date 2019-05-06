@@ -200,7 +200,8 @@ class ChargedMedium():
         # than Python for a bit of a speed boost. The equivalent
         # Python loop is commented out below in case anyone cares.
         charge = self.org.C*(self.Vprev - self.org.V) / (self.dx*self.dy)
-        self.rho += sparse.coo_matrix((charge, self._neuron_grid))
+        self.rho += sparse.coo_matrix((charge, self._neuron_grid),
+                                      shape=self.rho.shape)
 
         # for i,(x,y) in enumerate(zip(*self._neuron_grid)):
         #     self.rho[x,y] += charge[i]
