@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.colors as colors
 import matplotlib.pyplot as plt
+from scipy import sparse, ndimage
+import scipy.integrate as spint
 
 
 # A map from neuron type abbreviation to ordered list of parameters
@@ -81,14 +83,12 @@ class Organoid():
         Idot = -self.Isyn / self.tau
         return np.array([Vdot, Udot, Idot])
 
-    def step(self, Iin=0, dt=1):
+    def step(self, dt, Iin, return_spike_times=False):
         """
         Update the state of the organoid by 1ms, and return the current
         organoid state and a boolean array indicating which cells fired.
 
-        The ODE is integrated by forward Euler since the dynamics are
-        so chaotic and the parameters so noisy that that degree of
-        numerical accuracy is completely redundant.
+        NYI: Optionally return the exact time of each event.
         """
 
         # Apply the correction to any cells that crossed the AP peak
@@ -115,13 +115,16 @@ class Organoid():
         k2 = self.VUIdot(Iin)
         self.VUI += k2*dt - k1*dt/2
 
-
+        # Make a note of which cells this step has caused to fire,
+        # then correct their membrane voltages down to the peak.  This
+        # can make some of the traces look a little weird; it may be
+        # prettier to adjust the previous point UP to self.Vp and set
+        # this point to self.c, but that's not possible here since we
+        # don't save all states.
         self._fired = self.V >= self.Vp
         self.V[self._fired] = self.Vp
 
-        # Return a pointer to the current state plus an array of which
-        # cells fired during this update (NOT which cells are just about
-        # to fire, which is the current content of self._fired).
+        # Returns as promised...
         return self.VUI, fired
 
     @property
@@ -149,11 +152,93 @@ class Organoid():
         self.VUI[2,:] = value
 
 
+class ChargedMedium():
+    """
+    Models the evolution of charge distribution with time in a medium
+    full of diffusing ionic charge carriers, making two assumptions:
+     1) charges are interchangeable and have identical properties,
+     2) and they do not interact, i.e. an electron gas model.
+    """
+
+    def __init__(self, Xgrid, Ygrid,
+                 D=2, eps_rel=80):
+        self.D = D
+        self.X, self.Y = Xgrid, Ygrid
+        self._grid = np.array(np.meshgrid(Xgrid, Ygrid, indexing='ij'))
+        self.dx, self.dy = Xgrid[1] - Xgrid[0], Ygrid[1] - Ygrid[0]
+        self.rho = np.zeros(Xgrid.shape + Ygrid.shape)
+        self.sigma = np.sqrt(2*D) / np.array([self.dx, self.dy])
+
+        # Somehow, this code is off by a factor of 10^6 unless
+        # I make the units of the free space permittivity wrong
+        # in the following way. (It should be 10^-6 times this.)
+        self._eps_factor = 4*np.pi* eps_rel * 8.854187
+
+    def immerse(self, organoid):
+        "Immerse an organoid in this medium for measurement."
+        self.org = organoid
+        self.Vprev = self.org.V.copy()
+
+        # Quauntize neurons to grid points. If any neurons are
+        # outside the grid, an error will be thrown later...
+        self._neuron_grid = organoid.XY / [[self.dx], [self.dy]]
+        self._neuron_grid = tuple(np.int32(np.rint(self._neuron_grid)))
+
+    def step(self, dt):
+        """
+        Run one forward simulation step. This will not work if the
+        size of the filter is too small! Also note the timesteps for
+        simulation must be consistent, of course.
+        """
+
+        # Take the change in medium charge density due to the
+        # membrane currents of all cells. Implementation note:
+        # coordinate-form sparse matrices sum the contributions
+        # of duplicate coordinates, i.e. this has the semantics
+        # of looping over the cell grid but does it in C rather
+        # than Python for a bit of a speed boost. The equivalent
+        # Python loop is commented out below in case anyone cares.
+        charge = self.org.C*(self.Vprev - self.org.V) / (self.dx*self.dy)
+        self.rho += sparse.coo_matrix((charge, self._neuron_grid))
+
+        # for i,(x,y) in enumerate(zip(*self._neuron_grid)):
+        #     self.rho[x,y] += charge[i]
+
+        # Take one timestep of the diffusion process.
+        sigma = np.sqrt(2 * self.D * dt) / np.array([self.dx, self.dy])
+        self.rho = ndimage.gaussian_filter(self.rho, sigma=sigma,
+                                           mode='constant')
+
+        # Copy a new previous voltage.
+        self.Vprev = self.org.V.copy()
+
+    def probe(self, points):
+        "Probe voltage at a range of (x,y) positions."
+
+        # Distance from the probe points to each grid point.
+        r = np.linalg.norm(points[:,...,None,None] -
+                           self._grid[:,None,...], axis=0)
+
+        # Distance from the probe points to each cell.
+        d = np.linalg.norm(points[:,...,None] -
+                           self.org.XY[:,None,...], axis=0)
+
+        # Contribution from the medium charge distribution: the
+        # integral of charge distribution divided by distance.
+        dist = spint.simps(spint.simps(self.rho/r, self.Y), self.X)
+
+        # Contribution from the charge trapped inside the cells:
+        # the sum per cell of the difference from resting potential.
+        cells = self.org.C * (1/d) @ (self.org.V - self.org.Vr)
+
+        # Divide by 4 pi epsilon_0 to get the actual potential.
+        return (dist + cells) / self._eps_factor
+
 
 class Ca2tCamera():
     """
-    Generate a Pyplot illustration of an Organoid, approximately simulating
-    Ca2+ imaging.
+    Generate a Pyplot illustration of an Organoid, approximately
+    simulating Ca2+ imaging.
 
     The simulated camera averages the number n of firing events per ms
     over some period, smooths it using a moving-average filter, and
@@ -162,7 +247,8 @@ class Ca2tCamera():
     being able to directly measure the membrane voltage, and it fluctuates
     only slowly.
     """
-    def __init__(self, n, *args,
+
+    def __init__(self, org, *args,
                  tick=None, frameskip=0, window_size=1, reactivity=30,
                  Iin=lambda *args: 0, scatterargs={},
                  **kwargs):
@@ -188,12 +274,12 @@ class Ca2tCamera():
         """
         self.window_size = window_size
         self.ticks_per_update = frameskip + 1
-        self.n = n
+        self.org = org
         self.Iin = Iin
         self.reactivity = reactivity
         self._tick = tick
 
-        self.X = np.zeros((window_size, n.N))
+        self.X = np.zeros((window_size, org.N))
         self.scatterargs = scatterargs
 
     def tick(self, t, *args):
@@ -206,7 +292,7 @@ class Ca2tCamera():
         self.ax = self.fig.gca()
         self.ax.set_aspect('equal')
         self.ax.patch.set_facecolor((0,0,0))
-        self.scat = self.ax.scatter(self.n.XY[0,:], self.n.XY[1,:],
+        self.scat = self.ax.scatter(self.org.XY[0,:], self.org.XY[1,:],
                                     s=25, c=self.X.mean(axis=0),
                                     cmap='gray',
                                     norm=colors.Normalize(vmax=1, vmin=0,
@@ -222,7 +308,7 @@ class Ca2tCamera():
         self.X[Tmod, :] = 0
         for dt in range(self.ticks_per_update):
             t = T*self.ticks_per_update + dt
-            _, fired = self.n.step(self.Iin(t))
+            _, fired = self.org.step(1, self.Iin(t))
             self.X[Tmod, fired] += 1 / self.ticks_per_update
             self.tick(t, *args)
 
@@ -238,7 +324,7 @@ class ElectrodeArray():
     each point stimulates nearby cells in a Neurons object.
 
     You pass a specification of the grid geometry, then an amount
-    of activation per pin (output should have the same shape as the
+    of activation per pin (input should have the same shape as the
     grid), and the array becomes a callable that can be
     """
     def __init__(self, *args,
@@ -265,22 +351,22 @@ class ElectrodeArray():
         self.activation = activation
         self.radius = radius
 
-    def insert(self, n, vr, alpha):
+    def insert(self, org, vr, alpha):
         """
         Insert this array into an organoid. Precomputes the connectivity
         matrix from the array's inputs to the cells. You need to provide
         the resting voltages vr and a per-cell scaling alpha as well.
         """
         # The distance from the ith cell to the jth probe.
-        dij = n.XY.reshape((2,-1,1)) - self.points.reshape((2,1,-1))
+        dij = org.XY.reshape((2,-1,1)) - self.points.reshape((2,1,-1))
         dij = np.linalg.norm(dij / self.radius, axis=0, ord=2)
         self.M = 1 / np.maximum(1, dij)
         self.M = np.diag(alpha) @ self.M
-        self.n = n
+        self.org = org
         self.vr = vr
 
     def Vprobe(self):
-        return self.M.T @ (self.vr - self.n.V)
+        return self.M.T @ (self.vr - self.org.V)
 
     def Iout(self, t):
         return self.M @ self.activation(t)
