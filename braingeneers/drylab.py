@@ -1,3 +1,4 @@
+from warnings import warn
 import numpy as np
 import matplotlib.colors as colors
 import matplotlib.pyplot as plt
@@ -204,10 +205,15 @@ class ChargedMedium():
         # for i,(x,y) in enumerate(zip(*self._neuron_grid)):
         #     self.rho[x,y] += charge[i]
 
-        # Take one timestep of the diffusion process.
-        sigma = np.sqrt(2 * self.D * dt) / np.array([self.dx, self.dy])
-        self.rho = ndimage.gaussian_filter(self.rho, sigma=sigma,
-                                           mode='constant')
+        # Take one timestep of the diffusion process. Raise a warning
+        # if the timestep is too small for diffusion to appear.
+        sigma = self.sigma * np.sqrt(dt)
+        if np.any(4*sigma < 1):
+            warn('Timestep too small or grid too coarse;'
+                 ' diffusion step has no effect.',
+                 RuntimeWarning)
+        self.rho = ndimage.gaussian_filter(self.rho, mode='constant',
+                                           sigma=sigma)
 
         # Copy a new previous voltage.
         self.Vprev = self.org.V.copy()
