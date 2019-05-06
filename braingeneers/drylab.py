@@ -1,6 +1,8 @@
 from warnings import warn
+from functools import partial
+
 import numpy as np
-import matplotlib.colors as colors
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy import sparse, ndimage
 import scipy.integrate as spint
@@ -242,87 +244,63 @@ class ChargedMedium():
         return (dist + cells) / self._eps_factor
 
 
-class Ca2tCamera():
+class Ca2tImage():
     """
-    Generate a Pyplot illustration of an Organoid, approximately
-    simulating Ca2+ imaging.
-
-    The simulated camera averages the number n of firing events per ms
-    over some period, smooths it using a moving-average filter, and
-    activation of each cell grows logarithmically in firing rate.
-    This gives activation that corresponds to firing frequency, without
-    being able to directly measure the membrane voltage, and it fluctuates
-    only slowly.
+    Generate a single image without taking ownership of the Organoid's
+    simulation stepping. Each firing creates fluorescence which initially
+    displays as a pixel of intensity REACTIVITY (with 1 being fully
+    saturated) and decays exponentially from there at rate TAU.
     """
+    def __init__(self, cell_position, cell_size,
+                 tau, reactivity, fig=None, **kwargs):
 
-    def __init__(self, org, *args,
-                 tick=None, frameskip=0, window_size=1, reactivity=30,
-                 Iin=lambda *args: 0, scatterargs={},
-                 **kwargs):
-        """
-        Create a Ca2+ imaging figure! Pass in a figure and an Organoid
-        object.  Also takes input current as a function of time
-        Iin(t), and a function tick(n,t,*) to run on the Organoid
-        at each frame. Then some parameters control the frames.
+        self.tau = tau
+        self.X = np.zeros(cell_position.shape[1])
 
-        You can set the amount of simulation time and real time per frame
-        by combining this frameskip argument with the animator's frame
-        interval argument: the real-time interval between simulation
-        frames is interval/(frameskip + 1) ms, or in reverse, the video
-        is (frameskip + 1)/interval times faster than real-time.
-
-        The moving average filter is controlled by the parameter
-        window_size: this is the number of the last internal frames
-        which are averaged to produce each frame you actually see.
-
-        Reactivity determines what is considered a "long time"
-        between spikes: a cell lights up 60% if its average
-        firing interval is equal to the reactivity.
-        """
-        self.window_size = window_size
-        self.ticks_per_update = frameskip + 1
-        self.org = org
-        self.Iin = Iin
-        self.reactivity = reactivity
-        self._tick = tick
-
-        self.X = np.zeros((window_size, org.N))
-        self.scatterargs = scatterargs
-
-    def tick(self, t, *args):
-        if self._tick is not None:
-            self._tick(t, *args)
-
-    def init(self, fig=None):
-        "Creates the scatter plot, must call before starting to record."
+        # Create the scatter plot...
         self.fig = fig or plt.figure()
-        self.ax = self.fig.gca()
-        self.ax.set_aspect('equal')
+        self.ax = self.fig.gca(aspect='equal')
         self.ax.patch.set_facecolor((0,0,0))
-        self.scat = self.ax.scatter(self.org.XY[0,:], self.org.XY[1,:],
-                                    s=25, c=self.X.mean(axis=0),
-                                    cmap='gray',
-                                    norm=colors.Normalize(vmax=1, vmin=0,
-                                                          clip=True),
-                                    **self.scatterargs)
+        self.scat = self.ax.scatter(*cell_position,
+                                    s=cell_size, c=self.X,
+                                    cmap='gray', alpha=0.5,
+                                    norm=mpl.colors.Normalize(0,1),
+                                    **kwargs)
 
-    def update(self, T, *args, show=True):
-        """
-        Calculate one frame forward, for the Tth sampling period.
-        Additional arguments can be passed to the tick() method
-        """
-        Tmod = T % self.window_size
-        self.X[Tmod, :] = 0
-        for dt in range(self.ticks_per_update):
-            t = T*self.ticks_per_update + dt
-            _, fired = self.org.step(1, self.Iin(t))
-            self.X[Tmod, fired] += 1 / self.ticks_per_update
-            self.tick(t, *args)
+    def animate(self, dt, events, **kwargs):
+        func = partial(self.step, dt)
+        frames = _gen_frame_events(dt, events)
+        return mpl.animation.FuncAnimation(self.fig, func=func,
+                                           interval=dt,
+                                           frames=frames, **kwargs)
 
-        if show:
-            xavg = self.X.mean(axis=0)
-            self.scat.set_array(1 - np.exp(-xavg * self.reactivity))
-            return self.scat
+    def step(self, dt, events):
+        """
+        Given a timestep (which is used to determine the decay of the
+        fluorescence level), plus the delta-t and cell index of each
+        firing event since the last call, updates the fluorescence
+        state and scatter plot.
+        """
+        self.X *= np.exp(-dt / self.tau)
+        for time, cell in events:
+            self.X[cell] += np.exp(-time / self.tau)
+
+        self.scat.set_array(self.X)
+
+
+def _gen_frame_events(dt, events):
+    """
+    Given a list of firing events in the form (time, cell index),
+    groups them into batches of all events in time intervals of
+    length dt.
+    """
+    T, evs = dt, []
+    for time, cell in events:
+        if time > T:
+            yield evs
+            T += dt
+            evs = []
+        evs.append((T - time, cell))
 
 
 class ElectrodeArray():
