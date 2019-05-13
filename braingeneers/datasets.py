@@ -73,7 +73,6 @@ def load_blocks(metadata, start=0, stop=None):
     """
 
     # Load all the numpy files into a single matrix
-    print(len(metadata['samples'][start:stop]))
     X = np.concatenate([
         np.load(np.DataSource(None).open("{}/{}"
                                          .format(get_archive_url(),
