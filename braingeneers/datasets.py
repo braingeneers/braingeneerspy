@@ -42,7 +42,7 @@ def load_experiment(path):
     return requests.get("{}/{}".format(get_archive_url(), path)).json()
 
 
-def load_blocks(metadata, start=0, stop=-1, step=1):
+def load_blocks(metadata, start=0, stop=None):
     """
     Load signal blocks of data from a single experiment
 
@@ -73,8 +73,11 @@ def load_blocks(metadata, start=0, stop=-1, step=1):
     """
 
     # Load all the numpy files into a single matrix
+    print(len(metadata['samples'][start:stop]))
     X = np.concatenate([
-        np.load(np.DataSource(None).open("{}/{}".format(get_archive_url(), s["derived"]), "rb"))
+        np.load(np.DataSource(None).open("{}/{}"
+                                         .format(get_archive_url(),
+                                                 s["derived"]), "rb"))
         for s in metadata["samples"][start:stop]], axis=1)
 
     # Convert from the raw uint16 into float "units" via "offset" and "scaler"
