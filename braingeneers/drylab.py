@@ -5,8 +5,6 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy import sparse, ndimage
-import scipy.integrate as spint
-
 
 # A map from neuron type abbreviation to ordered list of parameters
 # a, b, c, d, C, k, Vr, Vt from Dynamical Systems in Neuroscience.
@@ -38,8 +36,7 @@ class Organoid():
     cell Isyn : pA.
 
     Additionally, the excitation model contains the following static
-    parameters, all of which can be set globally by providing scalars,
-    or on a per cell basis by providing arrays of size (N,):
+    parameters, on a per cell basis by providing arrays of size (N,):
      a : 1/ms time constant of recovery current
      b : nS steady-state conductance for recovery current
      c : mV membrane voltage after a downstroke
@@ -55,19 +52,15 @@ class Organoid():
     display (simulated Ca2+ imaging etc) unless you use it to generate
     the weight matrix S or something.
     """
-    def __init__(self, *args, XY, S,
-                 a=0.03, b=-2, c=-50, d=100, C=100, k=0.7,
-                 Vr=-60, Vt=-40, Vp=30, tau=3):
-        S = np.asarray(S)
-        XY = np.asarray(XY)
+    def __init__(self, *args, XY, S, tau,
+                 a, b, c, d,
+                 C, k, Vr, Vt, Vp):
 
         self.N = S.shape[0]
 
         self.S = S
         self.XY = XY
-        self.a, self.b = a, b
-        self.c = c * np.ones(self.N)
-        self.d = d * np.ones(self.N)
+        self.a, self.b, self.c, self.d = a, b, c, d
         self.C, self.k, = C, k
         self.Vr, self.Vt, self.Vp = Vr, Vt, Vp
         self.tau = tau
@@ -76,7 +69,7 @@ class Organoid():
 
     def reset(self):
         self.VUI[0,:] = self.Vr
-        self._fired = self.V >= self.Vp
+        self.fired = self.V >= self.Vp
         self.VUI[1:,:] = 0
 
     def VUIdot(self, Iin):
@@ -86,29 +79,27 @@ class Organoid():
         Idot = -self.Isyn / self.tau
         return np.array([Vdot, Udot, Idot])
 
-    def step(self, dt, Iin, return_spike_times=False):
+    def step(self, dt, Iin):
         """
         Update the state of the organoid by 1ms, and return the current
         organoid state and a boolean array indicating which cells fired.
-
-        NYI: Optionally return the exact time of each event.
         """
 
         # Apply the correction to any cells that crossed the AP peak
         # in the last update step, so that this step puts them into
         # the start of the refractory period.
-        fired = self._fired
+        fired = self.fired
         self.V[fired] = self.c[fired]
         self.U[fired] += self.d[fired]
 
         # Note that we store the total synaptic input to each cell and
         # let that decay over time.  The reason is just so that this
-        # matmul has to happen only once per firing rather than once
-        # per update.  The disadvantage is that the synaptic time
-        # constant must be a global constant rather than per
-        # presynaptic cell (per postsynaptic cell would be possible,
-        # but doesn't make any sense).
-        self.Isyn += self.S @ fired
+        # has to happen only once per firing rather than once per
+        # update.  The disadvantage is that the synaptic time constant
+        # must be a global constant rather than per presynaptic cell
+        # (per postsynaptic cell would be possible, but doesn't make
+        # any sense).
+        self.Isyn += self.S[:,fired].sum(1) / self.tau
 
         # Actually do the stepping, using the midpoint method for
         # integration. This costs as much as halving the timestep
@@ -124,11 +115,8 @@ class Organoid():
         # prettier to adjust the previous point UP to self.Vp and set
         # this point to self.c, but that's not possible here since we
         # don't save all states.
-        self._fired = self.V >= self.Vp
-        self.V[self._fired] = self.Vp
-
-        # Returns as promised...
-        return self.VUI, fired
+        self.fired = self.V >= self.Vp
+        self.V[self.fired] = self.Vp
 
     @property
     def V(self):
@@ -221,24 +209,34 @@ class ChargedMedium():
         # Copy a new previous voltage.
         self.Vprev = self.org.V.copy()
 
-    def probe(self, points):
-        "Probe voltage at a range of (x,y) positions."
+    def probe_at(self, points):
+        "Set probe point locations."
 
         # Distance from the probe points to each grid point.
-        r = np.linalg.norm(points[:,...,None,None] -
-                           self._grid[:,None,...], axis=0)
+        self._r = np.linalg.norm(points[:,...,None,None] -
+                                 self._grid[:,None,...], axis=0)
 
         # Distance from the probe points to each cell.
-        d = np.linalg.norm(points[:,...,None] -
-                           self.org.XY[:,None,...], axis=0)
+        self._d = np.linalg.norm(points[:,...,None] -
+                                 self.org.XY[:,None,...], axis=0)
+
+    def probe(self, points=None):
+        """
+        Probe the voltage at the currently selected probe points.
+        Optionally, you can provide the points, and it will select
+        them by calling probe_at() for you.
+        """
+
+        if points is not None:
+            self.probe_at(points)
 
         # Contribution from the medium charge distribution: the
         # integral of charge distribution divided by distance.
-        dist = spint.simps(spint.simps(self.rho/r, self.Y), self.X)
+        dist = np.trapz(np.trapz(self.rho/self._r, self.Y), self.X)
 
         # Contribution from the charge trapped inside the cells:
         # the sum per cell of the difference from resting potential.
-        cells = self.org.C * (1/d) @ (self.org.V - self.org.Vr)
+        cells = self.org.C * (1/self._d) @ (self.org.V - self.org.Vr)
 
         # Divide by 4 pi epsilon_0 to get the actual potential.
         return (dist + cells) / self._eps_factor
@@ -272,7 +270,8 @@ class Ca2tImage():
         frames = _gen_frame_events(dt, events)
         return mpl.animation.FuncAnimation(self.fig, func=func,
                                            interval=dt,
-                                           frames=frames, **kwargs)
+                                           frames=frames,
+                                           **kwargs)
 
     def step(self, dt, events):
         """
