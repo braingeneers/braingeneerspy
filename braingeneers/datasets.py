@@ -18,7 +18,12 @@ def load_batch(batch_uuid):
         UUID of batch of experiments within the Braingeneer's archive'
         Example: 2019-02-15, or d820d4a6-f59a-4565-bcd1-6469228e8e64
     """
-    return requests.get("{}/derived/{}/metadata.json".format(get_archive_url(), batch_uuid)).json()
+    r = requests.get("{}/derived/{}/metadata.json".format(get_archive_url(), batch_uuid))
+    if r.ok:
+        return r.json()
+    else:
+        print("Unable to load {}, are you sure you have the correct batch uuid?".format(batch_uuid))
+        r.raise_for_status()
 
 
 def load_experiment(path):
@@ -37,9 +42,13 @@ def load_experiment(path):
     metadata : dict
         All of the metadata associated with this batch
     """
-
     # Each experiment has a metadata file with all *.rhd headers and other sample info
-    return requests.get("{}/{}".format(get_archive_url(), path)).json()
+    r = requests.get("{}/{}".format(get_archive_url(), path))
+    if r.ok:
+        return r.json()
+    else:
+        print("Unable to load {}, are you sure you have the correct experiment path?".format(path))
+        r.raise_for_status()
 
 
 def load_blocks(metadata, start=0, stop=None):
@@ -71,13 +80,18 @@ def load_blocks(metadata, start=0, stop=None):
     fs : float
         Sample rate in Hz
     """
-
     # Load all the numpy files into a single matrix
-    X = np.concatenate([
-        np.load(np.DataSource(None).open("{}/{}"
-                                         .format(get_archive_url(),
-                                                 s["derived"]), "rb"))
-        for s in metadata["samples"][start:stop]], axis=1)
+    if os.path.exists("/public/groups/braingeneers/archive"):
+        # Load from local archive
+        X = np.concatenate([
+            np.load("/public/groups/braingeneers/archive/{}".format(s["derived"]))
+            for s in metadata["samples"][start:stop]], axis=1)
+    else:
+        # Load from PRP S3
+        print("loading from url")
+        X = np.concatenate([
+            np.load(np.DataSource(None).open("{}/{}".format(get_archive_url(), s["derived"]), "rb"))
+            for s in metadata["samples"][start:stop]], axis=1)
 
     # Convert from the raw uint16 into float "units" via "offset" and "scaler"
     X = np.multiply(metadata["samples"][0]["scaler"],
