@@ -2,8 +2,10 @@ from warnings import warn
 from functools import partial
 
 import numpy as np
-import matplotlib as mpl
-import matplotlib.pyplot as plt
+try: # If we don't have mpl, silently ignore it.
+    import matplotlib as mpl
+except ImportError:
+    mpl = None
 from scipy import sparse, ndimage
 
 # A map from neuron type abbreviation to ordered list of parameters
@@ -269,7 +271,7 @@ class Ca2tImage():
         self.X = np.zeros(cell_position.shape[1])
 
         # Create the scatter plot...
-        self.fig = fig or plt.figure()
+        self.fig = fig
         self.ax = self.fig.gca(aspect='equal')
         self.ax.patch.set_facecolor((0,0,0))
         self.scat = self.ax.scatter(*cell_position,
