@@ -64,20 +64,21 @@ class Organoid():
         self.C, self.k, = C, k
         self.Vr, self.Vt, self.Vp = Vr, Vt, Vp
         self.tau = tau
-        self.VUI = np.zeros((3, self.N))
+        self.VUIJ = np.zeros((4, self.N))
         self.reset()
 
     def reset(self):
-        self.VUI[0,:] = self.Vr
+        self.VUIJ[0,:] = self.Vr
         self.fired = self.V >= self.Vp
-        self.VUI[1:,:] = 0
+        self.VUIJ[1:,:] = 0
 
-    def VUIdot(self, Iin):
+    def VUIJdot(self, Iin):
         NAcurrent = self.k*(self.V - self.Vr)*(self.V - self.Vt)
         Vdot = (NAcurrent - self.U + self.Isyn + Iin) / self.C
         Udot = self.a * (self.b*(self.V - self.Vr) - self.U)
-        Idot = -self.Isyn / self.tau
-        return np.array([Vdot, Udot, Idot])
+        Idot = self.Jsyn / self.tau
+        Jdot = -(self.Isyn + 2*self.Jsyn) / self.tau
+        return np.array([Vdot, Udot, Idot, Jdot])
 
     def step(self, dt, Iin):
         """
@@ -99,15 +100,15 @@ class Organoid():
         # must be a global constant rather than per presynaptic cell
         # (per postsynaptic cell would be possible, but doesn't make
         # any sense).
-        self.Isyn += self.S[:,fired].sum(1) / self.tau
+        self.Jsyn += self.S[:,fired].sum(1) / self.tau
 
         # Actually do the stepping, using the midpoint method for
         # integration. This costs as much as halving the timestep
         # would in forward Euler, but increases the order to 2.
-        k1 = self.VUIdot(Iin)
-        self.VUI += k1 * dt/2
-        k2 = self.VUIdot(Iin)
-        self.VUI += k2*dt - k1*dt/2
+        k1 = self.VUIJdot(Iin)
+        self.VUIJ += k1 * dt/2
+        k2 = self.VUIJdot(Iin)
+        self.VUIJ += k2*dt - k1*dt/2
 
         # Make a note of which cells this step has caused to fire,
         # then correct their membrane voltages down to the peak.  This
@@ -120,27 +121,35 @@ class Organoid():
 
     @property
     def V(self):
-        return self.VUI[0,:]
+        return self.VUIJ[0,:]
 
     @V.setter
     def V(self, value):
-        self.VUI[0,:] = value
+        self.VUIJ[0,:] = value
 
     @property
     def U(self):
-        return self.VUI[1,:]
+        return self.VUIJ[1,:]
 
     @U.setter
     def U(self, value):
-        self.VUI[1,:] = value
+        self.VUIJ[1,:] = value
 
     @property
     def Isyn(self):
-        return self.VUI[2,:]
+        return self.VUIJ[2,:]
 
     @Isyn.setter
     def Isyn(self, value):
-        self.VUI[2,:] = value
+        self.VUIJ[2,:] = value
+
+    @property
+    def Jsyn(self):
+        return self.VUIJ[3,:]
+
+    @Jsyn.setter
+    def Jsyn(self, value):
+        self.VUIJ[3,:] = value
 
 
 class ChargedMedium():
@@ -172,14 +181,14 @@ class ChargedMedium():
 
         # Quauntize neurons to grid points. If any neurons are
         # outside the grid, an error will be thrown later...
-        self._neuron_grid = organoid.XY / [[self.dx], [self.dy]]
-        self._neuron_grid = tuple(np.int32(np.rint(self._neuron_grid)))
+        self._neuron_grid = np.array(
+            [np.argmin(abs(self.org.XY[0] - self.X[:,None]), axis=0),
+             np.argmin(abs(self.org.XY[1] - self.Y[:,None]), axis=0)])
 
     def step(self, dt):
         """
         Run one forward simulation step. This will not work if the
-        size of the filter is too small! Also note the timesteps for
-        simulation must be consistent, of course.
+        size of the filter is too small!
         """
 
         # Take the change in medium charge density due to the
@@ -212,6 +221,9 @@ class ChargedMedium():
     def probe_at(self, points):
         "Set probe point locations."
 
+        # Save the points for caching.
+        self._points = points
+
         # Distance from the probe points to each grid point.
         self._r = np.linalg.norm(points[:,...,None,None] -
                                  self._grid[:,None,...], axis=0)
@@ -224,10 +236,11 @@ class ChargedMedium():
         """
         Probe the voltage at the currently selected probe points.
         Optionally, you can provide the points, and it will select
-        them by calling probe_at() for you.
+        them by calling probe_at() for you. The last value is cached
+        since usually you'll probe the same point set repeatedly.
         """
 
-        if points is not None:
+        if points not in (None, self._points):
             self.probe_at(points)
 
         # Contribution from the medium charge distribution: the
