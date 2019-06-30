@@ -21,5 +21,5 @@ setup(
         'License :: MIT'
     ],
     packages=find_packages(exclude=()),
-    install_requires=['numpy', 'scipy'],
+    install_requires=['numpy', 'scipy', 'requests'],
     include_package_data=True)

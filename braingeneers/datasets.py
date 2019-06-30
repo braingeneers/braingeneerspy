@@ -66,9 +66,6 @@ def load_blocks(metadata, start=0, stop=None):
     stop : int, optional
         Last rhd data block to return
 
-    step : int, optional
-        Step size when selecting blocks
-
     Returns
     -------
     X : ndarray
@@ -99,6 +96,11 @@ def load_blocks(metadata, start=0, stop=None):
 
     # Extract sample rate for first channel and construct a time axis in ms
     fs = metadata["samples"][0]["frequency_parameters"]["amplifier_sample_rate"]
-    t = np.linspace(0, 1000 * X.shape[1] / fs, X.shape[1])
+    t = np.linspace(0, X.shape[1] / fs, X.shape[1], endpoint=False)
 
-    return X, t, fs
+    if 'num_samples' in metadata['samples'][0]:
+        t += sum(metadata['samples'][i]['num_samples'] / fs
+                 for i in range(start))
+
+
+    return X, t*1000, fs
