@@ -1,0 +1,42 @@
+{
+  "version": "1.0.0",
+  "name": "test",
+  "notes": "Notes for test batch",
+  "timestamp": "2019-02-05T19:37:42.314159-08:00",
+  "sample_rate": 1,
+  "offset": 20,
+  "scaler": 0.5,
+  "units": "\u00b5V",
+  "channels": [
+    {
+    "electrode_impedance_magnitude": 0.0,
+    "electrode_impedance_phase": 0.0
+    },
+    {
+    "electrode_impedance_magnitude": 0.0,
+    "electrode_impedance_phase": 0.0
+    },
+    {
+    "electrode_impedance_magnitude": 0.0,
+    "electrode_impedance_phase": 0.0
+    },
+    {
+    "electrode_impedance_magnitude": 0.0,
+    "electrode_impedance_phase": 0.0
+    }
+  ],
+  "blocks": [
+    {
+      "timestamp": "2019-02-05T19:38:42.314159-08:00",
+      "num_frames": 60,
+      "path": "experiment_190205_193842.bin",
+      "source": "original/test/experiment_190205_193842.rhd"
+    },
+    {
+      "timestamp": "2019-02-05T19:39:42.314159-08:00",
+      "num_frames": 30,
+      "path": "experiment_190205_193942.bin",
+      "source": "original/test/experiment_190205_193942.rhd"
+    }
+  ]
+}

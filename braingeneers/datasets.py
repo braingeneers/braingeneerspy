@@ -1,9 +1,16 @@
 import os
+import json
 import requests
 import numpy as np
 
 
+def get_archive_path():
+    """ Return path to archive on the GI public server """
+    return os.getenv("BRAINGENEERS_ARCHIVE_PATH", "/public/groups/braingeneers/archive")
+
+
 def get_archive_url():
+    """ Return URL to archive on PRP """
     return "{}/braingeneers/archive".format(
         os.getenv("AWS_S3_ENDPOINT", "https://s3.nautilus.optiputer.net"))
 
@@ -18,47 +25,64 @@ def load_batch(batch_uuid):
         UUID of batch of experiments within the Braingeneer's archive'
         Example: 2019-02-15, or d820d4a6-f59a-4565-bcd1-6469228e8e64
     """
+    full_path = "{}/derived/{}/metadata.json".format(get_archive_path(), batch_uuid)
+    if os.path.exists(full_path):
+        with open(full_path, "r") as f:
+            return json.load(f)
+
     r = requests.get("{}/derived/{}/metadata.json".format(get_archive_url(), batch_uuid))
     if r.ok:
         return r.json()
     else:
-        print("Unable to load {}, are you sure you have the correct batch uuid?".format(batch_uuid))
+        print("Unable to load {}, do you have the correct batch uuid?".format(batch_uuid))
         r.raise_for_status()
 
 
-def load_experiment(path):
+def load_experiment(batch_uuid, experiment_num):
     """
     Load metadata from PRP S3 for a single experiment
 
     Parameters
     ----------
-    path : str
-        Path to the experiment meta data json file in the Braingeneer's archive.
-        Typically taken from a batch's metadata list of experiments.
-        Example: derived/2019-02-05/OrganoidTestStimulate1.json
+    batch_uuid : str
+        UUID of batch of experiments within the Braingeneer's archive'
+
+    experiment_num : int
+        Which experiment in the batch to load
 
     Returns
     -------
     metadata : dict
-        All of the metadata associated with this batch
+        All of the metadata associated with this experiment
     """
+    batch = load_batch(batch_uuid)
+    full_path = "{}/derived/{}/{}".format(
+        get_archive_path(), batch_uuid, batch["experiments"][experiment_num])
+    if os.path.exists(full_path):
+        with open(full_path, "r") as f:
+            return json.load(f)
+
     # Each experiment has a metadata file with all *.rhd headers and other sample info
-    r = requests.get("{}/{}".format(get_archive_url(), path))
+    r = requests.get("{}/derived/{}/{}".format(
+        get_archive_url(), batch_uuid, batch["experiments"][experiment_num]))
     if r.ok:
         return r.json()
     else:
-        print("Unable to load {}, are you sure you have the correct experiment path?".format(path))
+        print("Unable to load experiment {} from {}".format(experiment_num, batch_uuid))
         r.raise_for_status()
 
 
-def load_blocks(metadata, start=0, stop=None):
+def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     """
     Load signal blocks of data from a single experiment
 
     Parameters
     ----------
-    metadata : dict
-        Metadata for an experiment returned from load_experiment
+    batch_uuid : str
+        UUID of batch of experiments within the Braingeneer's archive'
+
+    experiment_num : int
+        Which experiment in the batch to load
 
     start : int, optional
         First rhd data block to return
@@ -69,38 +93,55 @@ def load_blocks(metadata, start=0, stop=None):
     Returns
     -------
     X : ndarray
-        Numpy matrix with count channels by samples
+        Numpy matrix of shape frames, channels
 
     t : ndarray
-        Numpy array with time in milliseconds for each sample
+        Numpy array with time in milliseconds for each frame
 
     fs : float
         Sample rate in Hz
     """
+    metadata = load_experiment(batch_uuid, experiment_num)
+    assert start >= 0 and start < len(metadata["blocks"])
+    assert not stop or stop >= 0 and stop < len(metadata["blocks"])
+    assert not stop or stop > start
+
+    def _load_path(path):
+        with open(path, "rb") as f:
+            f.seek(8, os.SEEK_SET)
+            return np.fromfile(f, dtype=np.int16)
+
+    def _load_url(url):
+        with np.DataSource(None).open(url, "rb") as f:
+            f.seek(8, os.SEEK_SET)
+            return np.fromfile(f, dtype=np.int16)
+
     # Load all the numpy files into a single matrix
-    if os.path.exists("/public/groups/braingeneers/archive"):
+    if os.path.exists("{}/derived/{}".format(get_archive_path(), batch_uuid)):
         # Load from local archive
-        X = np.concatenate([
-            np.load("/public/groups/braingeneers/archive/{}".format(s["derived"]))
-            for s in metadata["samples"][start:stop]], axis=1)
+        raw = np.concatenate([
+            _load_path("{}/derived/{}/{}".format(get_archive_path(), batch_uuid, s["path"]))
+            for s in metadata["blocks"][start:stop]], axis=0)
     else:
         # Load from PRP S3
-        print("loading from url")
-        X = np.concatenate([
-            np.load(np.DataSource(None).open("{}/{}".format(get_archive_url(), s["derived"]), "rb"))
-            for s in metadata["samples"][start:stop]], axis=1)
+        raw = np.concatenate([
+            _load_url("{}/derived/{}/{}".format(get_archive_url(), batch_uuid, s["path"]))
+            for s in metadata["blocks"][start:stop]], axis=0)
 
     # Convert from the raw uint16 into float "units" via "offset" and "scaler"
-    X = np.multiply(metadata["samples"][0]["scaler"],
-                    (X.astype(np.float32) - metadata["samples"][0]["offset"]))
+    X = raw.reshape(-1, len(metadata["channels"]), order="C")
+    X = np.multiply(metadata["scaler"], (X.astype(np.float32) - metadata["offset"]))
 
     # Extract sample rate for first channel and construct a time axis in ms
-    fs = metadata["samples"][0]["frequency_parameters"]["amplifier_sample_rate"]
-    t = np.linspace(0, X.shape[1] / fs, X.shape[1], endpoint=False)
+    fs = metadata["sample_rate"]
 
-    if 'num_samples' in metadata['samples'][0]:
-        t += sum(metadata['samples'][i]['num_samples'] / fs
-                 for i in range(start))
+    t = np.linspace(0, 1000 * X.shape[0] / fs, X.shape[0])
 
+    # Correct calculation of t, but simulated datasets don't fill in num_samples yet...
+    # start_t = (1000 / fs) * sum([s["num_samples"] for s in metadata["samples"][0:start]])
+    # end_t = (1000 / fs) * sum([s["num_samples"] for s in metadata["samples"][0:stop]])
+    # t = np.linspace(start_t, end_t, X.shape[1])
 
-    return X, t*1000, fs
+    assert t.shape[0] == X.shape[0]
+
+    return X, t, fs

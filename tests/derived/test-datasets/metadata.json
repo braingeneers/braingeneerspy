@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "uuid": "test-datasets",
+  "notes": "Notes for test datasets batch",
+  "issue": "https://github.com/braingeneers/internal/issues/123",
+  "experiments": ["experiment.json"]
+}
