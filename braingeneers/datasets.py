@@ -135,13 +135,10 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     # Extract sample rate for first channel and construct a time axis in ms
     fs = metadata["sample_rate"]
 
-    t = np.linspace(0, 1000 * X.shape[0] / fs, X.shape[0])
+    start_t = (1000 / fs) * sum([s["num_frames"] for s in metadata["blocks"][0:start]])
+    end_t = (1000 / fs) * sum([s["num_frames"] for s in metadata["blocks"][0:stop]])
+    t = np.linspace(start_t, end_t, X.shape[1])
 
-    # Correct calculation of t, but simulated datasets don't fill in num_samples yet...
-    # start_t = (1000 / fs) * sum([s["num_samples"] for s in metadata["samples"][0:start]])
-    # end_t = (1000 / fs) * sum([s["num_samples"] for s in metadata["samples"][0:stop]])
-    # t = np.linspace(start_t, end_t, X.shape[1])
-
-    assert t.shape[0] == X.shape[0]
+    assert t.shape[0] == X.shape[1]
 
     return X, t, fs

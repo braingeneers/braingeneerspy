@@ -11,6 +11,7 @@ def test_load_batch():
 def test_load_experiment():
     experiment = braingeneers.datasets.load_experiment("test-datasets", 0)
     assert experiment["name"] == "test"
+    assert experiment["blocks"][0]["timestamp"] == "2019-02-05T19:38:42.314159-08:00"
     assert len(experiment["blocks"]) == 2
 
 
