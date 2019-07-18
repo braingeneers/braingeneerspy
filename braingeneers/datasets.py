@@ -137,8 +137,7 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
 
     start_t = (1000 / fs) * sum([s["num_frames"] for s in metadata["blocks"][0:start]])
     end_t = (1000 / fs) * sum([s["num_frames"] for s in metadata["blocks"][0:stop]])
-    t = np.linspace(start_t, end_t, X.shape[1])
-
-    assert t.shape[0] == X.shape[1]
+    t = np.linspace(start_t, end_t, X.shape[0])
+    assert t.shape[0] == X.shape[0]
 
     return X, t, fs
