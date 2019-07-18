@@ -21,12 +21,9 @@ def test_load_blocks():
     assert (X[0, :] == [-10., -9.5, -9., -8.5]).all()
 
     assert t[0] == 0.0
-    print(t)
 
     X, t, fs = braingeneers.datasets.load_blocks("test-datasets", 0, 1)
     assert X.shape == (30, 4)
 
-
     experiment = braingeneers.datasets.load_experiment("test-datasets", 0)
     assert t[0] == fs * 1000 * experiment["blocks"][0]["num_frames"]
-    print(t)
