@@ -121,6 +121,53 @@ class Organoid():
         self.fired = self.V >= self.Vp
         self.V[self.fired] = self.Vp
 
+
+    def initialize_stdp(self, tau=25, Aplus=0.005, Aminus=None):
+        """
+        Set the parameters for STDP. If you don't call this method, it
+        automatically runs the first time you try to perform STDP,
+        taking default parameter values from Song's 2000 paper.
+        """ 
+        if Aminus is None:
+            Aminus = Aplus * 1.05
+
+        self.stdp_tau = tau
+        self.stdp_Aplus = Aplus
+        self.stdp_Aminus = Aminus 
+
+        self._stdp_trace = np.zeros_like(self.V)
+            
+
+    def stdp(self, dt):
+        """
+        Simulate spike-time dependent plasticity as an attempt at
+        implementing Hebbian learning. The algorithm keeps a trace at
+        each cell measuring how much it has been firing recently
+        (typically this decays more slowly than synaptic current) 
+        and uses this to measure causality.
+        """
+        try:
+            self._stdp_trace
+        except AttributeError:
+            self.configure_stdp()
+
+        # The old synaptic trace decays with time constant stdp_tau.
+        self._stdp_trace *= np.exp(-dt / self.stdp_tau)
+
+        # Cells which have positive STDP trace probably contributed to
+        # the firing of any cells which are active now. Increase their
+        # synaptic strength by a percentage proportional to the trace.
+        self.S[fired,:] *= 1 + self.stdp_Aplus * self._stdp_trace
+
+        # Cells which fired now probably didn't contribute much to the
+        # STDP trace of other cells. Decrease the strength of those
+        # synapses by a percentage proportional to the trace.
+        self.S[:,fired] *= 1 - self.stdp_Aminus * self._stdp_trace
+
+        # Add entries to the trace for current firings.
+        self._stdp_trace[fired] += 1
+
+
     @property
     def V(self):
         return self.VUIJ[0,:]
