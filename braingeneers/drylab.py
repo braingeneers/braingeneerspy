@@ -122,7 +122,8 @@ class Organoid():
         self.V[self.fired] = self.Vp
 
 
-    def initialize_stdp(self, tau=25, Aplus=0.005, Aminus=None):
+    def initialize_stdp(self, tau=25, Aplus=0.005, Aminus=None,
+            inhibitory_learn=True):
         """
         Set the parameters for STDP. If you don't call this method, it
         automatically runs the first time you try to perform STDP,
@@ -134,6 +135,10 @@ class Organoid():
         self.stdp_tau = tau
         self.stdp_Aplus = Aplus
         self.stdp_Aminus = Aminus 
+        if inhibitory_learn:
+            self.learnability = np.sign(self.S.sum(axis=0))
+        else:
+            self.learnability = self.S.sum(axis=0) > 0
 
         self._stdp_trace = np.zeros_like(self.V)
             
@@ -149,23 +154,25 @@ class Organoid():
         try:
             self._stdp_trace
         except AttributeError:
-            self.configure_stdp()
+            self.initialize_stdp()
 
         # The old synaptic trace decays with time constant stdp_tau.
         self._stdp_trace *= np.exp(-dt / self.stdp_tau)
 
-        # Cells which have positive STDP trace probably contributed to
-        # the firing of any cells which are active now. Increase their
-        # synaptic strength by a percentage proportional to the trace.
-        self.S[fired,:] *= 1 + self.stdp_Aplus * self._stdp_trace
+        if np.any(self.fired):
+            # Cells which have positive STDP trace probably
+            # contributed to the firing of any cells which are active
+            # now. Increase their synaptic strength by a percentage
+            # proportional to the trace.
+            self.S[self.fired,:] *= 1 + self.stdp_Aplus * self._stdp_trace
 
-        # Cells which fired now probably didn't contribute much to the
-        # STDP trace of other cells. Decrease the strength of those
-        # synapses by a percentage proportional to the trace.
-        self.S[:,fired] *= 1 - self.stdp_Aminus * self._stdp_trace
+            # Cells which fired now probably didn't contribute much to
+            # the STDP trace of other cells. Decrease the strength of
+            # those synapses by a percentage proportional to the trace.
+            self.S.T[self.fired,:] *= 1 - self.stdp_Aminus*self._stdp_trace
 
         # Add entries to the trace for current firings.
-        self._stdp_trace[fired] += 1
+        self._stdp_trace[self.fired] += self.learnability[self.fired]
 
 
     @property
