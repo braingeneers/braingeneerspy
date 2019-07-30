@@ -492,15 +492,13 @@ class OrganoidWrapper():
         self.input_scale = input_scale
 
 
-
-
     # -------------- step()-------------------
     # input : inside step(), we multiply input array by ~100 because cells are excited ~100pA
     # if constant input (200ms, couple hunderd) activation of ~50pA is enough to excite
     # a noise factor is added to the input
     # Check: input must be same dimensions as organoid N (no error checking)
     # interval :  (ms) is duration to run simulation
-
+    # return: synaptic currents of all cells
     def step(self, input, interval):
         org = self.org
         num_inputs = self.N
@@ -515,3 +513,8 @@ class OrganoidWrapper():
 
         #return arry of outputs
         return org.Isyn
+
+
+    # return the current synaptic weight/connectivity matrix of organoid
+    def synapses():
+        return org.S
