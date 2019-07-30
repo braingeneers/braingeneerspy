@@ -517,4 +517,4 @@ class OrganoidWrapper():
     # -------------- synapses()-------------------
     # return the current synaptic weight/connectivity matrix of organoid
     def synapses(self):
-        return org.S
+        return self.org.S
