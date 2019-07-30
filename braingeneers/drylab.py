@@ -479,7 +479,7 @@ class OrganoidWrapper():
 
 
         # Create the actual Organoid.
-        org = drylab.Organoid(XY=XY, S=S*5, tau=tau,
+        org = Organoid(XY=XY, S=S*5, tau=tau,
                               a=a, b=b, c=c, d=d,
                               k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp)
 
