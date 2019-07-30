@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation
 from tqdm import tqdm_notebook as tqdm
 
-from braingeneers import drylab
+import .drylab
 #from colorednoise import powerlaw_psd_gaussian as gen_noise
 
 
