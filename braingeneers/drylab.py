@@ -481,6 +481,7 @@ class OrganoidWrapper():
         # Then convert the EPSPs to injected synaptic charge.
         S *= np.median(C / tau)
         S[:,Ne:] *= -10
+        S *= 5
 
         # XY : um planar positions of the cells,
         # dij : um distances between cells
@@ -488,12 +489,12 @@ class OrganoidWrapper():
 
 
         # Create the actual Organoid.
-        org = Organoid(XY=XY, S=S*5, tau=tau,
+        org = Organoid(XY=XY, S=S, tau=tau,
                               a=a, b=b, c=c, d=d,
                               k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp)
 
         if stdp:
-            org.initialize_stdp()
+            org.initialize_stdp(smin=5*S.min(), smax=5*S.max())
 
         self.org = org
         self.N = N
