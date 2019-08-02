@@ -425,7 +425,7 @@ class OrganoidWrapper():
     # dt : (ms) is the dicretized slice of time of simulation (granularity?)
     # org : is instance Alex's Organoid() class
 
-    def __init__(self, N, input_scale=100, noise=0.1, dt=1):
+    def __init__(self, N, input_scale=100, noise=0.1, dt=1, stdp=False):
 
         # Number of neurons, followed by the number which are excitatory.
         Ne = int(0.8 * N)
@@ -483,7 +483,8 @@ class OrganoidWrapper():
                               a=a, b=b, c=c, d=d,
                               k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp)
 
-        org.initialize_stdp()
+        if stdp:
+            org.initialize_stdp()
 
         self.org = org
         self.N = N
