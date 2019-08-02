@@ -138,10 +138,13 @@ class Organoid():
                 # strength of those synapses by a percentage
                 # proportional to the trace.
                 self.S.T[self.fired,:] *= 1 - \
-                        self.stdp_Aminus*self._stdp_trace
+                        self.stdp_Aminus * self._stdp_trace
+
+                np.clip(self.S, self.stdp_smin, self.stdp_smax,
+                        out=self.S)
 
             # Add entries to the trace for current firings.
-            self._stdp_trace[self.fired] += self.learnability[self.fired]
+            self._stdp_trace[self.fired] = self.learnability[self.fired]
 
         except AttributeError:
             # If we're missing _stdp_trace, that just means the user
@@ -149,7 +152,7 @@ class Organoid():
             pass
 
 
-    def initialize_stdp(self, tau=25, Aplus=0.005, Aminus=None,
+    def initialize_stdp(self, smin, smax, tau=25, Aplus=0.005, Aminus=None,
             inhibitory_learn=True):
 
         if Aminus is None:
@@ -157,7 +160,13 @@ class Organoid():
 
         self.stdp_tau = tau
         self.stdp_Aplus = Aplus
+<<<<<<< Updated upstream
         self.stdp_Aminus = Aminus
+=======
+        self.stdp_Aminus = Aminus 
+        self.stdp_smin = smin
+        self.stdp_smax = smax
+>>>>>>> Stashed changes
 
         if inhibitory_learn:
             self.learnability = np.sign(self.S.sum(axis=0))
