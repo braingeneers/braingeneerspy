@@ -160,13 +160,9 @@ class Organoid():
 
         self.stdp_tau = tau
         self.stdp_Aplus = Aplus
-<<<<<<< Updated upstream
-        self.stdp_Aminus = Aminus
-=======
         self.stdp_Aminus = Aminus 
         self.stdp_smin = smin
         self.stdp_smax = smax
->>>>>>> Stashed changes
 
         if inhibitory_learn:
             self.learnability = np.sign(self.S.sum(axis=0))
