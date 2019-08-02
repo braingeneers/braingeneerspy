@@ -504,13 +504,13 @@ class OrganoidWrapper():
         org = self.org
         num_inputs = self.N
 
-        Iin = self.input_scale * input + self.noise * np.random.rand(self.N)
+        Iin = lambda: self.input_scale * input + self.noise * np.random.rand(self.N)
 
         # Run the loop.
         while interval > self.dt:
-            org.step(self.dt, Iin)
+            org.step(self.dt, Iin())
             interval -= self.dt
-        org.step(interval, Iin)
+        org.step(interval, Iin())
 
         #return arry of outputs
         return org.Isyn
