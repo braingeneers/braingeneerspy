@@ -76,7 +76,7 @@ class Organoid():
 
     def VUIJdot(self, Iin):
         NAcurrent = self.k*(self.V - self.Vr)*(self.V - self.Vt)
-        Vdot = (NAcurrent - self.U + self.Isyn + Iin) / self.C
+        Vdot = (NAcurrent - self.U + self.S@self.Isyn + Iin) / self.C
         Udot = self.a * (self.b*(self.V - self.Vr) - self.U)
         Idot = self.Jsyn / self.tau
         Jdot = -(self.Isyn + 2*self.Jsyn) / self.tau
@@ -95,14 +95,11 @@ class Organoid():
         self.V[fired] = self.c[fired]
         self.U[fired] += self.d[fired]
 
-        # Note that we store the total synaptic input to each cell and
-        # let that decay over time.  The reason is just so that this
-        # has to happen only once per firing rather than once per
-        # update.  The disadvantage is that the synaptic time constant
-        # must be a global constant rather than per presynaptic cell
-        # (per postsynaptic cell would be possible, but doesn't make
-        # any sense).
-        self.Jsyn += self.S[:,fired].sum(1) / self.tau
+        # Isyn stores the PREsynaptic activation now, which means that
+        # you can actually have different synaptic time constants on a
+        # per-cell basis. All this requires is getting rid of a stupid
+        # premature optimization. 
+        self.Jsyn[fired] += 1/self.tau[fired]
 
         # Actually do the stepping, using the midpoint method for
         # integration. This costs as much as halving the timestep
