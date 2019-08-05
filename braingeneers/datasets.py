@@ -109,12 +109,12 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     def _load_path(path):
         with open(path, "rb") as f:
             f.seek(8, os.SEEK_SET)
-            return np.fromfile(f, dtype=np.int16)
+            return np.fromfile(f, dtype=np.uint16)
 
     def _load_url(url):
         with np.DataSource(None).open(url, "rb") as f:
             f.seek(8, os.SEEK_SET)
-            return np.fromfile(f, dtype=np.int16)
+            return np.fromfile(f, dtype=np.uint16)
 
     # Load all the numpy files into a single matrix
     if os.path.exists("{}/derived/{}".format(get_archive_path(), batch_uuid)):
@@ -137,7 +137,7 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
 
     start_t = (1000 / fs) * sum([s["num_frames"] for s in metadata["blocks"][0:start]])
     end_t = (1000 / fs) * sum([s["num_frames"] for s in metadata["blocks"][0:stop]])
-    t = np.linspace(start_t, end_t, X.shape[0])
+    t = np.linspace(start_t, end_t, X.shape[0], endpoint=False)
     assert t.shape[0] == X.shape[0]
 
     return X, t, fs
