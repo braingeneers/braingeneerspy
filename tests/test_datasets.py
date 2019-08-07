@@ -27,3 +27,6 @@ def test_load_blocks():
 
     experiment = braingeneers.datasets.load_experiment("test-datasets", 0)
     assert t[0] == fs * 1000 * experiment["blocks"][0]["num_frames"]
+
+    X, t, fs = braingeneers.datasets.load_blocks("test-datasets", 0, 0, 2)
+    assert X.shape == (90, 4)

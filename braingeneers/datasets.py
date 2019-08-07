@@ -88,7 +88,7 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
         First rhd data block to return
 
     stop : int, optional
-        Last rhd data block to return
+        Last-1 rhd data block to return
 
     Returns
     -------
@@ -103,7 +103,7 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     """
     metadata = load_experiment(batch_uuid, experiment_num)
     assert start >= 0 and start < len(metadata["blocks"])
-    assert not stop or stop >= 0 and stop < len(metadata["blocks"])
+    assert not stop or stop >= 0 and stop <= len(metadata["blocks"])
     assert not stop or stop > start
 
     def _load_path(path):
