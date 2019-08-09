@@ -109,14 +109,14 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     def _load_path(path):
         with open(path, "rb") as f:
             f.seek(8, os.SEEK_SET)
-            return np.fromfile(f, dtype=np.uint16)
+            return np.fromfile(f, dtype=np.int16)
 
     def _load_url(url):
         with np.DataSource(None).open(url, "rb") as f:
             f.seek(8, os.SEEK_SET)
-            return np.fromfile(f, dtype=np.uint16)
+            return np.fromfile(f, dtype=np.int16)
 
-    # Load all the numpy files into a single matrix
+    # Load all the raw files into a single matrix
     if os.path.exists("{}/derived/{}".format(get_archive_path(), batch_uuid)):
         # Load from local archive
         raw = np.concatenate([
@@ -128,8 +128,9 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
             _load_url("{}/derived/{}/{}".format(get_archive_url(), batch_uuid, s["path"]))
             for s in metadata["blocks"][start:stop]], axis=0)
 
+    # Reshape interpreting as row major
+    X = raw.reshape(-1, metadata["num_channels"], order="C")
     # Convert from the raw uint16 into float "units" via "offset" and "scaler"
-    X = raw.reshape(-1, len(metadata["channels"]), order="C")
     X = np.multiply(metadata["scaler"], (X.astype(np.float32) - metadata["offset"]))
 
     # Extract sample rate for first channel and construct a time axis in ms
