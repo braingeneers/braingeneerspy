@@ -129,7 +129,7 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
             for s in metadata["blocks"][start:stop]], axis=0)
 
     # Reshape interpreting as row major
-    X = raw.reshape(-1, metadata["num_channels"], order="C")
+    X = raw.reshape((-1, metadata["num_channels"]), order="C")
     # Convert from the raw uint16 into float "units" via "offset" and "scaler"
     X = np.multiply(metadata["scaler"], (X.astype(np.float32) - metadata["offset"]))
 
