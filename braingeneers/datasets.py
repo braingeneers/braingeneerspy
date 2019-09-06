@@ -128,6 +128,7 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
             _load_url("{}/derived/{}/{}".format(get_archive_url(), batch_uuid, s["path"]))
             for s in metadata["blocks"][start:stop]], axis=0)
 
+    print(raw.shape)
     # Reshape interpreting as row major
     X = raw.reshape((-1, metadata["num_channels"]), order="C")
     # Convert from the raw uint16 into float "units" via "offset" and "scaler"
