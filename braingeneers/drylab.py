@@ -56,7 +56,12 @@ class Organoid():
     """
     def __init__(self, *args, XY, S, tau,
                  a, b, c, d,
-                 C, k, Vr, Vt, Vp):
+                 C, k, Vr, Vt, Vp, 
+                 # STDP parameters
+                 do_stdp=False,
+                 stdp_smin=None, stdp_smax=None,
+                 stdp_tau=25, inhibitory_learn=True, 
+                 stdp_Aplus=0.005, stdp_Aminus=None):
 
         self.N = S.shape[0]
 
@@ -67,6 +72,26 @@ class Organoid():
         self.Vr, self.Vt, self.Vp = Vr, Vt, Vp
         self.tau = tau
         self.VUIJ = np.zeros((4, self.N))
+
+        self.stdp_tau = stdp_tau
+        self.stdp_Aplus = stdp_Aplus
+        self.stdp_Aminus = stdp_Aminus or stdp_Aplus * 1.05
+        self.stdp_smin = stdp_smin
+        self.stdp_smax = stdp_smax
+
+        # Calculate the `learnability' parameter, which determines
+        # whether each cell is affected by Hebbian, reverse Hebbian,
+        # or no plasticity, based on whether learnability is 1, -1, or
+        # zero respectively. If inhibitory cells can learn, they
+        # should be reverse Hebbian.
+        if inhibitory_learn:
+            self.learnability = np.sign(self.S.sum(axis=0))
+        else:
+            self.learnability = self.S.sum(axis=0) > 0
+
+        self._stdp_trace = np.zeros_like(self.V)
+        self.do_stdp = do_stdp
+
         self.reset()
 
     def reset(self):
@@ -84,8 +109,8 @@ class Organoid():
 
     def step(self, dt, Iin):
         """
-        Update the state of the organoid by 1ms, and return the current
-        organoid state and a boolean array indicating which cells fired.
+        Simulate the organoid for a time dt, subject to an input
+        current Iin. 
         """
 
         # Apply the correction to any cells that crossed the AP peak
@@ -118,7 +143,9 @@ class Organoid():
         self.fired = self.V >= self.Vp
         self.V[self.fired] = self.Vp
 
-        try:
+
+        # Handle spike-timing-dependent plasticity if it is activated.
+        if self.do_stdp:
             # The old synaptic trace decays with time constant stdp_tau.
             self._stdp_trace *= np.exp(-dt / self.stdp_tau)
 
@@ -137,37 +164,14 @@ class Organoid():
                 self.S.T[self.fired,:] *= 1 - \
                         self.stdp_Aminus * self._stdp_trace
 
-                np.clip(self.S, self.stdp_smin, self.stdp_smax,
-                        out=self.S)
+                # If a min or max value is provided, clip the synaptic
+                # weights to not exceed those bounds.
+                if self.stdp_smin or self.stdp_smax:
+                    np.clip(self.S, self.stdp_smin, self.stdp_smax,
+                            out=self.S)
 
-            # Add entries to the trace for current firings.
-            self._stdp_trace[self.fired] = self.learnability[self.fired]
-
-        except AttributeError:
-            # If we're missing _stdp_trace, that just means the user
-            # didn't want to run STDP.
-            pass
-
-
-    def initialize_stdp(self, smin, smax, tau=25, Aplus=0.005, Aminus=None,
-            inhibitory_learn=True):
-
-        if Aminus is None:
-            Aminus = Aplus * 1.05
-
-        self.stdp_tau = tau
-        self.stdp_Aplus = Aplus
-        self.stdp_Aminus = Aminus 
-        self.stdp_smin = smin
-        self.stdp_smax = smax
-
-        if inhibitory_learn:
-            self.learnability = np.sign(self.S.sum(axis=0))
-        else:
-            self.learnability = self.S.sum(axis=0) > 0
-
-        self._stdp_trace = np.zeros_like(self.V)
-
+                # Add entries to the trace for current firings.
+                self._stdp_trace[self.fired] = self.learnability[self.fired]
 
     @property
     def V(self):
@@ -427,7 +431,7 @@ class OrganoidWrapper():
     # dt : (ms) is the dicretized slice of time of simulation (granularity?)
     # org : is instance Alex's Organoid() class
 
-    def __init__(self, N, input_scale=100, noise=0.1, dt=1, stdp=False):
+    def __init__(self, N, input_scale=100, noise=0.1, dt=1, do_stdp=False):
 
         # Number of neurons, followed by the number which are excitatory.
         Ne = int(0.8 * N)
@@ -484,10 +488,9 @@ class OrganoidWrapper():
         # Create the actual Organoid.
         org = Organoid(XY=XY, S=S, tau=tau,
                               a=a, b=b, c=c, d=d,
-                              k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp)
-
-        if stdp:
-            org.initialize_stdp(smin=5*S.min(), smax=5*S.max())
+                              k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp,
+                              do_stdp=do_stdp,
+                              stdp_smin=5*S.min(), stdp_smax=5*S.max())
 
         self.org = org
         self.N = N
