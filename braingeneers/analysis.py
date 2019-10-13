@@ -26,7 +26,7 @@ def find_avalanches(counts, thresh):
     avalanches = []
     size, duration = 0, 0
     for count in counts:
-        if count >= thresh:
+        if count > thresh:
             size += count
             duration += 1
         elif duration != 0:
@@ -60,7 +60,7 @@ def vuong(data, A, B, deltaK=None):
 
     # Log likelihood ratio, variance estimate, and the stat itself.
     LR = L1.sum() - L2.sum() - 0.5*deltaK*np.log(len(data))
-    omega = np.mean((L1 - L2)**2)
+    omega = np.std(L1 - L2)
     stat = LR / omega / np.sqrt(len(data))
 
     # Return the statistic and its quantile on the standard normal.
