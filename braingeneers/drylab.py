@@ -48,19 +48,14 @@ class Organoid():
      Vr: mV resting membrane voltage when u=0
      Vt: mV threshold voltage when u=0
      Vp: mV action potential peak, after which reset happens
-
-    The cells are assumed to be located at physical positions contained
-    in the variable XY : um, but this is not used for anything other than
-    display (simulated Ca2+ imaging etc) unless you use it to generate
-    the weight matrix S or something.
     """
     def __init__(self, *args, XY, S, tau,
                  a, b, c, d,
-                 C, k, Vr, Vt, Vp, 
+                 C, k, Vr, Vt, Vp,
                  # STDP parameters
                  do_stdp=False,
                  stdp_smin=None, stdp_smax=None,
-                 stdp_tau=25, inhibitory_learn=True, 
+                 stdp_tau=25, inhibitory_learn=True,
                  stdp_Aplus=0.005, stdp_Aminus=None):
 
         self.N = S.shape[0]
@@ -110,7 +105,7 @@ class Organoid():
     def step(self, dt, Iin):
         """
         Simulate the organoid for a time dt, subject to an input
-        current Iin. 
+        current Iin.
         """
 
         # Apply the correction to any cells that crossed the AP peak
@@ -123,8 +118,8 @@ class Organoid():
         # Isyn stores the PREsynaptic activation now, which means that
         # you can actually have different synaptic time constants on a
         # per-cell basis. All this requires is getting rid of a stupid
-        # premature optimization. 
-        self.Jsyn[fired] += 1/self.tau[fired]
+        # premature optimization.
+        self.Jsyn[fired] += 1
 
         # Actually do the stepping, using the midpoint method for
         # integration. This costs as much as halving the timestep
@@ -143,7 +138,6 @@ class Organoid():
         self.fired = self.V >= self.Vp
         self.V[self.fired] = self.Vp
 
-
         # Handle spike-timing-dependent plasticity if it is activated.
         if self.do_stdp:
             # The old synaptic trace decays with time constant stdp_tau.
@@ -154,15 +148,15 @@ class Organoid():
                 # contributed to the firing of any cells which are
                 # active now. Increase their synaptic strength by a
                 # percentage proportional to the trace.
-                self.S[self.fired,:] *= 1 + \
-                        self.stdp_Aplus * self._stdp_trace
+                self.S[self.fired,:] *= 1 \
+                    + self.stdp_Aplus * self._stdp_trace
 
                 # Cells which fired now probably didn't contribute
                 # much to the STDP trace of other cells. Decrease the
                 # strength of those synapses by a percentage
                 # proportional to the trace.
-                self.S.T[self.fired,:] *= 1 - \
-                        self.stdp_Aminus * self._stdp_trace
+                self.S.T[self.fired,:] *= 1 \
+                    - self.stdp_Aminus * self._stdp_trace
 
                 # If a min or max value is provided, clip the synaptic
                 # weights to not exceed those bounds.

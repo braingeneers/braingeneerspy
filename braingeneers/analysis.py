@@ -1,42 +1,55 @@
 import numpy as np
 import scipy.stats
 
+
 def temporal_binning(spike_times, bin_size=40):
     """
-    Given a sorted list of spike times (with no channel or neuron 
-    number information), quantizes time into intervals of bin_size 
+    Given a sorted list of spike times (with no channel or neuron
+    number information), quantizes time into intervals of bin_size
     and counts the number of events in each bin.
     """
     # Create enough bins to hold all the spikes.
     n_bins = (spike_times[-1] + bin_size - 1) // bin_size
     counts = np.zeros(n_bins, np.int)
-        
+
     # Put each spike in the appropriate bin.
     for time in spike_times:
         counts[time // bin_size] += 1
     return counts
 
 
-def find_avalanches(counts, thresh):
+def get_avalanches(counts, thresh):
     """
     Given a list of spikes per bucket and a threshold number of spike
     events above which a bucket is considered "active", return a list
-    of avalanches, represented as (size, duration) pairs.
+    of avalanches, represented as lists of counts per bucket.
     """
     avalanches = []
-    size, duration = 0, 0
+    this_one = []
     for count in counts:
         if count > thresh:
-            size += count
-            duration += 1
-        elif duration != 0:
-            avalanches.append((size, duration))
-            size = duration = 0
+            this_one.append(count)
+        elif len(this_one) != 0:
+            avalanches.append(this_one)
+            this_one = []
     return avalanches
 
 
-def vuong(data, A, B, deltaK=None): 
-    """ 
+def find_avalanches(counts, thresh):
+    """
+    Given a list of spikes per bucket and a threshold number of spike
+    events above which a bucket is considered "active", return the
+    sizes and durations of all the avalanches that would be returned
+    by get_avalanches with the same arguments.
+    """
+    avalanches = get_avalanches(counts, thresh)
+    sizes = [sum(av) for av in avalanches]
+    durations = [len(av) for av in avalanches]
+    return sizes, durations
+
+
+def vuong(data, A, B, deltaK=None):
+    """
     Perform's Vuong's closeness test to compare the relative goodness
     of fit between two (non-nested) models A and B following a
     scipy.stats API.  Returns the statistic and its quantile on the
@@ -48,7 +61,7 @@ def vuong(data, A, B, deltaK=None):
     If the statistic is above the (1-alpha) quantile, model A is
     preferred with significance level alpha; likewise, if the
     statistic is below the alpha quantile, model B is preferred at
-    the same significance level.  
+    the same significance level.
     """
     # Log likelihood of each individual data point.
     L1 = A.logpdf(data)
