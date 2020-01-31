@@ -516,8 +516,9 @@ class OrganoidWrapper():
         org = self.org
         num_inputs = self.N
 
+        sigma = self.noise * self.input_scale
         Iin = lambda: (self.input_scale * input
-                       + self.noise * np.random.rand(self.N))
+                       + sigma * np.random.rand(self.N))
 
         # Run the loop.
         while interval > self.dt:
