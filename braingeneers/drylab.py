@@ -8,6 +8,9 @@ except ImportError:
     mpl = None
 from scipy import sparse, ndimage
 
+import braingeneers.analysis as _analysis
+
+
 # A map from neuron type abbreviation to ordered list of parameters
 # a, b, c, d, C, k, Vr, Vt from Dynamical Systems in Neuroscience.
 # NB: many of these models have some extra bonus features in the book,
@@ -460,7 +463,7 @@ class OrganoidWrapper():
         Vp = 30
 
         # tau : ms time constant of synaptic current
-        tau = 20 # np.hstack((5*l[:Ne], 20*l[Ne:]))
+        tau = np.hstack((5*l[:Ne], 20*l[Ne:]))
 
         #------------------------------------------
 
@@ -470,21 +473,26 @@ class OrganoidWrapper():
         mu, sigma = -0.702, 0.9355
         S = np.random.lognormal(mean=mu, sigma=sigma, size=(N,N))
         # Then convert the EPSPs to injected synaptic charge.
-        S *= np.median(C / tau)
-        S[:,Ne:] *= -10
-        S *= 5
+        S *= np.mean(C / tau)
+        S[:,Ne:] *= -4
 
         # XY : um planar positions of the cells,
         # dij : um distances between cells
         XY = np.random.rand(2,N) * 75
 
+        # Use those positions to generate random small-world
+        # connectivity using the modified Watts-Strogatz algorithm
+        # from the braingeneers.analysis sublibrary.
+        beta = np.zeros((1,N))
+        beta[:Ne] = 5e-2
+        S *= _analysis.small_world(XY / 12, plocal=0.5, beta=beta)
 
         # Create the actual Organoid.
         org = Organoid(XY=XY, S=S, tau=tau,
-                              a=a, b=b, c=c, d=d,
-                              k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp,
-                              do_stdp=do_stdp,
-                              stdp_smin=5*S.min(), stdp_smax=5*S.max())
+                       a=a, b=b, c=c, d=d,
+                       k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp,
+                       do_stdp=do_stdp,
+                       stdp_smin=5*S.min(), stdp_smax=5*S.max())
 
         self.org = org
         self.N = N
@@ -493,18 +501,23 @@ class OrganoidWrapper():
         self.input_scale = input_scale
 
 
-    # -------------- step()-------------------
-    # input : inside step(), we multiply input array by ~100 because cells are excited ~100pA
-    # if constant input (200ms, couple hunderd) activation of ~50pA is enough to excite
+    # -------------- step() -------------------
+    #
+    # input : inside step(), we multiply input array by ~100 because
+    # cells are excited ~100pA if constant input (200ms, couple
+    # hunderd) activation of ~50pA is enough to excite
     # a noise factor is added to the input
+    #
     # Check: input must be same dimensions as organoid N (no error checking)
     # interval :  (ms) is duration to run simulation
     # return: synaptic currents of all cells
+
     def step(self, input, interval):
         org = self.org
         num_inputs = self.N
 
-        Iin = lambda: self.input_scale * input + self.noise * np.random.rand(self.N)
+        Iin = lambda: (self.input_scale * input
+                       + self.noise * np.random.rand(self.N))
 
         # Run the loop.
         while interval > self.dt:

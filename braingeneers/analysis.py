@@ -78,3 +78,36 @@ def vuong(data, A, B, deltaK=None):
 
     # Return the statistic and its quantile on the standard normal.
     return stat, scipy.stats.norm.cdf(stat)
+
+def small_world(XY, plocal, beta):
+    """
+    This model is inspired by the Watts-Strogatz model, but describes
+    the relationships between objects with physical positions rather
+    than on an abstract cycle. The positions XY describe the
+    physical locations of the nodes---a distance less than 1 is
+    considered close, so normalize before passing this parameter. The
+    local connection probability plocal describes the connection
+    probability for nodes near to each other; after these connections
+    have been formed, a random fraction beta of them are reassigned to
+    arbitrary nodes irrespective of distance.
+    """
+    N = XY.shape[1]
+
+    # Symmetric array of distances between nodes i and j.
+    dij = np.sqrt(np.sum((XY[:,:,None] - XY[:,None,:])**2, axis=0))
+
+    # With probability plocal, connect nodes with distance less than 1.
+    edges = (dij < 1) & (np.random.rand(N,N) < plocal)
+
+    # Relocate edges with probability beta, keeping the same origin
+    # but changing the target.
+    to_change = edges & (np.random.rand(N,N) < beta)
+    edges ^= to_change
+    new_edges = to_change.sum(0)
+    for j,n in enumerate(new_edges):
+        targets = np.random.choice(N, size=n, replace=False)
+        edges[targets,j] = True
+
+    # Ensure no self-edges and return.
+    np.fill_diagonal(edges, False)
+    return edges
