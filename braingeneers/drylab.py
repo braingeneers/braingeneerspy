@@ -2,10 +2,14 @@ from warnings import warn
 from functools import partial
 
 import numpy as np
+
+_mpl_import_error = None
 try: # If we don't have mpl, silently ignore it.
     import matplotlib as mpl
-except ImportError:
+except ImportError as e:
     mpl = None
+    _mpl_import_error = e
+
 from scipy import sparse, ndimage
 
 import braingeneers.analysis as _analysis
@@ -55,6 +59,9 @@ class Organoid():
     def __init__(self, *args, XY, S, tau,
                  a, b, c, d,
                  C, k, Vr, Vt, Vp,
+                 # Type conversion function, which allows you to use
+                 # torch or different numpy dtypes or whatever.
+                 conv=np.asarray,
                  # STDP parameters
                  do_stdp=False,
                  stdp_smin=None, stdp_smax=None,
@@ -63,19 +70,26 @@ class Organoid():
 
         self.N = S.shape[0]
 
-        self.S = S
-        self.XY = XY
-        self.a, self.b, self.c, self.d = a, b, c, d
-        self.C, self.k, = C, k
-        self.Vr, self.Vt, self.Vp = Vr, Vt, Vp
-        self.tau = tau
-        self.VUIJ = np.zeros((4, self.N))
+        self.S = conv(S)
+        self.XY = conv(XY)
+        self.a = conv(a)
+        self.b = conv(b)
+        self.c = conv(c)
+        self.d = conv(d)
+        self.C = conv(C)
+        self.k = conv(k)
+        self.Vr = conv(Vr)
+        self.Vt = conv(Vt)
+        self.Vp = conv(Vp)
+        self.tau = conv(tau)
+        self.VUIJ = conv(np.zeros((4,self.N)))
 
         self.stdp_tau = stdp_tau
         self.stdp_Aplus = stdp_Aplus
         self.stdp_Aminus = stdp_Aminus or stdp_Aplus * 1.05
         self.stdp_smin = stdp_smin
         self.stdp_smax = stdp_smax
+
 
         # Calculate the `learnability' parameter, which determines
         # whether each cell is affected by Hebbian, reverse Hebbian,
@@ -316,6 +330,9 @@ class Ca2tImage():
     def __init__(self, cell_position, cell_size,
                  tau, reactivity, fig=None, **kwargs):
 
+        if _mpl_import_error is not None:
+            raise _mpl_import_error
+
         self.tau = tau
         self.X = np.zeros(cell_position.shape[1])
 
@@ -428,7 +445,8 @@ class OrganoidWrapper():
     # dt : (ms) is the dicretized slice of time of simulation (granularity?)
     # org : is instance Alex's Organoid() class
 
-    def __init__(self, N, input_scale=100, noise=0.1, dt=1, do_stdp=False):
+    def __init__(self, N, conv=np.asarray,
+                 input_scale=100, noise=0.1, dt=1, do_stdp=False):
 
         # Number of neurons, followed by the number which are excitatory.
         Ne = int(0.8 * N)
@@ -460,7 +478,7 @@ class OrganoidWrapper():
         # mV : threshold voltage at u=0
         Vt = np.hstack((-40*l[:Ne], -42 + 2*r[Ne:]))
         # mV : peak cutoff of action potentials
-        Vp = 30
+        Vp = [30]
 
         # tau : ms time constant of synaptic current
         tau = np.hstack((5*l[:Ne], 20*l[Ne:]))
@@ -488,7 +506,7 @@ class OrganoidWrapper():
         S *= _analysis.small_world(XY / 12, plocal=0.5, beta=beta)
 
         # Create the actual Organoid.
-        org = Organoid(XY=XY, S=S, tau=tau,
+        org = Organoid(XY=XY, S=S, tau=tau, conv=conv,
                        a=a, b=b, c=c, d=d,
                        k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp,
                        do_stdp=do_stdp,
