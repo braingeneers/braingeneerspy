@@ -10,6 +10,13 @@ except ImportError as e:
     mpl = None
     _mpl_import_error = e
 
+_torch_import_error = None
+try:
+    import torch
+except ImportError as e:
+    torch = None
+    _torch_import_error = e
+
 from scipy import sparse, ndimage
 
 import braingeneers.analysis as _analysis
@@ -55,22 +62,42 @@ class Organoid():
      Vr: mV resting membrane voltage when u=0
      Vt: mV threshold voltage when u=0
      Vp: mV action potential peak, after which reset happens
+
+    Finally, there is an optional triplet STDP rule for unsupervised
+    learning, from Pfister and Gerstner, J. Neurosci. 26(38):9673.
+    An arbitrary weight maximum has been introduced, but the proper
+    way to do this is through synaptic scaling or homeostatic
+    modulation of intrinsic excitability (TODO).
+
+    The default parameters for STDP are taken from the same source,
+    which derived them from a fit to V1 data recorded by Sjoström.
     """
     def __init__(self, *args, XY, S, tau,
                  a, b, c, d,
                  C, k, Vr, Vt, Vp,
-                 # Type conversion function, which allows you to use
-                 # torch or different numpy dtypes or whatever.
-                 conv=np.asarray,
-                 # STDP parameters
-                 do_stdp=False,
-                 stdp_smin=None, stdp_smax=None,
-                 stdp_tau=25, inhibitory_learn=True,
-                 stdp_Aplus=0.005, stdp_Aminus=None):
+                 # Whether to use torch or numpy arrays.
+                 usetorch=False,
+                 # STDP parameters.
+                 do_stdp=False, stdp_tau_plus=15, stdp_tau_minus=35,
+                 stdp_tau_y=115, stdp_Aplus=6.5e-3, stdp_Aminus=7e-3):
 
-        self.N = S.shape[0]
+        try:
+            if usetorch:
+                conv = torch.FloatTensor
+                stack = torch.stack
+            else:
+                conv = partial(np.asarray, dtype=np.float32)
+                stack = np.vstack
+        except AttributeError:
+            raise _torch_import_error
+
+        # Awkwardly, we have to save these in order to deal with the
+        # differences between torch and numpy backends.
+        self._conv = conv
+        self._stack = stack
 
         self.S = conv(S)
+        self.N = S.shape[0]
         self.XY = conv(XY)
         self.a = conv(a)
         self.b = conv(b)
@@ -84,25 +111,15 @@ class Organoid():
         self.tau = conv(tau)
         self.VUIJ = conv(np.zeros((4,self.N)))
 
-        self.stdp_tau = stdp_tau
-        self.stdp_Aplus = stdp_Aplus
-        self.stdp_Aminus = stdp_Aminus or stdp_Aplus * 1.05
-        self.stdp_smin = stdp_smin
-        self.stdp_smax = stdp_smax
-
-
-        # Calculate the `learnability' parameter, which determines
-        # whether each cell is affected by Hebbian, reverse Hebbian,
-        # or no plasticity, based on whether learnability is 1, -1, or
-        # zero respectively. If inhibitory cells can learn, they
-        # should be reverse Hebbian.
-        if inhibitory_learn:
-            self.learnability = np.sign(self.S.sum(axis=0))
-        else:
-            self.learnability = self.S.sum(axis=0) > 0
-
-        self._stdp_trace = np.zeros_like(self.V)
+        # STDP by the triplet model of Pfister and Gerstner (2006).
+        # We store three synaptic traces at three different time
+        # constants.
         self.do_stdp = do_stdp
+        self.traces = conv(np.zeros((3,self.N)))
+        stdp_taus = [stdp_tau_plus, stdp_tau_minus, stdp_tau_y]
+        self.tau_stdp = conv([[tau] for tau in stdp_taus])
+        self.Aplus = stdp_Aplus
+        self.Aminus = stdp_Aminus
 
         self.reset()
 
@@ -117,7 +134,7 @@ class Organoid():
         Udot = self.a * (self.b*(self.V - self.Vr) - self.U)
         Idot = self.Jsyn / self.tau
         Jdot = -(self.Isyn + 2*self.Jsyn) / self.tau
-        return np.array([Vdot, Udot, Idot, Jdot])
+        return self._stack([Vdot, Udot, Idot, Jdot])
 
     def step(self, dt, Iin):
         """
@@ -131,16 +148,30 @@ class Organoid():
         fired = self.fired
         self.V[fired] = self.c[fired]
         self.U[fired] += self.d[fired]
-
-        # Isyn stores the PREsynaptic activation now, which means that
-        # you can actually have different synaptic time constants on a
-        # per-cell basis. All this requires is getting rid of a stupid
-        # premature optimization.
         self.Jsyn[fired] += 1
+
+        if self.do_stdp:
+            any = fired.any()
+
+            if any:
+                # Update for presynaptic spikes.
+                pre_mod = self.Aminus*self.traces[1,fired]
+                self.S[:,fired] -= pre_mod
+
+                # Update for postsynaptic spikes.
+                post_mod = self.traces[0,:] * self.traces[2,fired,None]
+                self.S[fired,:] += self.Aplus * post_mod
+
+            # Even if no cells fired, the traces decay
+            self.traces *= np.exp(dt / self.tau_stdp)
+
+            # Cells which fired increment their traces.
+            if any: self.traces[:,fired] += 1
 
         # Actually do the stepping, using the midpoint method for
         # integration. This costs as much as halving the timestep
         # would in forward Euler, but increases the order to 2.
+        Iin = self._conv(Iin)
         k1 = self.VUIJdot(Iin)
         self.VUIJ += k1 * dt/2
         k2 = self.VUIJdot(Iin)
@@ -155,34 +186,6 @@ class Organoid():
         self.fired = self.V >= self.Vp
         self.V[self.fired] = self.Vp
 
-        # Handle spike-timing-dependent plasticity if it is activated.
-        if self.do_stdp:
-            # The old synaptic trace decays with time constant stdp_tau.
-            self._stdp_trace *= np.exp(-dt / self.stdp_tau)
-
-            if np.any(self.fired):
-                # Cells which have positive STDP trace probably
-                # contributed to the firing of any cells which are
-                # active now. Increase their synaptic strength by a
-                # percentage proportional to the trace.
-                self.S[self.fired,:] *= 1 \
-                    + self.stdp_Aplus * self._stdp_trace
-
-                # Cells which fired now probably didn't contribute
-                # much to the STDP trace of other cells. Decrease the
-                # strength of those synapses by a percentage
-                # proportional to the trace.
-                self.S.T[self.fired,:] *= 1 \
-                    - self.stdp_Aminus * self._stdp_trace
-
-                # If a min or max value is provided, clip the synaptic
-                # weights to not exceed those bounds.
-                if self.stdp_smin or self.stdp_smax:
-                    np.clip(self.S, self.stdp_smin, self.stdp_smax,
-                            out=self.S)
-
-                # Add entries to the trace for current firings.
-                self._stdp_trace[self.fired] = self.learnability[self.fired]
 
     @property
     def V(self):
@@ -445,7 +448,7 @@ class OrganoidWrapper():
     # dt : (ms) is the dicretized slice of time of simulation (granularity?)
     # org : is instance Alex's Organoid() class
 
-    def __init__(self, N, conv=np.asarray,
+    def __init__(self, N, usetorch=True,
                  input_scale=100, noise=0.1, dt=1, do_stdp=False):
 
         # Number of neurons, followed by the number which are excitatory.
@@ -506,11 +509,10 @@ class OrganoidWrapper():
         S *= _analysis.small_world(XY / 12, plocal=0.5, beta=beta)
 
         # Create the actual Organoid.
-        org = Organoid(XY=XY, S=S, tau=tau, conv=conv,
+        org = Organoid(XY=XY, S=S, tau=tau, usetorch=usetorch,
                        a=a, b=b, c=c, d=d,
                        k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp,
-                       do_stdp=do_stdp,
-                       stdp_smin=5*S.min(), stdp_smax=5*S.max())
+                       do_stdp=do_stdp)
 
         self.org = org
         self.N = N
