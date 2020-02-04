@@ -48,8 +48,16 @@ class Organoid():
 
     The model represents the excitability of a neuron using three
     phase variables: the membrane voltage v : mV, the "recovery" or
-    "leakage" current u : pA, and the total synaptic input to each
-    cell Isyn : pA.
+    "leakage" current u : pA, and the synaptic activation at each
+    cell, a unitless A.
+
+    The synapses in the updated model are conductance-type, with
+    synaptic conductance following the alpha function of the synaptic
+    actiavtion times the peak conductance G[i,j]. This adds another
+    parameter to each cell: the Nernst reversal potential Vn of its
+    neurotransmitter. Synaptic activation pulls the membrane voltage
+    of the postsynaptic cell towards the reversal potential of the
+    presynaptic cell.
 
     Additionally, the excitation model contains the following static
     parameters, on a per cell basis by providing arrays of size (N,):
@@ -62,6 +70,8 @@ class Organoid():
      Vr: mV resting membrane voltage when u=0
      Vt: mV threshold voltage when u=0
      Vp: mV action potential peak, after which reset happens
+    tau: ms time constant for synaptic activation
+     Vn: mV Nernst potential of the cell's neurotransmitter
 
     Finally, there is an optional triplet STDP rule for unsupervised
     learning, from Pfister and Gerstner, J. Neurosci. 26(38):9673.
@@ -72,9 +82,9 @@ class Organoid():
     The default parameters for STDP are taken from the same source,
     which derived them from a fit to V1 data recorded by Sjoström.
     """
-    def __init__(self, *args, XY, S, tau,
+    def __init__(self, *args, XY, G, tau,
                  a, b, c, d,
-                 C, k, Vr, Vt, Vp,
+                 C, k, Vr, Vt, Vp, Vn,
                  # Whether to use torch or numpy arrays.
                  usetorch=False,
                  # STDP parameters.
@@ -96,8 +106,8 @@ class Organoid():
         self._conv = conv
         self._stack = stack
 
-        self.S = conv(S)
-        self.N = S.shape[0]
+        self.G = conv(G)
+        self.N = G.shape[0]
         self.XY = conv(XY)
         self.a = conv(a)
         self.b = conv(b)
@@ -108,8 +118,9 @@ class Organoid():
         self.Vr = conv(Vr)
         self.Vt = conv(Vt)
         self.Vp = conv(Vp)
+        self.Vn = conv(Vn)
         self.tau = conv(tau)
-        self.VUIJ = conv(np.zeros((4,self.N)))
+        self.VUA = conv(np.zeros((4,self.N)))
 
         # STDP by the triplet model of Pfister and Gerstner (2006).
         # We store three synaptic traces at three different time
@@ -124,17 +135,18 @@ class Organoid():
         self.reset()
 
     def reset(self):
-        self.VUIJ[0,:] = self.Vr
+        self.VUA[0,:] = self.Vr
         self.fired = self.V >= self.Vp
-        self.VUIJ[1:,:] = 0
+        self.VUA[1:,:] = 0
 
-    def VUIJdot(self, Iin):
+    def VUAdot(self, Iin):
         NAcurrent = self.k*(self.V - self.Vr)*(self.V - self.Vt)
-        Vdot = (NAcurrent - self.U + self.S@self.Isyn + Iin) / self.C
+        syncurrent = self.G@(self.A * self.Vn) - (self.G@self.A) * self.V
+        Vdot = (NAcurrent - self.U + syncurrent + Iin) / self.C
         Udot = self.a * (self.b*(self.V - self.Vr) - self.U)
-        Idot = self.Jsyn / self.tau
-        Jdot = -(self.Isyn + 2*self.Jsyn) / self.tau
-        return self._stack([Vdot, Udot, Idot, Jdot])
+        Adot = self.Adot / self.tau
+        Addot = -(self.A + 2*self.Adot) / self.tau
+        return self._stack([Vdot, Udot, Adot, Addot])
 
     def step(self, dt, Iin):
         """
@@ -148,7 +160,7 @@ class Organoid():
         fired = self.fired
         self.V[fired] = self.c[fired]
         self.U[fired] += self.d[fired]
-        self.Jsyn[fired] += 1
+        self.Adot[fired] += 1
 
         if self.do_stdp:
             any = fired.any()
@@ -156,11 +168,11 @@ class Organoid():
             if any:
                 # Update for presynaptic spikes.
                 pre_mod = self.Aminus*self.traces[1,fired]
-                self.S[:,fired] -= pre_mod
+                self.G[:,fired] -= pre_mod
 
                 # Update for postsynaptic spikes.
                 post_mod = self.traces[0,:] * self.traces[2,fired,None]
-                self.S[fired,:] += self.Aplus * post_mod
+                self.G[fired,:] += self.Aplus * post_mod
 
             # Even if no cells fired, the traces decay
             self.traces *= np.exp(dt / self.tau_stdp)
@@ -172,10 +184,10 @@ class Organoid():
         # integration. This costs as much as halving the timestep
         # would in forward Euler, but increases the order to 2.
         Iin = self._conv(Iin)
-        k1 = self.VUIJdot(Iin)
-        self.VUIJ += k1 * dt/2
-        k2 = self.VUIJdot(Iin)
-        self.VUIJ += k2*dt - k1*dt/2
+        k1 = self.VUAdot(Iin)
+        self.VUA += k1 * dt/2
+        k2 = self.VUAdot(Iin)
+        self.VUA += k2*dt - k1*dt/2
 
         # Make a note of which cells this step has caused to fire,
         # then correct their membrane voltages down to the peak.  This
@@ -189,35 +201,35 @@ class Organoid():
 
     @property
     def V(self):
-        return self.VUIJ[0,:]
+        return self.VUA[0,:]
 
     @V.setter
     def V(self, value):
-        self.VUIJ[0,:] = value
+        self.VUA[0,:] = value
 
     @property
     def U(self):
-        return self.VUIJ[1,:]
+        return self.VUA[1,:]
 
     @U.setter
     def U(self, value):
-        self.VUIJ[1,:] = value
+        self.VUA[1,:] = value
 
     @property
-    def Isyn(self):
-        return self.VUIJ[2,:]
+    def A(self):
+        return self.VUA[2,:]
 
-    @Isyn.setter
-    def Isyn(self, value):
-        self.VUIJ[2,:] = value
+    @A.setter
+    def A(self, value):
+        self.VUA[2,:] = value
 
     @property
-    def Jsyn(self):
-        return self.VUIJ[3,:]
+    def Adot(self):
+        return self.VUA[3,:]
 
-    @Jsyn.setter
-    def Jsyn(self, value):
-        self.VUIJ[3,:] = value
+    @Adot.setter
+    def Adot(self, value):
+        self.VUA[3,:] = value
 
 
 class ChargedMedium():
@@ -483,36 +495,48 @@ class OrganoidWrapper():
         # mV : peak cutoff of action potentials
         Vp = [30]
 
+        # mV : Nernst synaptic reversal potential. This is the
+        #      parameter that differentiates between excitatory
+        #      and inhibitory cells.
+        Vn = np.hstack((0*l[:Ne], -70*l[Ne:]))
+
         # tau : ms time constant of synaptic current
         tau = np.hstack((5*l[:Ne], 20*l[Ne:]))
 
         #------------------------------------------
-
-        # Sij : fC total postsynaptic charge injected into
-        #       neuron i when neuron j fires. Song (2005)
-        #       provide an empirical distribution for EPSPs.
+        # Gij : nS peak synaptic conductance at the input to
+        #       neuron i when neuron j fires. Song et al. (2005)
+        #       provide an empirical distribution for EPSPs. The
+        #       corresponding synaptic conductance is calculated
+        #       by assuming that voltage is into a capacitance of
+        #       100pF for a time 5ms and finding the equivalent
+        #       conductance under a voltage difference of 60mV.
+        #       This works out to a conversion factor of 1nS/3mV.
         mu, sigma = -0.702, 0.9355
-        S = np.random.lognormal(mean=mu, sigma=sigma, size=(N,N))
-        # Then convert the EPSPs to injected synaptic charge.
-        S *= np.mean(C / tau)
-        S[:,Ne:] *= -4
+        G = 1/3 * np.random.lognormal(mean=mu, sigma=sigma, size=(N,N))
+        # Inhibitory synapses are stronger because there are 4x fewer.
+        G[:,Ne:] *= 4
 
         # XY : um planar positions of the cells,
-        # dij : um distances between cells
         XY = np.random.rand(2,N) * 75
 
         # Use those positions to generate random small-world
         # connectivity using the modified Watts-Strogatz algorithm
-        # from the braingeneers.analysis sublibrary.
+        # from the braingeneers.analysis sublibrary. I've chosen
+        # a characteristic length scale of 12μm and local connection
+        # probability within that region of 50%. Then, only excitatory
+        # synapses have a 5% chance of rewiring to a distant neighbor.
+        # This is a boolean connectivity matrix, which is used to
+        # delete most of the synapses.
         beta = np.zeros((1,N))
         beta[:Ne] = 5e-2
-        S *= _analysis.small_world(XY / 12, plocal=0.5, beta=beta)
+        G *= _analysis.small_world(XY / 12, plocal=0.5, beta=beta)
 
         # Create the actual Organoid.
-        org = Organoid(XY=XY, S=S, tau=tau, usetorch=usetorch,
+        org = Organoid(XY=XY, G=G, tau=tau,
                        a=a, b=b, c=c, d=d,
-                       k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp,
-                       do_stdp=do_stdp)
+                       k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp, Vn=Vn,
+                       usetorch=usetorch, do_stdp=do_stdp)
 
         self.org = org
         self.N = N
@@ -547,9 +571,9 @@ class OrganoidWrapper():
         org.step(interval, Iin())
 
         #return arry of outputs
-        return org.Isyn
+        return org.A
 
     # -------------- synapses()-------------------
     # return the current synaptic weight/connectivity matrix of organoid
     def synapses(self):
-        return self.org.S
+        return self.org.G
