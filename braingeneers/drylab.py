@@ -23,21 +23,20 @@ import braingeneers.analysis as _analysis
 
 
 # A map from neuron type abbreviation to ordered list of parameters
-# a, b, c, d, C, k, Vr, Vt from Dynamical Systems in Neuroscience.
-# NB: many of these models have some extra bonus features in the book,
-# used to more accurately reproduce traces from electrophysiological
-# experiments in the appropriate model organisms. In particular,
+# a, b, c, d, C, k, Vr, Vt, Vp, Vn, and tau from Dynamical Systems in
+# Neuroscience.  NB: many of these models have some extra bonus
+# features in the book, used to more accurately reproduce traces from
+# electrophysiological experiments in the appropriate model
+# organisms. In particular,
 #  - LTS caps the value of u but (along with a few other types) allows
 #     it to influence the effective value of spike threshold and c.
-#  - I can't implement FS yet because its u nullcline is nonlinear.
 #  - Several other types have PWL u nullclines.
-#  - Different cell types have different spike thresholds.
 NEURON_TYPES = {
-    'rs':  [0.03, -2, -50, 100, 100, 0.7, -60, -40],
-    'ib':  [0.01,  5, -56, 130, 150, 1.2, -75, -45],
-    'ch':  [0.03,  1, -40, 150,  50, 1.5, -60, -40],
-    'lts': [0.03,  8, -53,  20, 100, 1.0, -56, -42],
-    'ls':  [0.17,  5, -45, 100,  20, 0.3, -66, -40]}
+    'rs':  [0.03, -2, -50, 100, 100, 0.7, -60, -40, 35,   0,  5],
+    'ib':  [0.01,  5, -56, 130, 150, 1.2, -75, -45, 50,   0,  5],
+    'ch':  [0.03,  1, -40, 150,  50, 1.5, -60, -40, 25,   0,  5],
+    'lts': [0.03,  8, -53,  20, 100, 1.0, -56, -42, 20, -70, 20],
+    'ls':  [0.17,  5, -45, 100,  20, 0.3, -66, -40, 30, -70, 20]}
 
 
 class Organoid():
@@ -82,9 +81,8 @@ class Organoid():
     The default parameters for STDP are taken from the same source,
     which derived them from a fit to V1 data recorded by Sjoström.
     """
-    def __init__(self, *args, XY, G, tau,
-                 a, b, c, d,
-                 C, k, Vr, Vt, Vp, Vn,
+    def __init__(self, *, XY=None, G,
+                 a, b, c, d, C, k, Vr, Vt, Vp, Vn, tau,
                  # Whether to use torch or numpy arrays.
                  usetorch=False,
                  # STDP parameters.
@@ -108,7 +106,8 @@ class Organoid():
 
         self.G = conv(G)
         self.N = G.shape[0]
-        self.XY = conv(XY)
+        if XY is not None:
+            self.XY = conv(XY)
         self.a = conv(a)
         self.b = conv(b)
         self.c = conv(c)
@@ -196,7 +195,7 @@ class Organoid():
         # this point to self.c, but that's not possible here since we
         # don't save all states.
         self.fired = self.V >= self.Vp
-        self.V[self.fired] = self.Vp
+        self.V[self.fired] = self.Vp[self.fired]
 
 
     @property
