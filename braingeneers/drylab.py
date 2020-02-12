@@ -452,69 +452,57 @@ class ElectrodeArray():
 
 
 class OrganoidWrapper():
-    # -------------- __init__()-------------------
-    # N : number of cells in organoid == size of input vector
-    # noise : fraction of noise added to input
-    # input_scale : default is 100 if normalized input to 1
-    # dt : (ms) is the dicretized slice of time of simulation (granularity?)
-    # org : is instance Alex's Organoid() class
+    def __init__(self, N, usetorch=True, input_scale=200, noise=0.1, dt=1, do_stdp=False):
+        """
+        Wraps an Organoid with easier initialization and timestepping
+        for machine learning applications. An Organoid with N cells is
+        constructed; this has been tested mostly at N=1000, so if you
+        have a different number of inputs, use an input matrix that
+        assigns each input to a random subset of neurons.
 
-    def __init__(self, N, usetorch=True,
-                 input_scale=100, noise=0.1, dt=1, do_stdp=False):
+        Inputs are prescaled to convert from unitless values to
+        currents; the default value of 200 is tuned towards inputs in
+        the range (0,1). Additionally, random noise is added to the
+        input before injecting it to the Organoid, with SNR=noise.
 
-        # Number of neurons, followed by the number which are excitatory.
+        Simulations are run with the timestep dt, and you can select
+        whether to use the torch backend and whether to attempt to
+        ``learn'' using STDP by passing keyword arguments.
+        """
+
+        # Let 80% of neurons be excitatory as observed in vivo.
         Ne = int(0.8 * N)
-        #So, inhibitory == N-Ne
 
-        # Used for constructing nonhomogeneous neural populations,
-        # interpolated between two types based on the value of
-        # r ∈ [0,1]. Excitatory neurons go from Regular Spiking
-        # to Chattering, while inhibitory neurons go from
-        # Low-Threshold Spiking to Late Spiking models over the
-        # same range. Adapted from Izhikevich's writings.
-        r = np.random.rand(N) # unitless
-        l = np.ones(N) # unitless
+        # We're going to assign cells to four different types:
+        # excitatory cells linearly interpolate between RS and Ch, and
+        # inhibitory cells between LTS and LS. The weights are random,
+        # but with different distributions: inhibitory identity is
+        # uniform, whereas excitatory identity is squared to create a
+        # bias towards RS cells, which are more common in vivo.
+        identity = np.random.rand(N)
+        celltypes = np.zeros((4,N))
+        celltypes[0,:Ne] = identity[:Ne]**2
+        celltypes[1,:Ne] = 1 - celltypes[0,:Ne]
+        celltypes[2,Ne:] = identity[Ne:]
+        celltypes[3,Ne:] = 1 - celltypes[2,Ne:]
 
-        # a : 1/ms recovery time constant of membrane leak currents
-        a = np.hstack((0.03*l[:Ne], 0.03 + 0.14*r[Ne:]))
-        # b : nS recovery conductivity
-        b = np.hstack((-2 + 3*r[:Ne]**2, 8 - 3*r[Ne:]))
-        # c : mV voltage of the downstroke
-        c = np.hstack((-50 + 10*r[:Ne]**2, -53 + 8*r[Ne:]))
-        # d : pA instantaneous increase in leakage during downstroke
-        d = np.hstack((100 + 50*r[:Ne]**2, 20 + 80*r[Ne:]))
-        # C : pF membrane capacitance
-        C = np.hstack((100 - 50*r[:Ne]**2, 100 - 80*r[Ne:]))
-        # k : nS/mV Na+ voltage-gated channel conductivity parameter
-        k = np.hstack((0.7 + 0.8*r[:Ne]**2, 1 - 0.7*r[Ne:]))
-        # mV : resting membrane voltage
-        Vr = np.hstack((-60*l[:Ne], -56 - 10*r[Ne:]))
-        # mV : threshold voltage at u=0
-        Vt = np.hstack((-40*l[:Ne], -42 + 2*r[Ne:]))
-        # mV : peak cutoff of action potentials
-        Vp = [30]
+        # Stack the parameters of each type into one array.
+        typeparams = np.array([
+            NEURON_TYPES['rs'],
+            NEURON_TYPES['ch'],
+            NEURON_TYPES['lts'],
+            NEURON_TYPES['ls']])
 
-        # mV : Nernst synaptic reversal potential. This is the
-        #      parameter that differentiates between excitatory
-        #      and inhibitory cells.
-        Vn = np.hstack((0*l[:Ne], -70*l[Ne:]))
+        # Compute the parameters by interpolation.
+        a, b, c, d, C, k, Vr, Vt, Vp, Vn, tau = typeparams.T @ celltypes
 
-        # tau : ms time constant of synaptic current
-        tau = np.hstack((5*l[:Ne], 20*l[Ne:]))
-
-        #------------------------------------------
-        # Gij : nS peak synaptic conductance at the input to
-        #       neuron i when neuron j fires. Song et al. (2005)
-        #       provide an empirical distribution for EPSPs. The
-        #       corresponding synaptic conductance is calculated
-        #       by assuming that voltage is into a capacitance of
-        #       100pF for a time 5ms and finding the equivalent
-        #       conductance under a voltage difference of 60mV.
-        #       This works out to a conversion factor of 1nS/3mV.
-        mu, sigma = -0.702, 0.9355
-        G = 1/3 * np.random.lognormal(mean=mu, sigma=sigma, size=(N,N))
+        # Synaptic conductances are lognormally distributed; the
+        # parameters were originally derived from a biological source
+        # describing the distribution in rat V1, but in theory the
+        # actual values shouldn't be very important.
+        G = np.random.lognormal(mean=-1.8, sigma=0.94, size=(N,N))
         # Inhibitory synapses are stronger because there are 4x fewer.
-        G[:,Ne:] *= 4
+        G[:,Ne:] *= 8
 
         # XY : um planar positions of the cells,
         XY = np.random.rand(2,N) * 75
@@ -522,40 +510,50 @@ class OrganoidWrapper():
         # Use those positions to generate random small-world
         # connectivity using the modified Watts-Strogatz algorithm
         # from the braingeneers.analysis sublibrary. I've chosen
-        # a characteristic length scale of 12μm and local connection
+        # a characteristic length scale of 10μm and local connection
         # probability within that region of 50%. Then, only excitatory
-        # synapses have a 5% chance of rewiring to a distant neighbor.
+        # synapses have a 2.5% chance of rewiring to a distant neighbor.
         # This is a boolean connectivity matrix, which is used to
         # delete most of the synapses.
         beta = np.zeros((1,N))
-        beta[:Ne] = 5e-2
-        G *= _analysis.small_world(XY / 12, plocal=0.5, beta=beta)
+        beta[:Ne] = 2.5e-2
+        G *= _analysis.small_world(XY/10, plocal=0.5, beta=beta)
 
-        # Create the actual Organoid.
-        org = Organoid(XY=XY, G=G, tau=tau,
-                       a=a, b=b, c=c, d=d,
-                       k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp, Vn=Vn,
-                       usetorch=usetorch, do_stdp=do_stdp)
-
-        self.org = org
+        self.org = Organoid(XY=XY, G=G, tau=tau, a=a, b=b, c=c, d=d,
+                            k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp, Vn=Vn,
+                            usetorch=usetorch, do_stdp=do_stdp)
         self.N = N
         self.noise = noise
         self.dt = dt
         self.input_scale = input_scale
 
 
-    # -------------- step() -------------------
-    #
-    # input : inside step(), we multiply input array by ~100 because
-    # cells are excited ~100pA if constant input (200ms, couple
-    # hunderd) activation of ~50pA is enough to excite
-    # a noise factor is added to the input
-    #
-    # Check: input must be same dimensions as organoid N (no error checking)
-    # interval :  (ms) is duration to run simulation
-    # return: synaptic currents of all cells
+    def total_firings(self, input, interval):
+        """
+        Simulates the Organoid for a time interval subject to a fixed
+        input current, and returns an array containing the number of
+        firings for each cell during that time.
+        """
+        sigma = self.noise * self.input_scale
+        Iin = lambda: (self.input_scale * input
+                       + sigma * np.random.rand(self.N))
 
-    def step(self, input, interval):
+        firings = np.zeros(self.N)
+        while interval > self.dt:
+            self.org.step(self.dt, Iin())
+            firings[self.org.fired] += 1
+            interval -= self.dt
+        self.org.step(interval, Iin())
+
+        return firings
+
+
+    def activation_after(self, input, interval):
+        """
+        Simulates the Organoid for a time interval subject to a fixed
+        input current, and returns the array of presynaptic
+        activations at the end of that time.
+        """
         org = self.org
         num_inputs = self.N
 
@@ -563,16 +561,13 @@ class OrganoidWrapper():
         Iin = lambda: (self.input_scale * input
                        + sigma * np.random.rand(self.N))
 
-        # Run the loop.
         while interval > self.dt:
             org.step(self.dt, Iin())
             interval -= self.dt
         org.step(interval, Iin())
 
-        #return arry of outputs
         return org.A
 
-    # -------------- synapses()-------------------
-    # return the current synaptic weight/connectivity matrix of organoid
     def synapses(self):
+        "Retrieves the synaptic strengths from the organoid."
         return self.org.G
