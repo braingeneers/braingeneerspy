@@ -159,10 +159,15 @@ def list_files_in_batch(uuid):
     full_path = "{}/derived/{}".format(get_archive_path(), uuid)
     return os.listdir(full_path)
 
-def load_file(uuid, file):
+
+def load_file2(uuid, file):
     """
     Load a file from a specific batch (uuid)
     """
     full_path = "{}/derived/{}/{}".format(get_archive_path(), uuid, file)
     #print(full_path)
-    return np.load(full_path)
+    if file[-3:] =='npy':
+        return np.load(full_path)
+    elif file[-4:]=='json':
+        with open(full_path, "r") as f:
+            return json.load(f)
