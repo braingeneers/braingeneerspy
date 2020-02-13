@@ -160,7 +160,7 @@ def list_files_in_batch(uuid):
     return os.listdir(full_path)
 
 
-def load_file2(uuid, file):
+def load_file(uuid, file):
     """
     Load a file from a specific batch (uuid)
     """
