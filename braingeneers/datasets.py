@@ -144,16 +144,25 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     return X, t, fs
 
 
-def list_files_in_derived():
+def list_batches_in_derived():
+    """
+    Lists all the batches that are in derived
+    """
     full_path = "{}/derived/".format(get_archive_path())
     return os.listdir(full_path)
 
 
-def list_files_in_uuid(uuid):
+def list_files_in_batch(uuid):
+    """
+    Lists all the files in the batch (uuid)
+    """
     full_path = "{}/derived/{}".format(get_archive_path(), uuid)
     return os.listdir(full_path)
 
-def load_numpy(uuid, file):
+def load_file(uuid, file):
+    """
+    Load a file from a specific batch (uuid)
+    """
     full_path = "{}/derived/{}/{}".format(get_archive_path(), uuid, file)
     #print(full_path)
     return np.load(full_path)
