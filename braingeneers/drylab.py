@@ -244,6 +244,66 @@ class Organoid():
         self.VUA[3,:] = value
 
 
+def pointwise_distance(As, Bs):
+    """
+    Given two sets As and Bs of m and n Cartesian coordinates in R^k
+    with shape (k,m1,...,ma) and (k,n1,...,nb) respectively, return an
+    array of Euclidean distances between those points with shape
+    (m1,...,ma,n1,...,nb).
+    """
+    As, Bs = np.asarray(As), np.asarray(Bs)
+    nda = len(As.shape) - 1
+    ndb = len(Bs.shape) - 1
+
+    colon = slice(None)
+    As = As[(colon,...,) + (None,)*ndb]
+    Bs = Bs[(colon,) + (None,)*nda + (...,)]
+    return np.linalg.norm(As - Bs, axis=0, ord=2)
+
+
+class DipoleOrganoid(Organoid):
+    """
+    An extension o the above Organoid class for fast computation of
+    extracellular potentials: each cell is modeled as a pure dipole,
+    with all currents entering at the soma and exiting at the end.
+    """
+    def __init__(self, *, XY, dXdY, **kw):
+        super().__init__(XY=XY, **kw)
+        self.dXdY = dXdY
+
+    def probe_at(self, points, radius=5):
+        dijA = radius + pointwise_distance(points, self.XY)
+        dijB = radius + pointwise_distance(points, self.XY + self.dXdY)
+        Itot = self.Idyn + self.Isyn
+        return -1/(4*np.pi*0.3) * (1/dijA - 1/dijB) @ Itot
+
+
+class TripoleOrganoid(Organoid):
+    """
+    An extension of the above Organoid class for fast computation of
+    extracellular potentials: each cell is modeled as a pair of
+    dipoles with dynamical currents entering at the soma and exiting
+    at the "axon" end, whereas synaptic currents enter at the dendrites
+    but exit at the soma.
+    """
+    def __init__(self, *, XY, dXdY_axon, dXdY_dend, **kw):
+        super().__init__(XY=XY, **kw)
+        self.dax = dXdY_axon
+        self.dde = dXdY_dend
+
+    def probe_at(self, points, radius=5):
+        dijS = radius + pointwise_distance(points, self.XY)
+        dijA = radius + pointwise_distance(points, self.XY + self.dax)
+        dijD = radius + pointwise_distance(points, self.XY + self.dde)
+        VA = (1/dijA - 1/dijS) @ self.Idyn
+        VD = (1/dijS - 1/dijD) @ self.Isyn
+        return -1/(4*np.pi*0.3) * (VA + VD)
+
+
+
+
+
+
 class ChargedMedium():
     """
     Models the evolution of charge distribution with time in a medium
@@ -406,59 +466,6 @@ def _gen_frame_events(dt, events):
             evs = []
         evs.append((T - time, cell))
 
-
-class ElectrodeArray():
-    """
-    An electrical microelectrode array: a rectangular grid where
-    each point stimulates nearby cells in a Neurons object.
-
-    You pass a specification of the grid geometry, then an amount
-    of activation per pin (input should have the same shape as the
-    grid), and the array becomes a callable that can be
-    """
-    def __init__(self, *args,
-                 spacing=None, shape=None, dimensions=None,
-                 points=None, offset=(0,0), radius=10,
-                 activation):
-        if points is None:
-            if dimensions is None:
-                px, py = np.mgrid[:shape[0], :shape[1]] * spacing
-            elif shape is None:
-                try: spacing[0]
-                except TypeError as _:
-                    spacing = [spacing, spacing]
-                px, py = np.mgrid[:dimensions[0]:spacing[0],
-                                  :dimensions[1]:spacing[1]]
-            elif spacing is None:
-                px, py = np.mgrid[:dimensions[0]:shape[0]*1j,
-                                  :dimensions[1]:shape[1]*1j]
-            px = px.flatten() # - px.mean()
-            py = py.flatten() # - py.mean()
-            points = np.array((px, py))
-
-        self.points = points + np.asarray(offset).reshape((2,1))
-        self.activation = activation
-        self.radius = radius
-
-    def insert(self, org, vr, alpha):
-        """
-        Insert this array into an organoid. Precomputes the connectivity
-        matrix from the array's inputs to the cells. You need to provide
-        the resting voltages vr and a per-cell scaling alpha as well.
-        """
-        # The distance from the ith cell to the jth probe.
-        dij = org.XY.reshape((2,-1,1)) - self.points.reshape((2,1,-1))
-        dij = np.linalg.norm(dij / self.radius, axis=0, ord=2)
-        self.M = 1 / np.maximum(1, dij)
-        self.M = np.diag(alpha) @ self.M
-        self.org = org
-        self.vr = vr
-
-    def Vprobe(self):
-        return self.M.T @ (self.vr - self.org.V)
-
-    def Iout(self, t):
-        return self.M @ self.activation(t)
 
 
 class OrganoidWrapper():
