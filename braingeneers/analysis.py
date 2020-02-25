@@ -1,6 +1,60 @@
 import numpy as np
-import scipy.stats
+from scipy import stats, sparse
 
+
+def sparse_raster(times, idces, cells=None, bin_size=20):
+    '''
+    Given a list of spike times and the corresponding cells which
+    produced them, bin the spike times and create a sparse matrix
+    where entry (i,j) is the number of times cell i fired in bin j.
+
+    You can specify which cells should and should not be included in
+    the resulting sparse matrix by providing an interable of cell
+    indices in the parameter cells. Alternately, you can provide a
+    number of cells, in which case it is replaced by a range.
+    '''
+    # We're going to need to iterate over the cells more than once, so
+    # convert them to a list; if they're not a list yet, assume
+    # they're just a single integer, and replace them with a range.
+    try:
+        cells = list(cells)
+    except TypeError:
+        cells = np.arange(cells)
+
+    indices = np.hstack([times[idces == i] // bin_size for i in cells])
+    indptr = np.cumsum([0] + [(idces == i).sum() for i in cells])
+    return sparse.csr_matrix((np.ones_like(indices), indices, indptr))
+
+
+def pearson(sparse_raster):
+    '''
+    Compute a Pearson correlation coefficient matrix for a sparse
+    spike raster in the format produced by sparse_raster(). Don't use
+    this method unless the spike raster is sparse: it's numerically
+    worse than the standard method used by scipy for dense matrices.
+    '''
+    spikes = sparse_raster
+
+    Exy = (spikes @ spikes.T) / spikes.shape[1]
+    Ex = np.array(spikes.mean(axis=1))
+
+    # Calculating std is convoluted
+    spikes2 = spikes.copy()
+    spikes2.data **= 2
+    Ex2 = np.array(spikes2.mean(axis=1))
+    σx = np.sqrt(Ex2 - Ex**2)
+
+    # Some cells won't fire in the whole observation window.
+    # These should be treated as uncorrelated with everything
+    # else, rather than generating infinice Pearson coefficients.
+    σx[σx == 0] = np.inf
+
+    # This is by the formula, but there's also a hack to deal with the
+    # numerical issues that break the invariant that every variable
+    # should have a Pearson autocorrelation of 1.
+    corr = np.array(Exy - Ex*Ex.T) / (σx*σx.T)
+    np.fill_diagonal(corr, 1)
+    return corr
 
 def temporal_binning(spike_times, bin_size=40):
     """
@@ -77,7 +131,8 @@ def vuong(data, A, B, deltaK=None):
     stat = LR / omega / np.sqrt(len(data))
 
     # Return the statistic and its quantile on the standard normal.
-    return stat, scipy.stats.norm.cdf(stat)
+    return stat, stats.norm.cdf(stat)
+
 
 def small_world(XY, plocal, beta):
     """
