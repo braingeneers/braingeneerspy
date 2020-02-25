@@ -13,13 +13,16 @@ def sparse_raster(times, idces, cells=None, bin_size=20):
     indices in the parameter cells. Alternately, you can provide a
     number of cells, in which case it is replaced by a range.
     '''
+    # These need to be numpy arrays.
+    times, idces = np.asarray(times), np.asarray(idces)
+
     # We're going to need to iterate over the cells more than once, so
     # convert them to a list; if they're not a list yet, assume
     # they're just a single integer, and replace them with a range.
     try:
         cells = list(cells)
     except TypeError:
-        cells = np.arange(cells)
+        cells = np.arange(cells if cells is not None else idces.max()+1)
 
     indices = np.hstack([times[idces == i] // bin_size for i in cells])
     indptr = np.cumsum([0] + [(idces == i).sum() for i in cells])
@@ -56,50 +59,37 @@ def pearson(sparse_raster):
     np.fill_diagonal(corr, 1)
     return corr
 
+
 def temporal_binning(spike_times, bin_size=40):
     """
-    Given a sorted list of spike times (with no channel or neuron
-    number information), quantizes time into intervals of bin_size
-    and counts the number of events in each bin.
+    Given an in-order iterable of spike times (with no channel or
+    neuron number information), quantizes time into intervals of
+    bin_size and counts the number of events in each bin.
     """
-    # Create enough bins to hold all the spikes.
-    n_bins = (spike_times[-1] + bin_size - 1) // bin_size
-    counts = np.zeros(n_bins, np.int)
-
-    # Put each spike in the appropriate bin.
+    bin, count = 1, 0
     for time in spike_times:
-        counts[time // bin_size] += 1
-    return counts
+        while time >= bin*bin_size:
+            yield count
+            bin, count = bin+1, 0
+        count += 1
+    yield count
 
 
 def get_avalanches(counts, thresh):
     """
     Given a list of spikes per bucket and a threshold number of spike
-    events above which a bucket is considered "active", return a list
-    of avalanches, represented as lists of counts per bucket.
+    events above which a bucket is considered "active", generate the
+    spike counts in each bucket.
     """
-    avalanches = []
-    this_one = []
+    this_av = []
     for count in counts:
         if count > thresh:
-            this_one.append(count)
-        elif len(this_one) != 0:
-            avalanches.append(this_one)
-            this_one = []
-    return avalanches
-
-
-def find_avalanches(counts, thresh):
-    """
-    Given a list of spikes per bucket and a threshold number of spike
-    events above which a bucket is considered "active", return the
-    sizes and durations of all the avalanches that would be returned
-    by get_avalanches with the same arguments.
-    """
-    avalanches = get_avalanches(counts, thresh)
-    sizes = [sum(av) for av in avalanches]
-    durations = [len(av) for av in avalanches]
-    return sizes, durations
+            this_av.append(count)
+        elif this_av:
+            yield this_av
+            this_av = []
+    if this_av:
+        yield this_av
 
 
 def vuong(data, A, B, deltaK=None):
