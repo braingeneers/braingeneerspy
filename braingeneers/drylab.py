@@ -2,24 +2,44 @@ from warnings import warn
 from functools import partial
 
 import numpy as np
+from scipy import sparse, ndimage
+import braingeneers.analysis as _analysis
 
-_mpl_import_error = None
-try: # If we don't have mpl, silently ignore it.
+# If we don't have matplotlib, create a dummy object instead that
+# raises an error if any attribute is requested, so that there is only
+# an ImportError if matplotlib is actually requested.
+try:
     import matplotlib as mpl
 except ImportError as e:
-    mpl = None
-    _mpl_import_error = e
+    class mpl():
+        def __init__(self, e):
+            self.e = e
+        def __getattr__(self, attr):
+            raise self.e
+    mpl = mpl(e)
 
-_torch_import_error = None
+# Create the default numpy backend.
+class backend_numpy():
+    array = partial(np.asarray, dtype=np.float32)
+    stack = np.stack
+    exp = np.exp
+
+# Try to import torch; if successful, create the torch backend,
+# otherwise create a fake backend that will error if used, like mpl.
 try:
     import torch
+    class backend_torch():
+        array = torch.FloatTensor
+        stack = torch.stack
+        exp = torch.exp
 except ImportError as e:
-    torch = None
-    _torch_import_error = e
+    class backend_torch():
+        def __init__(self, e):
+            self.e = e
+        def __getattr__(self, attr):
+            raise self.e
+    backend_torch = backend_torch(e)
 
-from scipy import sparse, ndimage
-
-import braingeneers.analysis as _analysis
 
 
 # A map from neuron type abbreviation to ordered list of parameters
@@ -69,8 +89,8 @@ class Organoid():
      Vr: mV resting membrane voltage when u=0
      Vt: mV threshold voltage when u=0
      Vp: mV action potential peak, after which reset happens
-    tau: ms time constant for synaptic activation
      Vn: mV Nernst potential of the cell's neurotransmitter
+    tau: ms time constant for synaptic activation
 
     Finally, there is an optional triplet STDP rule for unsupervised
     learning, from Pfister and Gerstner, J. Neurosci. 26(38):9673.
@@ -83,54 +103,40 @@ class Organoid():
     """
     def __init__(self, *, XY=None, G,
                  a, b, c, d, C, k, Vr, Vt, Vp, Vn, tau,
-                 # Whether to use torch or numpy arrays.
-                 usetorch=False,
+                 # pass one of the backends from this package
+                 backend=backend_numpy,
                  # STDP parameters.
                  do_stdp=False, stdp_tau_plus=15, stdp_tau_minus=35,
                  stdp_tau_y=115, stdp_Aplus=6.5e-3, stdp_Aminus=7e-3):
 
-        try:
-            if usetorch:
-                conv = torch.FloatTensor
-                stack = torch.stack
-            else:
-                conv = partial(np.asarray, dtype=np.float32)
-                stack = np.vstack
-        except AttributeError:
-            raise _torch_import_error
+        self._backend = backend
 
-        # Awkwardly, we have to save these in order to deal with the
-        # differences between torch and numpy backends.
-        self._conv = conv
-        self._stack = stack
-
-        self.G = conv(G)
+        self.G = backend.array(G)
         self.N = G.shape[0]
         if XY is not None:
-            self.XY = conv(XY)
-        self.a = conv(a)
-        self.b = conv(b)
-        self.c = conv(c)
-        self.d = conv(d)
-        self.C = conv(C)
-        self.k = conv(k)
-        self.Vr = conv(Vr)
-        self.Vt = conv(Vt)
-        self.Vp = conv(Vp)
-        self.Vn = conv(Vn)
-        self.tau = conv(tau)
-        self.VUA = conv(np.zeros((4,self.N)))
+            self.XY = backend.array(XY)
+        self.a = backend.array(a)
+        self.b = backend.array(b)
+        self.c = backend.array(c)
+        self.d = backend.array(d)
+        self.C = backend.array(C)
+        self.k = backend.array(k)
+        self.Vr = backend.array(Vr)
+        self.Vt = backend.array(Vt)
+        self.Vp = backend.array(Vp)
+        self.Vn = backend.array(Vn)
+        self.tau = backend.array(tau)
+        self.VUA = backend.array(np.zeros((4,self.N)))
 
         # STDP by the triplet model of Pfister and Gerstner (2006).
         # We store three synaptic traces at three different time
         # constants.
         self.do_stdp = do_stdp
-        self.traces = conv(np.zeros((3,self.N)))
+        self.traces = backend.array(np.zeros((3,self.N)))
         stdp_taus = [stdp_tau_plus, stdp_tau_minus, stdp_tau_y]
-        self.tau_stdp = conv([[tau] for tau in stdp_taus])
+        self.tau_stdp = backend.array([[tau] for tau in stdp_taus])
         self.Aplus = stdp_Aplus
         self.Aminus = stdp_Aminus
-
         self.reset()
 
     def reset(self):
@@ -140,12 +146,15 @@ class Organoid():
 
     def VUAdot(self, Iin):
         NAcurrent = self.k*(self.V - self.Vr)*(self.V - self.Vt)
-        syncurrent = self.G@(self.A * self.Vn) - (self.G@self.A) * self.V
-        Vdot = (NAcurrent - self.U + syncurrent + Iin) / self.C
+        # Save the synaptic and dynamical currents as instrumentation
+        # for extracellular voltages.
+        self.Isyn = self.G@(self.A * self.Vn) - (self.G@self.A) * self.V
+        self.Idyn = NAcurrent - self.U + Iin
+        Vdot = (self.Idyn + self.Isyn) / self.C
         Udot = self.a * (self.b*(self.V - self.Vr) - self.U)
         Adot = self.Adot / self.tau
         Addot = -(self.A + 2*self.Adot) / self.tau
-        return self._stack([Vdot, Udot, Adot, Addot])
+        return self._backend.stack([Vdot, Udot, Adot, Addot])
 
     def step(self, dt, Iin):
         """
@@ -156,37 +165,41 @@ class Organoid():
         # Apply the correction to any cells that crossed the AP peak
         # in the last update step, so that this step puts them into
         # the start of the refractory period.
-        fired = self.fired
-        self.V[fired] = self.c[fired]
-        self.U[fired] += self.d[fired]
-        self.Adot[fired] += 1
+        self.V[self.fired] = self.c[self.fired]
+        self.U[self.fired] += self.d[self.fired]
+        self.Adot[self.fired] += 1
 
         if self.do_stdp:
-            any = fired.any()
-
-            if any:
+            if self.fired.any():
                 # Update for presynaptic spikes.
-                pre_mod = self.Aminus*self.traces[1,fired]
-                self.G[:,fired] -= pre_mod
+                pre_mod = self.Aminus*self.traces[1,self.fired]
+                self.G[:,self.fired] -= pre_mod
 
                 # Update for postsynaptic spikes.
-                post_mod = self.traces[0,:] * self.traces[2,fired,None]
-                self.G[fired,:] += self.Aplus * post_mod
+                post_mod = self.traces[0,:] * self.traces[2,self.fired,None]
+                self.G[self.fired,:] += self.Aplus * post_mod
+
+                # Also update the synaptic traces.
+                self.traces[:,self.fired] += 1
 
             # Even if no cells fired, the traces decay
-            self.traces *= np.exp(dt / self.tau_stdp)
-
-            # Cells which fired increment their traces.
-            if any: self.traces[:,fired] += 1
+            self.traces *= backend.exp(dt / self.tau_stdp)
 
         # Actually do the stepping, using the midpoint method for
         # integration. This costs as much as halving the timestep
         # would in forward Euler, but increases the order to 2.
-        Iin = self._conv(Iin)
+        Iin = self._backend.array(Iin)
         k1 = self.VUAdot(Iin)
         self.VUA += k1 * dt/2
         k2 = self.VUAdot(Iin)
         self.VUA += k2*dt - k1*dt/2
+
+        # The synaptic and dynamical currents have been computed by
+        # the above VUAdot step, but needs to be adjusted during the
+        # reset to account for the change in voltage: each cell that
+        # fired had its voltage adjusted from Vp to c.
+        deltaV = self.c[self.fired] - self.Vp[self.fired]
+        self.Idyn[self.fired] += self.C[self.fired] * deltaV
 
         # Make a note of which cells this step has caused to fire,
         # then correct their membrane voltages down to the peak.  This
@@ -344,9 +357,6 @@ class Ca2tImage():
     def __init__(self, cell_position, cell_size,
                  tau, reactivity, fig=None, **kwargs):
 
-        if _mpl_import_error is not None:
-            raise _mpl_import_error
-
         self.tau = tau
         self.X = np.zeros(cell_position.shape[1])
 
@@ -452,7 +462,8 @@ class ElectrodeArray():
 
 
 class OrganoidWrapper():
-    def __init__(self, N, usetorch=True, input_scale=200, noise=0.1, dt=1, do_stdp=False):
+    def __init__(self, N, use_torch=True, input_scale=200,
+                 noise=0.1, dt=1, do_stdp=False):
         """
         Wraps an Organoid with easier initialization and timestepping
         for machine learning applications. An Organoid with N cells is
@@ -521,7 +532,9 @@ class OrganoidWrapper():
 
         self.org = Organoid(XY=XY, G=G, tau=tau, a=a, b=b, c=c, d=d,
                             k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp, Vn=Vn,
-                            usetorch=usetorch, do_stdp=do_stdp)
+                            do_stdp=do_stdp,
+                            backend=backend_torch if use_torch
+                            else backend_numpy)
         self.N = N
         self.noise = noise
         self.dt = dt
