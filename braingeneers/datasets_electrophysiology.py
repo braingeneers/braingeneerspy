@@ -2,6 +2,8 @@ import os
 import json
 import requests
 import numpy as np
+import matplotlib.pyplot as plt
+import numpy as np
 
 def get_archive_path():
     """/public/groups/braingeneers/Electrophysiology  Return path to archive on the GI public server """
@@ -126,3 +128,43 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     assert t.shape[0] == X.shape[0]
 
     return X, t, fs
+
+def min_max_blocks(experiment, batch_uuid):
+    batch = load_batch(batch_uuid)
+    index = batch['experiments'].index("{}.json".format(experiment['name']))
+    for i in range(len(experiment["blocks"])):
+        print("Computing Block: ", str(i))
+        X, t, fs = load_blocks(batch_uuid, index, i, i+1)        
+        X= np.transpose(X)
+        X= X[:int(experiment['num_voltage_channels'])]
+        step = int(fs / 1000)
+        yield np.array([[
+            np.amin(X[:,j:min(j + step, X.shape[1]-1)]), 
+            np.amax(X[:,j:min(j + step, X.shape[1]-1)])]
+          for j in range(0, X.shape[1], step)])
+
+
+def create_overview(batch_uuid, experiment_num):
+    #batch_uuid = '2020-02-06-kvoitiuk'
+
+    batch = load_batch(batch_uuid)
+
+    experiment = load_experiment(batch_uuid, experiment_num)
+    index = batch['experiments'].index("{}.json".format(experiment['name']))
+    plt.figure(figsize=(15,5))
+
+    overview = np.concatenate(list(min_max_blocks(experiment, batch_uuid)))
+
+
+    print(overview.shape)
+
+
+    plt.title("Overview for Batch: {} Experiment: {}".format(batch_uuid, experiment["name"]))
+    plt.fill_between(range(0, overview.shape[0]), overview[:,0], overview[:,1])
+
+    plt.show()
+
+    path = "archive/features/overviews/{}/{}.npy".format(batch["uuid"], experiment["name"])
+    print(path)
+             
+    
