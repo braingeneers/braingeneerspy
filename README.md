@@ -2,8 +2,11 @@
 
 [This package][github] is supposed to collect, as well as make installable
 through Pip, all of the Python code and utilities that we develop as
-part of the Braingeneers project. There are two subpackages:
-  * `braingeneers.datasets` contains methods which load data from the PRP.
-  * `braingeneers.drylab` contains all the simulation code.
+part of the Braingeneers project. There are five subpackages:
+  * `braingeneers.analysis` contains code for data analysis.
+  * `braingeneers.datasets_electrophysiology` contains methods which load and manipulate ephys data.
+  * `braingeneers.datasets_fluidics` contains methods which load and manipulate fluidics data.
+  * `braingeneers.datasets_imaging` contains methods which load and manipulate imaging data.
+  * `braingeneers.drylab` contains code for neuronal simulations.
 
 [github]: https://www.github.com/braingeneers/braingeneerspy
