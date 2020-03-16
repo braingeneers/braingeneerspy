@@ -23,12 +23,12 @@ def load_batch(batch_uuid):
         UUID of batch of experiments within the Braingeneer's archive'
         Example: 2019-02-15, or d820d4a6-f59a-4565-bcd1-6469228e8e64
     """
-    full_path = "{}/derived/{}/metadata.json".format(get_archive_path(), batch_uuid)
+    full_path = "{}/{}/derived/metadata.json".format(get_archive_path(), batch_uuid)
     if os.path.exists(full_path):
         with open(full_path, "r") as f:
             return json.load(f)
 
-    r = requests.get("{}/derived/{}/metadata.json".format(get_archive_url(), batch_uuid))
+    r = requests.get(full_path)
     if r.ok:
         return r.json()
     else:
@@ -50,14 +50,15 @@ def load_experiment(batch_uuid, experiment_num):
         All of the metadata associated with this experiment
     """
     batch = load_batch(batch_uuid)
-    full_path = "{}/derived/{}".format(
-        get_archive_path(), batch["experiments"][experiment_num])
+    full_path = "{}/{}/derived/{}".format(
+        get_archive_path(), batch_uuid,batch["experiments"][experiment_num])
+
     if os.path.exists(full_path):
         with open(full_path, "r") as f:
             return json.load(f)
 
     # Each experiment has a metadata file with all *.rhd headers and other sample info
-    r = requests.get("{}/derived/{}".format(
+    r = requests.get("{}/derived".format(
         get_archive_url(), batch_uuid, batch["experiments"][experiment_num]))
     if r.ok:
         return r.json()
@@ -103,10 +104,11 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
             return np.fromfile(f, dtype=np.int16)
 
     # Load all the raw files into a single matrix
-    if os.path.exists("{}/derived/{}".format(get_archive_path(), batch_uuid)):
+    if os.path.exists("{}/{}/derived/".format(get_archive_path(), batch_uuid)):
+        print("{}/{}/derived/".format(get_archive_path(), batch_uuid))
         # Load from local archive
         raw = np.concatenate([
-            _load_path("{}/derived/{}/{}".format(get_archive_path(), batch_uuid, s["path"]))
+            _load_path("{}/{}/derived/{}".format(get_archive_path(), batch_uuid, s["path"]))
             for s in metadata["blocks"][start:stop]], axis=0)
     else:
         # Load from PRP S3
@@ -176,3 +178,4 @@ def get_spikes(batch_uuid, experiment_num):
     print(path_of_spikes)
     spikes = np.load(path_of_spikes)
     return(spikes)
+
