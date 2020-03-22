@@ -105,7 +105,6 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
 
     # Load all the raw files into a single matrix
     if os.path.exists("{}/{}/derived/".format(get_archive_path(), batch_uuid)):
-        print("{}/{}/derived/".format(get_archive_path(), batch_uuid))
         # Load from local archive
         raw = np.concatenate([
             _load_path("{}/{}/derived/{}".format(get_archive_path(), batch_uuid, s["path"]))
@@ -146,6 +145,17 @@ def min_max_blocks(experiment, batch_uuid):
           for j in range(0, X.shape[1], step)])
 
 
+def get_spikes(batch_uuid, experiment_num):
+    batch = load_batch(batch_uuid)
+    experiment_name_with_json = batch['experiments'][experiment_num]
+    experiment_name = experiment_name_with_json[:-5].rsplit('/',1)[-1]
+    path_of_spikes = '/public/groups/braingeneers/Electrophysiology/' + batch_uuid + '/spikes/' + experiment_name + '_spikes.npy'
+    print(path_of_spikes)
+    spikes = np.load(path_of_spikes)
+    return spikes
+    
+    
+    
 def create_overview(batch_uuid, experiment_num):
     #batch_uuid = '2020-02-06-kvoitiuk'
 
@@ -158,24 +168,27 @@ def create_overview(batch_uuid, experiment_num):
     overview = np.concatenate(list(min_max_blocks(experiment, batch_uuid)))
 
 
-    print(overview.shape)
+    print('Overview Shape:',overview.shape)
 
-
+    
     plt.title("Overview for Batch: {} Experiment: {}".format(batch_uuid, experiment["name"]))
     plt.fill_between(range(0, overview.shape[0]), overview[:,0], overview[:,1])
-
+    
+    spikes = get_spikes(batch_uuid, experiment_num)
+    
+    blocks = load_blocks(batch_uuid, experiment_num, 0)
+    
+    fs = blocks[2]
+    
+    step = int(fs / 1000)
+    
+    spikes_in_correct_units = spikes/step 
+    
+    for i in spikes_in_correct_units:
+        
+        plt.axvline(i, 0, 1, color = 'y', linewidth = .3)
+    
     plt.show()
 
-    path = "archive/features/overviews/{}/{}.npy".format(batch["uuid"], experiment["name"])
-    print(path)
-             
-
-def get_spikes(batch_uuid, experiment_num):
-    batch = load_batch(batch_uuid)
-    experiment_name_with_json = batch['experiments'][experiment_num]
-    experiment_name = experiment_name_with_json[:-5].rsplit('/',1)[-1]
-    path_of_spikes = '/public/groups/braingeneers/Electrophysiology/' + batch_uuid + '/spikes/' + experiment_name + '_spikes.npy'
-    print(path_of_spikes)
-    spikes = np.load(path_of_spikes)
-    return spikes
-    
+    #path = "archive/features/overviews/{}/{}.npy".format(batch["uuid"], experiment["name"])
+    #print(path)
