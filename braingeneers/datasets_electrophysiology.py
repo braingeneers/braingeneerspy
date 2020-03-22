@@ -170,4 +170,12 @@ def create_overview(batch_uuid, experiment_num):
     print(path)
              
 
-
+def get_spikes(batch_uuid, experiment_num):
+    batch = load_batch(batch_uuid)
+    experiment_name_with_json = batch['experiments'][experiment_num]
+    experiment_name = experiment_name_with_json[:-5].rsplit('/',1)[-1]
+    path_of_spikes = '/public/groups/braingeneers/Electrophysiology/' + batch_uuid + '/spikes/' + experiment_name + '_spikes.npy'
+    print(path_of_spikes)
+    spikes = np.load(path_of_spikes)
+    return spikes
+    
