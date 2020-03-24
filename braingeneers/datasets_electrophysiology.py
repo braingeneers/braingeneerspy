@@ -157,7 +157,7 @@ def load_spikes(batch_uuid, experiment_num):
     
     
     
-def create_overview(batch_uuid, experiment_num, with_spikes = False):
+def create_overview(batch_uuid, experiment_num, with_spikes = True):
     #batch_uuid = '2020-02-06-kvoitiuk'
 
     batch = load_batch(batch_uuid)
