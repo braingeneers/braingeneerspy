@@ -175,11 +175,11 @@ def create_overview(batch_uuid, experiment_num, with_spikes = True):
     plt.title("Overview for Batch: {} Experiment: {}".format(batch_uuid, experiment["name"]))
     plt.fill_between(range(0, overview.shape[0]), overview[:,0], overview[:,1])
     
-    spikes = load_spikes(batch_uuid, experiment_num)
-    
     blocks = load_blocks(batch_uuid, experiment_num, 0)
     
     if with_spikes:
+        
+        spikes = load_spikes(batch_uuid, experiment_num)
     
         fs = blocks[2]
 
