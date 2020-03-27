@@ -1,9 +1,11 @@
 import os
+import os
 import json
 import requests
 import numpy as np
 import matplotlib.pyplot as plt
 import numpy as np
+import shutil
 
 def get_archive_path():
     """/public/groups/braingeneers/Electrophysiology  Return path to archive on the GI public server """
@@ -13,7 +15,7 @@ def get_archive_url():
     """  https://s3.nautilus.optiputer.net/braingeneers/Electrophysiology     Return URL to archive on PRP """
     return "{}/braingeneers/Electrophysiology".format(
         os.getenv("AWS_S3_ENDPOINT", "https://s3.nautilus.optiputer.net"))
-
+    
 def load_batch(batch_uuid):
     """
     Load the metadata for a batch of experiments and return as a dict
@@ -28,13 +30,13 @@ def load_batch(batch_uuid):
         with open(full_path, "r") as f:
             return json.load(f)
 
-    r = requests.get(full_path)
+    full_path_for_prp = "{}/{}/derived/metadata.json".format(get_archive_url(), batch_uuid)
+    r = requests.get(full_path_for_prp)
     if r.ok:
         return r.json()
     else:
-        print("Unable to load {}, do you have the correct batch uuid?".format(batch_uuid))
-        r.raise_for_status()
-        
+        raise Exception('Are you sure '+ batch_uuid+ ' is the right uuid?')
+    
 def load_experiment(batch_uuid, experiment_num):
     """
     Load metadata from PRP S3 for a single experiment
@@ -58,13 +60,14 @@ def load_experiment(batch_uuid, experiment_num):
             return json.load(f)
 
     # Each experiment has a metadata file with all *.rhd headers and other sample info
-    r = requests.get("{}/derived".format(
-        get_archive_url(), batch_uuid, batch["experiments"][experiment_num]))
+    
+    full_path_for_prp = str(get_archive_url()) + '/' + batch_uuid +'/derived/' +  batch["experiments"][experiment_num]
+    r = requests.get(full_path_for_prp)
     if r.ok:
         return r.json()
     else:
-        print("Unable to load experiment {} from {}".format(experiment_num, batch_uuid))
-        r.raise_for_status()
+        raise Exception('Are you sure '+ str(experiment_num)+ ' an experiment number?')
+        
         
 def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     """
@@ -112,8 +115,9 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     else:
         # Load from PRP S3
         raw = np.concatenate([
-            _load_url("{}/derived/{}/{}".format(get_archive_url(), batch_uuid, s["path"]))
+            _load_url("{}/{}/derived/{}".format(get_archive_url(), batch_uuid, s["path"]))
             for s in metadata["blocks"][start:stop]], axis=0)
+        print('Just ignore all the stuff in the pink rectangle.')
 
     # Reshape interpreting as row major
     X = raw.reshape((-1, metadata["num_channels"]), order="C")
@@ -130,6 +134,28 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
 
     return X, t, fs
 
+def load_spikes(batch_uuid, experiment_num):
+    batch = load_batch(batch_uuid)
+    experiment_name_with_json = batch['experiments'][experiment_num]
+    experiment_name = experiment_name_with_json[:-5].rsplit('/',1)[-1]
+    path_of_firings = '/public/groups/braingeneers/Electrophysiology/' + batch_uuid + '/spikes/' + experiment_name + '_spikes.npy'
+    print(path_of_firings)
+    
+    try:
+        firings = np.load(path_of_firings)
+        spike_times= firings[1]
+        return spike_times
+    except: 
+        path_of_firings_on_prp = get_archive_url() + '/'+batch_uuid + '/spikes/' + experiment_name + '_spikes.npy'
+        response = requests.get(path_of_firings_on_prp, stream=True)
+
+        with open('haha.npy', 'wb') as fin:
+            shutil.copyfileobj(response.raw, fin)
+        
+        firings = np.load('haha.npy') 
+        spikes = firings[1]
+        return spikes
+
 def min_max_blocks(experiment, batch_uuid):
     batch = load_batch(batch_uuid)
     index = batch['experiments'].index("{}.json".format(experiment['name']))
@@ -143,20 +169,7 @@ def min_max_blocks(experiment, batch_uuid):
             np.amin(X[:,j:min(j + step, X.shape[1]-1)]), 
             np.amax(X[:,j:min(j + step, X.shape[1]-1)])]
           for j in range(0, X.shape[1], step)])
-
-
-def load_spikes(batch_uuid, experiment_num):
-    batch = load_batch(batch_uuid)
-    experiment_name_with_json = batch['experiments'][experiment_num]
-    experiment_name = experiment_name_with_json[:-5].rsplit('/',1)[-1]
-    path_of_firings = '/public/groups/braingeneers/Electrophysiology/' + batch_uuid + '/spikes/' + experiment_name + '_spikes.npy'
-    print(path_of_firings)
-    firings = np.load(path_of_firings)
-    spike_times= firings[1]
-    return spike_times
-    
-    
-    
+        
 def create_overview(batch_uuid, experiment_num, with_spikes = True):
     #batch_uuid = '2020-02-06-kvoitiuk'
 
@@ -188,10 +201,13 @@ def create_overview(batch_uuid, experiment_num, with_spikes = True):
         spikes_in_correct_units = spikes/step 
 
         for i in spikes_in_correct_units:
-
-            plt.axvline(i, .1, .2, color = 'y', linewidth = .8, linestyle='-', alpha = .05)
+            plt.axvline(i, .1, .2, color = 'r', linewidth = .8, linestyle='-', alpha = .05)
+            
 
     plt.show()
 
     #path = "archive/features/overviews/{}/{}.npy".format(batch["uuid"], experiment["name"])
     #print(path)
+
+
+
