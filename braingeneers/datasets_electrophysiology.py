@@ -1,5 +1,4 @@
 import os
-import os
 import json
 import requests
 import numpy as np
@@ -8,12 +7,12 @@ import numpy as np
 import shutil
 
 def get_archive_path():
-    """/public/groups/braingeneers/Electrophysiology  Return path to archive on the GI public server """
-    return os.getenv("BRAINGENEERS_ARCHIVE_PATH", "/public/groups/braingeneers/Electrophysiology")
+    """/public/groups/braingeneers/ephys  Return path to archive on the GI public server """
+    return os.getenv("BRAINGENEERS_ARCHIVE_PATH", "/public/groups/braingeneers/ephys")
 
 def get_archive_url():
-    """  https://s3.nautilus.optiputer.net/braingeneers/Electrophysiology     Return URL to archive on PRP """
-    return "{}/braingeneers/Electrophysiology".format(
+    """  https://s3.nautilus.optiputer.net/braingeneers/ephys     Return URL to archive on PRP """
+    return "{}/braingeneers/ephys".format(
         os.getenv("AWS_S3_ENDPOINT", "https://s3.nautilus.optiputer.net"))
     
 def load_batch(batch_uuid):
@@ -138,7 +137,7 @@ def load_spikes(batch_uuid, experiment_num):
     batch = load_batch(batch_uuid)
     experiment_name_with_json = batch['experiments'][experiment_num]
     experiment_name = experiment_name_with_json[:-5].rsplit('/',1)[-1]
-    path_of_firings = '/public/groups/braingeneers/Electrophysiology/' + batch_uuid + '/spikes/' + experiment_name + '_spikes.npy'
+    path_of_firings = '/public/groups/braingeneers/ephys/' + batch_uuid + '/spikes/' + experiment_name + '_spikes.npy'
     print(path_of_firings)
     
     try:
@@ -208,6 +207,3 @@ def create_overview(batch_uuid, experiment_num, with_spikes = True):
 
     #path = "archive/features/overviews/{}/{}.npy".format(batch["uuid"], experiment["name"])
     #print(path)
-
-
-
