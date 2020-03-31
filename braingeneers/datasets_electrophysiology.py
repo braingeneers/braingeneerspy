@@ -137,7 +137,7 @@ def load_spikes(batch_uuid, experiment_num):
     batch = load_batch(batch_uuid)
     experiment_name_with_json = batch['experiments'][experiment_num]
     experiment_name = experiment_name_with_json[:-5].rsplit('/',1)[-1]
-    path_of_firings = '/public/groups/braingeneers/ephys/' + batch_uuid + '/spikes/' + experiment_name + '_spikes.npy'
+    path_of_firings = '/public/groups/braingeneers/ephys/' + batch_uuid + '/nico_spikes/' + experiment_name + '_spikes.npy'
     print(path_of_firings)
     
     try:
@@ -145,13 +145,13 @@ def load_spikes(batch_uuid, experiment_num):
         spike_times= firings[1]
         return spike_times
     except: 
-        path_of_firings_on_prp = get_archive_url() + '/'+batch_uuid + '/spikes/' + experiment_name + '_spikes.npy'
+        path_of_firings_on_prp = get_archive_url() + '/'+batch_uuid + '/nico_spikes/' + experiment_name + '_spikes.npy'
         response = requests.get(path_of_firings_on_prp, stream=True)
 
-        with open('haha.npy', 'wb') as fin:
+        with open('firings.npy', 'wb') as fin:
             shutil.copyfileobj(response.raw, fin)
         
-        firings = np.load('haha.npy') 
+        firings = np.load('firings.npy') 
         spikes = firings[1]
         return spikes
 
