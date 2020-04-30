@@ -14,7 +14,7 @@ def get_archive_url():
     """  https://s3.nautilus.optiputer.net/braingeneers/ephys     Return URL to archive on PRP """
     return "{}/braingeneers/ephys".format(
         os.getenv("AWS_S3_ENDPOINT", "https://s3.nautilus.optiputer.net"))
-    
+
 def load_batch(batch_uuid):
     """
     Load the metadata for a batch of experiments and return as a dict
@@ -35,7 +35,7 @@ def load_batch(batch_uuid):
         return r.json()
     else:
         raise Exception('Are you sure '+ batch_uuid+ ' is the right uuid?')
-    
+
 def load_experiment(batch_uuid, experiment_num):
     """
     Load metadata from PRP S3 for a single experiment
@@ -66,8 +66,8 @@ def load_experiment(batch_uuid, experiment_num):
         return r.json()
     else:
         raise Exception('Are you sure '+ str(experiment_num)+ ' an experiment number?')
-        
-        
+
+
 def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     """
     Load signal blocks of data from a single experiment
@@ -155,6 +155,33 @@ def load_spikes(batch_uuid, experiment_num):
         spikes = firings[1]
         return spikes
 
+def load_firings(batch_uuid, experiment_num, sorting_type): #sorting type is "ms4" or "klusta" etc
+    batch = load_batch(batch_uuid)
+    experiment_name_with_json = batch['experiments'][experiment_num]
+    experiment_name = experiment_name_with_json[:-5].rsplit('/',1)[-1]
+    if (sorting_type == "ms4"):
+        path_of_firings = '/public/groups/braingeneers/ephys/' + batch_uuid + '/nico_spikes/' + experiment_name + '_spikes.npy'
+    if (sorting_type == "klusta"):
+        path_of_firings = '/public/groups/braingeneers/ephys/' + batch_uuid + '/klusta_spikes/' + experiment_name + '_spikes.npy'
+    print(path_of_firings)
+    
+    try:
+        firings = np.load(path_of_firings)
+        return firings
+    except: 
+        if (sorting_type == "ms4"):
+            path_of_firings_on_prp = get_archive_url() + '/'+batch_uuid + '/nico_spikes/' + experiment_name + '_spikes.npy'
+        if (sorting_type == "klusta"):
+            path_of_firings_on_prp = get_archive_url() + '/'+batch_uuid + '/klusta_spikes/' + experiment_name + '_spikes.npy'
+        response = requests.get(path_of_firings_on_prp, stream=True)
+
+        with open('firings.npy', 'wb') as fin:
+            shutil.copyfileobj(response.raw, fin)
+        
+        firings = np.load('firings.npy') 
+        return firings
+
+
 def min_max_blocks(experiment, batch_uuid):
     batch = load_batch(batch_uuid)
     index = batch['experiments'].index("{}.json".format(experiment['name']))
@@ -168,7 +195,7 @@ def min_max_blocks(experiment, batch_uuid):
             np.amin(X[:,j:min(j + step, X.shape[1]-1)]), 
             np.amax(X[:,j:min(j + step, X.shape[1]-1)])]
           for j in range(0, X.shape[1], step)])
-        
+
 def create_overview(batch_uuid, experiment_num, with_spikes = True):
     #batch_uuid = '2020-02-06-kvoitiuk'
 
