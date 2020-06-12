@@ -4,6 +4,7 @@ import braingeneers.datasets
 import braingeneers as bgr
 import matplotlib.pyplot as plt
 import plotly.express as px
+import time
 
 from scipy  import sparse
 from scipy  import signal
@@ -40,6 +41,14 @@ class Neuron:
         self.spike_times = []
 
         st = []
+
+        #TODO optimize later with this logic
+        # n, t = np.nonzero(self.spikes)
+
+        # for num, ind in n:
+        #     if len(self.spike_times < 
+        #     self.spike_times.append
+
         for i in range(x.shape[0]):
             for j in range(x.shape[1]):
                 if x[i,j] == 1:
@@ -86,15 +95,33 @@ class Neuron:
         plt.ylabel('Spikes')
         plt.show()
         
+        
     def spike_correlation(self):
         #Requires non-sparse encoding of spikes, set as self.spikes in load methods
         #Computes correlation of each neuron combination
 
-        self.corr_arr = np.zeros((self.neurons,self.neurons,self.spikes.shape[1]))
+        self.corr = np.zeros((self.neurons,self.neurons,self.spikes.shape[1]))
 
         for i in range(self.neurons):
             for j in range(self.neurons):
-                self.corr_arr[i,j] = signal.correlate(self.spikes[i],self.spikes[j],"same")
+                self.corr[i,j] = signal.correlate(self.spikes[i],self.spikes[j],"same")
+
+    def window_correlation(self,spikes,steps):
+        #Requires non-sparse encoding of spikes
+        #Spike shape (n_neurons,n_timesteps)
+        #Requires steps, useful to use maximum hebbian learning time ~30-50ms
+        #i,j means i occurs before j
+        #Computes correlation of each neuron combination
+
+        self.corr_window = np.zeros((spikes.shape[0],spikes.shape[0],steps+1))
+
+
+        for i in range(self.neurons):
+            for j in range(self.neurons):
+                if i >= j:
+                    self.corr_window[i,j] = signal.correlate(self.spikes[i,:-steps],self.spikes[j],"valid")
+                else:
+                    self.corr_window[i,j] = signal.correlate(self.spikes[j,:-steps],self.spikes[i],"valid")
                 
 
 
@@ -104,10 +131,14 @@ class Neuron:
         print(offset)
         labels=dict(x="Neuron Index", y="Neuron Index", color="Correlation")
 
-        fig = px.imshow(self.corr_arr[...,500],labels=labels)
+        fig = px.imshow(self.corr[...,offset],labels=labels)
 
         fig.show()
 
+
+    def bin_correlation(self, bin):
+        #Takes the correlation array and bins in chunks 
+        pass
 
 
 
@@ -120,7 +151,24 @@ if __name__ == "__main__":
 
     n.load_map()
 
-    n.spike_correlation()
-    n.plot_correlation(lag_time = 0)
-    n.plot_spikes()
-    
+    # n.spike_correlation()
+    # n.plot_correlation(lag_time = 0)
+    # n.plot_spikes()
+
+
+    #Timing for 30,0000 timesteps, 10 neurons
+    print('Time to load: ',end='')
+    t = time.time()
+    n.load_spikes_test(length=30000,neurons=15)
+    print('{:.3f} seconds'.format(time.time() - t))
+
+
+    print('Time to process one second of correlation:')
+    t = time.time()
+    n.window_correlation(n.spikes,steps=30)
+    print('{:.3f} seconds'.format(time.time() - t))
+
+
+
+    #Now we bin the correlations, this can be optimized later(bin before corr)
+    n.bin_correlation(3)
