@@ -32,8 +32,8 @@ class Neuron:
         #Other should load spikes from PRP, for testing we will create np array
         #and set
         x = np.random.rand(neurons,length)
-        x[x>.8] = 1
-        x[x<=.8] = 0
+        x[x>.95] = 1
+        x[x<=.95] = 0
 
         
         self.spikes = x
@@ -96,15 +96,16 @@ class Neuron:
         plt.show()
         
         
-    def spike_correlation(self):
+    def spike_correlation(self,steps):
         #Requires non-sparse encoding of spikes, set as self.spikes in load methods
         #Computes correlation of each neuron combination
 
-        self.corr = np.zeros((self.neurons,self.neurons,self.spikes.shape[1]))
+        self.corr = np.zeros((self.spikes.shape[0],self.spikes.shape[0],steps+1))
+        self.corr_steps = steps
 
         for i in range(self.neurons):
             for j in range(self.neurons):
-                self.corr[i,j] = signal.correlate(self.spikes[i],self.spikes[j],"same")
+                self.corr[i,j] = signal.correlate(self.spikes[j],self.spikes[i,:-steps],"valid")
 
     def window_correlation(self,spikes,steps):
         #Requires non-sparse encoding of spikes
@@ -113,32 +114,53 @@ class Neuron:
         #i,j means i occurs before j
         #Computes correlation of each neuron combination
 
-        self.corr_window = np.zeros((spikes.shape[0],spikes.shape[0],steps+1))
+        self.corr_w = np.zeros((spikes.shape[0],spikes.shape[0],steps+1))
+        self.corr_w_steps = steps
 
-
-        for i in range(self.neurons):
+        for i in range(spikes.shape[0]):
             for j in range(self.neurons):
-                if i >= j:
-                    self.corr_window[i,j] = signal.correlate(self.spikes[i,:-steps],self.spikes[j],"valid")
-                else:
-                    self.corr_window[i,j] = signal.correlate(self.spikes[j,:-steps],self.spikes[i],"valid")
+                self.corr_w[i,j] = signal.correlate(spikes[j],spikes[i,:-steps],"valid")
                 
 
 
     def plot_correlation(self,lag_time=0):
         #Plots the correlation heatmap created in spike_correlation
-        offset = self.spikes.shape[1]//2
-        print(offset)
-        labels=dict(x="Neuron Index", y="Neuron Index", color="Correlation")
+        
+        labels=dict(x="Neuron Index", y="Neuron Index", title='Correlation at {:.3f}(s)'.format(lag_time/self.fs), color="Correlation")
 
-        fig = px.imshow(self.corr[...,offset],labels=labels)
+        fig = px.imshow(self.corr[...,lag_time],labels=labels)
+        fig.show()
+
+    def plot_correlation_bin(self,bin=0):
+        #Plots the correlation heatmap created in spike_correlation
+        #Does NOT run in real time, or on windowed correlations
+        
+        chunk = self.corr_steps//self.corr_bin.shape[2]
+        title='Correlation at {:.3f}(s)-{:.3f}(s)'.format(chunk*bin/self.fs,chunk*(bin+1)/self.fs)
+
+        labels=dict(x="Neuron Index", y="Neuron Index",title = title,color="Correlation")
+
+        fig = px.imshow(self.corr_bin[...,bin],labels=labels)
 
         fig.show()
 
 
-    def bin_correlation(self, bin):
-        #Takes the correlation array and bins in chunks 
-        pass
+    def bin_correlation(self, bins):
+        #Takes the correlation array and bins it
+        self.corr_bin =  np.zeros((self.spikes.shape[0],self.spikes.shape[0],bins))
+
+        for i in range(self.neurons):
+            for j in range(self.neurons):
+                self.corr_bin[i,j],_ = np.histogram(self.corr[i,j], bins = bins,weights=self.corr[i,j])
+
+
+    def bin_correlation_window(self, bins):
+        #Takes the correlation array and bins it
+        self.corr_w_bin =  np.zeros((self.spikes.shape[0],self.spikes.shape[0],bins))
+
+        for i in range(self.neurons):
+            for j in range(self.neurons):
+                self.corr_w_bin[i,j],_ = np.histogram(self.corr_w[i,j], bins = bins,weights=self.corr_w[i,j])
 
 
 
@@ -171,4 +193,54 @@ if __name__ == "__main__":
 
 
     #Now we bin the correlations, this can be optimized later(bin before corr)
-    n.bin_correlation(3)
+    n.bin_correlation_window(3)
+
+
+    #Test loop to pretend that we are recieving data from
+    timesteps = int(1e6)
+    n.load_spikes_test(length=timesteps,neurons=5,fs=150)
+
+    #Split data so we can act like we are recieving
+
+    #Receiving 1 per second
+    slices = timesteps/n.fs
+    corr_steps = 59
+    bins = 15
+
+    data = np.array_split(n.spikes,slices,axis=1)
+
+    tot_corr_b = np.zeros((n.spikes.shape[0],n.spikes.shape[0],bins))
+    tot_corr = np.zeros((n.spikes.shape[0],n.spikes.shape[0],corr_steps+1))
+    n.spike_correlation(corr_steps)
+    n.bin_correlation(bins)
+    
+    for num,d in enumerate(data):
+        print(num)
+        #Calculate correlations
+        n.window_correlation(d,steps=corr_steps)
+        n.bin_correlation_window(bins)
+
+        tot_corr += n.corr_w
+        tot_corr_b += n.corr_w_bin
+
+
+
+    print('Total correlation',tot_corr_b[1,0])
+    print('Actual correlation',n.corr_bin[1,0])
+
+    
+    fig,ax = plt.subplots(5,1)
+
+    for i,a in enumerate(ax):
+        a.plot(tot_corr[0,i])
+        a.plot(n.corr[0,i])
+        # a.set_yticklabels([])
+    plt.show()
+    
+    fig,ax = plt.subplots(5,1)
+
+    for i,a in enumerate(ax):
+        a.plot(tot_corr_b[0,i])
+        a.plot(n.corr_bin[0,i],alpha=.5)
+        # a.set_yticklabels([])
+    plt.show()
