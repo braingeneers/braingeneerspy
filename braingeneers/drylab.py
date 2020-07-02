@@ -23,15 +23,18 @@ class backend_numpy():
     array = partial(np.asarray, dtype=np.float32)
     stack = np.stack
     exp = np.exp
+    sign = np.sign
 
 # Try to import torch; if successful, create the torch backend,
 # otherwise create a fake backend that will error if used, like mpl.
 try:
     import torch
     class backend_torch():
-        array = torch.FloatTensor
+        array = torch.cuda.FloatTensor if torch.cuda.is_available() \
+            else torch.FloatTensor
         stack = torch.stack
         exp = torch.exp
+        sign = torch.sign
 except ImportError as e:
     class backend_torch():
         def __init__(self, e):
@@ -171,19 +174,30 @@ class Organoid():
 
         if self.do_stdp:
             if self.fired.any():
-                # Update for presynaptic spikes.
-                pre_mod = self.Aminus*self.traces[1,self.fired]
-                self.G[:,self.fired] -= pre_mod
+                # Save the amount of input to each cell.
+                original_scaling = self.G.sum(1)
+
+                # Update for presynaptic spikes
+                pre_mod = self.traces[1,self.fired]
+                self.G[:,self.fired] -= self.Aminus * pre_mod
 
                 # Update for postsynaptic spikes.
-                post_mod = self.traces[0,:] * self.traces[2,self.fired,None]
+                post_mod = self.traces[0,:] \
+                    * self.traces[2,self.fired,None]
                 self.G[self.fired,:] += self.Aplus * post_mod
+
+                # Make sure there are no negative conductances!
+                np.clip(self.G, 0, None, out=self.G)
+
+                # Rescale the new total synaptic input to each cell.
+                rescaling = original_scaling / self.G.sum(1)
+                self.G *= rescaling[:,None]
 
                 # Also update the synaptic traces.
                 self.traces[:,self.fired] += 1
 
             # Even if no cells fired, the traces decay
-            self.traces *= backend.exp(dt / self.tau_stdp)
+            self.traces *= self._backend.exp(-dt / self.tau_stdp)
 
         # Actually do the stepping, using the midpoint method for
         # integration. This costs as much as halving the timestep
@@ -377,12 +391,12 @@ class ChargedMedium():
         self._points = points
 
         # Distance from the probe points to each grid point.
-        self._r = np.linalg.norm(points[:,...,None,None] -
-                                 self._grid[:,None,...], axis=0)
+        self._r = np.linalg.norm(points[:,...,None,None]
+                                 - self._grid[:,None,...], axis=0)
 
         # Distance from the probe points to each cell.
-        self._d = np.linalg.norm(points[:,...,None] -
-                                 self.org.XY[:,None,...], axis=0)
+        self._d = np.linalg.norm(points[:,...,None]
+                                 - self.org.XY[:,None,...], axis=0)
 
     def probe(self, points=None):
         """
@@ -554,9 +568,9 @@ class OrganoidWrapper():
         input current, and returns an array containing the number of
         firings for each cell during that time.
         """
-        sigma = self.noise * self.input_scale
-        Iin = lambda: (self.input_scale * input
-                       + sigma * np.random.rand(self.N))
+        def Iin():
+            return self.input_scale * input \
+                + self.noise * self.input_scale * np.random.rand(self.N)
 
         firings = np.zeros(self.N)
         while interval > self.dt:
@@ -575,11 +589,10 @@ class OrganoidWrapper():
         activations at the end of that time.
         """
         org = self.org
-        num_inputs = self.N
 
-        sigma = self.noise * self.input_scale
-        Iin = lambda: (self.input_scale * input
-                       + sigma * np.random.rand(self.N))
+        def Iin():
+            return self.input_scale * input \
+                + self.noise * self.input_scale * np.random.rand(self.N)
 
         while interval > self.dt:
             org.step(self.dt, Iin())
