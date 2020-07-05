@@ -30,6 +30,7 @@ class backend_numpy():
 try:
     import torch
     class backend_torch():
+        _has_cuda = torch.cuda.is_available()
         array = torch.cuda.FloatTensor if torch.cuda.is_available() \
             else torch.FloatTensor
         stack = torch.stack
@@ -37,6 +38,7 @@ try:
         sign = torch.sign
 except ImportError as e:
     class backend_torch():
+        _has_cuda = False
         def __init__(self, e):
             self.e = e
         def __getattr__(self, attr):
@@ -81,7 +83,7 @@ class Organoid():
     of the postsynaptic cell towards the reversal potential of the
     presynaptic cell.
 
-    Additionally, the excitation model contains the following static
+    The individual neuron model contains the following static
     parameters, on a per cell basis by providing arrays of size (N,):
      a : 1/ms time constant of recovery current
      b : nS steady-state conductance for recovery current
@@ -95,27 +97,37 @@ class Organoid():
      Vn: mV Nernst potential of the cell's neurotransmitter
     tau: ms time constant for synaptic activation
 
+    Additionally, ion channel stochasticity is modeled by adding two
+    parameters to each cell: the average number of channel openings
+    per millisecond noise_event_rate, and the fraction of available
+    conductance each of these events contributes noise_event_size.
+    Stochastically opened channels close by the same process as
+    channels opened by synaptic events.
+
     Finally, there is an optional triplet STDP rule for unsupervised
     learning, from Pfister and Gerstner, J. Neurosci. 26(38):9673.
-    An arbitrary weight maximum has been introduced, but the proper
-    way to do this is through synaptic scaling or homeostatic
-    modulation of intrinsic excitability (TODO).
+    Synaptic scaling is implemented by slowly attempting to control
+    the value of the calcium trace towards a target.
 
     The default parameters for STDP are taken from the same source,
     which derived them from a fit to V1 data recorded by Sjoström.
     """
     def __init__(self, *, XY=None, G,
+                 # per-cell parameters
                  a, b, c, d, C, k, Vr, Vt, Vp, Vn, tau,
                  # pass one of the backends from this package
                  backend=backend_numpy,
+                 # channel noise parameters.
+                 noise_event_rate=0, noise_event_size=0,
                  # STDP parameters.
                  do_stdp=False, stdp_tau_plus=15, stdp_tau_minus=35,
-                 stdp_tau_y=115, stdp_Aplus=6.5e-3, stdp_Aminus=7e-3):
+                 stdp_tau_y=115, stdp_Aplus=6.5e-3, stdp_Aminus=7e-3,
+                 synaptic_scaling_rate=1e-4):
 
         self._backend = backend
 
         self.G = backend.array(G)
-        self.N = G.shape[0]
+        self.N = self.G.shape[0]
         if XY is not None:
             self.XY = backend.array(XY)
         self.a = backend.array(a)
@@ -131,6 +143,9 @@ class Organoid():
         self.tau = backend.array(tau)
         self.VUA = backend.array(np.zeros((4,self.N)))
 
+        self.noise_event_size = noise_event_size
+        self.noise_event_rate = noise_event_rate
+
         # STDP by the triplet model of Pfister and Gerstner (2006).
         # We store three synaptic traces at three different time
         # constants.
@@ -140,6 +155,7 @@ class Organoid():
         self.tau_stdp = backend.array([[tau] for tau in stdp_taus])
         self.Aplus = stdp_Aplus
         self.Aminus = stdp_Aminus
+        self.Ascaling = synaptic_scaling_rate
         self.reset()
 
     def reset(self):
@@ -172,11 +188,14 @@ class Organoid():
         self.U[self.fired] += self.d[self.fired]
         self.Adot[self.fired] += 1
 
+        # Channel stochasticity, which affects conductances but
+        # doesn't count as spiking activity for STDP purposes.
+        num_noise_events = np.random.poisson(
+            lam=self.noise_event_rate*dt, size=self.N)
+        self.Adot += self.noise_event_size * num_noise_events
+
         if self.do_stdp:
             if self.fired.any():
-                # Save the amount of input to each cell.
-                original_scaling = self.G.sum(1)
-
                 # Update for presynaptic spikes
                 pre_mod = self.traces[1,self.fired]
                 self.G[:,self.fired] -= self.Aminus * pre_mod
@@ -186,18 +205,21 @@ class Organoid():
                     * self.traces[2,self.fired,None]
                 self.G[self.fired,:] += self.Aplus * post_mod
 
+                # Nudge input synapses towards the desired value of
+                # the calcium trace, whether they fire or not.
+                target_err = self.traces[2,:] - 0.5
+                mask = target_err > 0
+                self.G[mask,:] -= target_err[mask,None] * dt*self.Ascaling
+
                 # Make sure there are no negative conductances!
                 np.clip(self.G, 0, None, out=self.G)
 
-                # Rescale the new total synaptic input to each cell.
-                rescaling = original_scaling / self.G.sum(1)
-                self.G *= rescaling[:,None]
-
-                # Also update the synaptic traces.
+                # Also update the synaptic traces. Apparently it's
+                # quite important to use all-to-all interaction.
                 self.traces[:,self.fired] += 1
 
             # Even if no cells fired, the traces decay
-            self.traces *= self._backend.exp(-dt / self.tau_stdp)
+            self.traces *= 1 - dt / self.tau_stdp
 
         # Actually do the stepping, using the midpoint method for
         # integration. This costs as much as halving the timestep
@@ -483,8 +505,8 @@ def _gen_frame_events(dt, events):
 
 
 class OrganoidWrapper():
-    def __init__(self, N, use_torch=True, input_scale=200,
-                 noise=0.1, dt=1, do_stdp=False):
+    def __init__(self, N, *, use_torch=None, input_scale=200,
+                 noise_rate=0.1, noise_size=0.1, dt=1, do_stdp=False):
         """
         Wraps an Organoid with easier initialization and timestepping
         for machine learning applications. An Organoid with N cells is
@@ -501,6 +523,12 @@ class OrganoidWrapper():
         whether to use the torch backend and whether to attempt to
         ``learn'' using STDP by passing keyword arguments.
         """
+
+        # In my experiments, CPU torch was always slower than numpy,
+        # and GPU torch is faster only for very large networks, so
+        # this chooses between torch and numpy by that heuristic.
+        if use_torch is None:
+            use_torch = backend_torch._has_cuda and N > 2500
 
         # Let 80% of neurons be excitatory as observed in vivo.
         Ne = int(0.8 * N)
@@ -553,11 +581,12 @@ class OrganoidWrapper():
 
         self.org = Organoid(XY=XY, G=G, tau=tau, a=a, b=b, c=c, d=d,
                             k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp, Vn=Vn,
+                            noise_event_rate=noise_rate,
+                            noise_event_size=noise_size,
                             do_stdp=do_stdp,
                             backend=backend_torch if use_torch
                             else backend_numpy)
         self.N = N
-        self.noise = noise
         self.dt = dt
         self.input_scale = input_scale
 
@@ -568,16 +597,12 @@ class OrganoidWrapper():
         input current, and returns an array containing the number of
         firings for each cell during that time.
         """
-        def Iin():
-            return self.input_scale * input \
-                + self.noise * self.input_scale * np.random.rand(self.N)
-
         firings = np.zeros(self.N)
         while interval > self.dt:
-            self.org.step(self.dt, Iin())
+            self.org.step(self.dt, self.input_scale * input)
             firings[self.org.fired] += 1
             interval -= self.dt
-        self.org.step(interval, Iin())
+        self.org.step(interval, self.input_scale * input)
 
         return firings
 
@@ -588,18 +613,8 @@ class OrganoidWrapper():
         input current, and returns the array of presynaptic
         activations at the end of that time.
         """
-        org = self.org
-
-        def Iin():
-            return self.input_scale * input \
-                + self.noise * self.input_scale * np.random.rand(self.N)
-
-        while interval > self.dt:
-            org.step(self.dt, Iin())
-            interval -= self.dt
-        org.step(interval, Iin())
-
-        return org.A
+        self.total_firings(input, interval)
+        return self.org.A
 
     def synapses(self):
         "Retrieves the synaptic strengths from the organoid."
