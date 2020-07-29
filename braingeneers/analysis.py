@@ -1,5 +1,5 @@
 import numpy as np
-from scipy import stats, sparse
+from scipy import stats, sparse, optimize
 
 
 def sparse_raster(times, idces, cells=None, bin_size=20):
@@ -156,3 +156,62 @@ def small_world(XY, plocal, beta):
     # Ensure no self-edges and return.
     np.fill_diagonal(edges, False)
     return edges
+
+
+def criticality_metric(times, idces):
+    """
+    Given lists of spike times and indices, separate them into
+    avalanches and calculate a metric of criticality.
+
+    The method uses the exponents of the power-law distributions to
+    calculate the "Deviation from Criticality Coefficient" (DCC)
+    described by Ma (2019). Additionally, quantify the badness of fit
+    of the two power laws by comparing the Kolmogorov-Smirnoff
+    statistic to the lognormal fits. If either lognormal fit is better
+    than the corresponding power-law fit, add the difference in KS
+    statistic to the DCC in order to get a metric that takes into
+    account the possibility that your culture may not be demonstrating
+    power-law-style criticality in the first place.
+    """
+    times = np.array(times)
+    idces = np.array(idces)
+
+    # First, decide on a threshold (per bin) from firing rate quantiles.
+    bin_size = 20
+    bin_sec = bin_size / 1e3
+    rates = np.array([bin for bin in
+                      temporal_binning(times, bin_size=bin_size)])
+    thresh = stats.mstats.mquantiles(rates, [0.3])[0]
+
+    # Now find the avalanches using methods above.
+    avalanches = list(get_avalanches(rates, thresh))
+    sizes = np.array([sum(av) for av in avalanches])
+    durations = np.array([len(av)*bin_sec for av in avalanches])
+
+    # Fit the distributions of avalanche size and duration.
+    pl, ln = stats.pareto, stats.lognorm
+    sizes_pl = pl(*pl.fit(sizes, floc=0, fscale=thresh))
+    sizes_ln = ln(*ln.fit(sizes, floc=0))
+    durations_pl = pl(*pl.fit(durations, floc=0, fscale=bin_sec))
+    durations_ln = ln(*ln.fit(durations, floc=0))
+
+    # Measure the badness of fit of power-law vs lognormal.
+    def badness(points, dist):
+        return stats.kstest(points, dist.cdf).statistic
+    durations_pl_badness = badness(durations, durations_pl)
+    durations_ln_badness = badness(durations, durations_ln)
+    sizes_pl_badness = badness(sizes, sizes_pl)
+    sizes_ln_badness = badness(sizes, sizes_ln)
+    durations_worseness = \
+        max(durations_pl_badness - durations_ln_badness, 0)
+    sizes_worseness = max(sizes_pl_badness - sizes_ln_badness, 0)
+    total_worseness = durations_worseness + sizes_worseness
+
+    # Finally, measure the DCC.
+    scale_fit, m_fit = optimize.curve_fit(lambda x, a,b: a*x**b,
+                                          durations, sizes)[0]
+    m_pred = durations_pl.args[0] / sizes_pl.args[0]
+    DCC = abs(m_pred - m_fit)
+
+    # And return the sum of the DCC with the badness of fit!
+    return DCC + total_worseness

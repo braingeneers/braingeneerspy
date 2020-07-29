@@ -619,3 +619,23 @@ class OrganoidWrapper():
     def synapses(self):
         "Retrieves the synaptic strengths from the organoid."
         return self.org.G
+
+    def collect_spikes(self, duration):
+        """
+        Simulates the organoid for a given duration and saves all
+        firing events that occur in that time.
+        """
+        spike_times, spike_idces = [], []
+        tsteps = duration // self.dt
+        for t in range(tsteps):
+            self.org.step(self.dt, 0)
+
+            for i in np.arange(self.org.N)[self.org.fired]:
+                spike_times.append(t*self.dt)
+                spike_idces.append(i)
+
+        return spike_times, spike_idces
+
+    def measure_criticality(self, duration):
+        return _analysis.criticality_metric(
+            *self.collect_spikes(duration))
