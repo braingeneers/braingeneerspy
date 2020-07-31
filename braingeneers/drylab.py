@@ -146,9 +146,8 @@ class Organoid():
         self.noise_event_size = noise_event_size
         self.noise_event_rate = noise_event_rate
 
-        # STDP by the triplet model of Pfister and Gerstner (2006).
-        # We store three synaptic traces at three different time
-        # constants.
+        # STDP by the triplet model of Pfister and Gerstner (2006),
+        # using three synaptic traces at three different time constants.
         self.do_stdp = do_stdp
         self.traces = backend.array(np.zeros((3,self.N)))
         stdp_taus = [stdp_tau_plus, stdp_tau_minus, stdp_tau_y]
@@ -202,14 +201,16 @@ class Organoid():
 
                 # Update for postsynaptic spikes.
                 post_mod = self.traces[0,:] \
-                    * self.traces[2,self.fired,None]
+                    * self.traces[2,self.fired,np.newaxis]
                 self.G[self.fired,:] += self.Aplus * post_mod
 
-                # Nudge input synapses towards the desired value of
-                # the calcium trace, whether they fire or not.
-                target_err = self.traces[2,:] - 0.5
-                mask = target_err > 0
-                self.G[mask,:] -= target_err[mask,None] * dt*self.Ascaling
+                # Excitatory synaptic scaling: nudge the excitatory
+                # inputs to all cells towards a certain fixed firing
+                # rate - as long as this happens slowly, it's probably
+                # kind of okay? It's still weird...
+                target_err = self.traces[2,:,np.newaxis] - 0.5
+                self.G[:,self.Vn > self.Vt] -= \
+                    target_err * dt*self.Ascaling
 
                 # Make sure there are no negative conductances!
                 np.clip(self.G, 0, None, out=self.G)
@@ -564,7 +565,7 @@ class OrganoidWrapper():
         # Inhibitory synapses are stronger because there are 4x fewer.
         G[:,Ne:] *= 8
 
-        # XY : um planar positions of the cells,
+        # XY : µm planar positions of the cells,
         XY = np.random.rand(2,N) * 75
 
         # Use those positions to generate random small-world
