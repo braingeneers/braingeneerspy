@@ -118,26 +118,32 @@ class LIFNeurons(Neurons):
     interpreted as a rate of change in membrane voltage, which is
     integrated with an exponential leak (towards a resting value Vr)
     determined by the parameter tau. When V reaches Vp, it is reset
-    automatically to Vr.
+    automatically to Vr. Also, the remaining refractory time is saved
+    per cell; if this value is positive, the cell cannot fire.
     """
-    def __init__(self, N, dt, *, Vr, Vp, tau):
-        self.Vr = np.ones(N) * Vr
+    def __init__(self, N, dt, *, Vr, Vp, tau, c=None, t_refrac=0):
+        self.Vr = Vr
+        self.c = np.ones(N) * (Vr if c is None else c)
         self.Vp = Vp
         self.tau = tau
-        self.V = self.Vr.copy()
+        self.V = np.ones(N) * Vr
+        self.timer = np.zeros(N)
+        self.t_refrac = t_refrac
         super().__init__(N, dt)
 
     def _step(self, dVdt):
         # Do the resets AFTER the voltages have been returned because
         # plots etc will turn out nicer.
-        self.V[self.fired] = self.Vr[self.fired]
+        self.V[self.fired] = self.c[self.fired]
+        self.timer[self.fired] = self.t_refrac
 
         # Now integrate.
         dVdt = dVdt - (self.V - self.Vr)/self.tau
         self.V += dVdt * self.dt
+        self.timer -= self.dt
 
         # And fire! :)
-        return self.V >= self.Vp
+        return (self.V >= self.Vp) & (self.timer < 0)
 
 
 class Synapses():
