@@ -8,8 +8,14 @@ class Neurons():
     def __init__(self, N, dt):
         self.N = N
         self.dt = dt
-        self.fired = np.zeros(N, dtype=np.bool)
         self.input_synapses = []
+        self.reset()
+
+    def reset(self):
+        """
+        Reset the states of all the neurons to their resting value.
+        """
+        self.fired = np.zeros(self.N, dtype=np.bool)
 
     def Isyn(self):
         """
@@ -126,10 +132,13 @@ class LIFNeurons(Neurons):
         self.c = np.ones(N) * (Vr if c is None else c)
         self.Vp = Vp
         self.tau = tau
-        self.V = np.ones(N) * Vr
-        self.timer = np.zeros(N)
         self.t_refrac = t_refrac
         super().__init__(N, dt)
+
+    def reset(self):
+        self.V = np.ones(self.N) * self.Vr
+        self.timer = np.zeros(self.N)
+        super().reset()
 
     def _step(self, Iin):
         # Do the resets AFTER the voltages have been returned because
@@ -147,6 +156,76 @@ class LIFNeurons(Neurons):
 
         # And fire! :)
         return self.V >= self.Vp
+
+
+class IzhikevichNeurons(Neurons):
+    """
+    The Izhikevich neuron model as presented in Dynamical Systems in
+    Neuroscience (2003). In brief, it is an adaptive quadratic
+    integrate-and-fire neuron, whose phase variables v and u represent
+    the membrane voltage and a membrane leakage current.
+
+    The individual neuron model takes the following parameters; the
+    book provides values matching physiological cell types.
+     a : 1/ms time constant of recovery current
+     b : nS steady-state conductance for recovery current
+     c : mV membrane voltage after a downstroke
+     d : pA bump to recovery current after a downstroke
+     C : pF membrane capacitance
+     k : nS/mV voltage-gated Na+ channel conductance
+     Vr: mV resting membrane voltage when u=0
+     Vt: mV threshold voltage when u=0
+     Vp: mV action potential peak, after which reset happens
+    """
+    def __init__(self, N, dt, *, a, b, c, d, C, k, Vr, Vt, Vp):
+        self.a = a
+        self.b = b
+        self.c = c * np.ones(N)
+        self.d = d * np.ones(N)
+        self.C = C
+        self.k = k
+        self.Vr = Vr
+        self.Vt = Vt
+        self.Vp = Vp
+        super().__init__(N, dt)
+
+    def reset(self):
+        self.VU = np.vstack((self.Vr * np.ones(self.N),
+                             np.zeros(self.N)))
+        super().reset()
+
+    def _vudot(self, Iin):
+        return self._vudot_at(Iin, self.VU)
+
+    def _vudot_at(self, Iin, VU):
+        VUdot = np.zeros((2, self.N))
+        NAcurrent = self.k*(VU[0,:] - self.Vr)*(VU[0,:] - self.Vt)
+        VUdot[0,:] = (NAcurrent - VU[1,:] + Iin) / self.C
+        VUdot[1,:] = self.a * (self.b*(VU[0,:] - self.Vr) - VU[1,:])
+        return VUdot
+
+    def _step(self, Iin):
+        self.V[self.fired] = self.c[self.fired]
+        self.U[self.fired] += self.d[self.fired]
+
+        VU_mid = self.VU + self._vudot(Iin)*self.dt/2
+        self.VU += self._vudot_at(Iin, VU_mid)*self.dt
+
+        return self.V >= self.Vp
+
+    @property
+    def V(self):
+        return self.VU[0,:]
+    @V.setter
+    def V(self, V):
+        self.VU[0,:] = V
+
+    @property
+    def U(self):
+        return self.VU[1,:]
+    @U.setter
+    def U(self, U):
+        self.VU[1,:] = U
 
 
 class Synapses():
