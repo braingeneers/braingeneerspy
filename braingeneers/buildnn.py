@@ -58,7 +58,7 @@ class Neurons():
             raster[i, int(t//bin_size)] = True
         return raster
 
-    def total_firings(self, total_time, Iin):
+    def total_firings(self, Iin, total_time):
         """
         Simulate the network for a fixed total time with a constant
         input parameter and return the total number of times each cell
@@ -118,8 +118,8 @@ class LIFNeurons(Neurons):
     interpreted as a rate of change in membrane voltage, which is
     integrated with an exponential leak (towards a resting value Vr)
     determined by the parameter tau. When V reaches Vp, it is reset
-    automatically to Vr. Also, the remaining refractory time is saved
-    per cell; if this value is positive, the cell cannot fire.
+    automatically to Vr. Also, during the refractory time t_refrac
+    after each firing, the cell does not respond to input.
     """
     def __init__(self, N, dt, *, Vr, Vp, tau, c=None, t_refrac=0):
         self.Vr = Vr
@@ -131,19 +131,22 @@ class LIFNeurons(Neurons):
         self.t_refrac = t_refrac
         super().__init__(N, dt)
 
-    def _step(self, dVdt):
+    def _step(self, Iin):
         # Do the resets AFTER the voltages have been returned because
         # plots etc will turn out nicer.
         self.V[self.fired] = self.c[self.fired]
         self.timer[self.fired] = self.t_refrac
 
-        # Now integrate.
-        dVdt = dVdt - (self.V - self.Vr)/self.tau
-        self.V += dVdt * self.dt
+        # Now integrate, using the midpoint method to make the
+        # exponential work better maybe?
+        dVdt = Iin - (self.V - self.Vr)/self.tau
+        V_test = self.V + self.dt*dVdt
+        dVdt = Iin - (V_test - self.Vr)/self.tau
+        self.V[self.timer <= 0] += dVdt[self.timer <= 0] * self.dt
         self.timer -= self.dt
 
         # And fire! :)
-        return (self.V >= self.Vp) & (self.timer < 0)
+        return self.V >= self.Vp
 
 
 class Synapses():
@@ -205,22 +208,39 @@ class ExponentialSynapses(Synapses):
 
 
 class DiehlCook2015(AggregateCulture):
-    def __init__(self, N, dt, *, Vr, Vp, tau_exc, tau_inh, tau_syn):
+    def __init__(self, N, dt):
+        # Populations of input, excitatory, and inhibitory neurons.
         self.input_layer = PoissonNeurons(784, dt)
-        self.exc = LIFNeurons(N, dt, Vr=Vr, Vp=Vp, tau=tau_exc)
-        self.inh = LIFNeurons(N, dt, Vr=Vr, Vp=Vp, tau=tau_inh)
+        self.exc = LIFNeurons(N, dt, Vr=-65, c=-65, Vp=-52,
+                              tau=100, t_refrac=5)
+        self.inh = LIFNeurons(N, dt, Vr=-60, c=-45, Vp=-40,
+                              tau=10, t_refrac=2)
 
+        # Input->excitatory synapses.
         ExponentialSynapses(self.input_layer, self.exc,
-                            tau=tau_syn, Vn=Vp,
-                            G=np.random.rand(N,784))
+                            tau=1, Vn=0,
+                            G=0.05*np.random.rand(N,784)
+                            *(np.random.rand(N,784) < 0.1))
+        # Excitatory->inhibitory synapses.
         ExponentialSynapses(self.exc, self.inh,
-                            tau=tau_syn, Vn=Vp,
-                            G=np.eye(N))
+                            tau=1, Vn=0,
+                            G=1*np.eye(N))
+        # Synapses for lateral inhibition.
         ExponentialSynapses(self.inh, self.exc,
-                            tau=tau_syn, Vn=Vr,
-                            G=1-np.eye(N))
+                            tau=2, Vn=-100,
+                            G=1*(1-np.eye(N)))
 
         super().__init__(self.input_layer, self.exc, self.inh)
+
+    def list_firings(self, Iin, time):
+        """
+        Simulate the network for some amount of time. This network
+        only accepts a reduced version of the typical Iin to set the
+        rates of the Poisson input layer.
+        """
+        Iin_full = np.zeros(self.N)
+        Iin_full[:self.input_layer.N] = np.asarray(Iin).flatten()
+        return super().list_firings(Iin_full, time)
 
     def present(self, digit, off_time=150, on_time=350):
         """
@@ -228,10 +248,8 @@ class DiehlCook2015(AggregateCulture):
         relax with zero input, then use the input digit as the rate
         argument to the input layer, and return the results.
         """
-        self.total_firings(off_time, np.zeros(self.N))
+        self.total_firings(np.zeros(self.input_layer.N), off_time)
 
         # Flatten the input digit and provide it to the input layer,
         # but also include zeros to send to the rest of the neurons.
-        Iin = np.zeros(self.N)
-        Iin[:len(digit.ravel())] = digit.flatten()
-        return self.total_firings(on_time, Iin)
+        return self.total_firings(digit, on_time)[784:784+self.exc.N]
