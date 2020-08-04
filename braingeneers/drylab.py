@@ -506,8 +506,11 @@ def _gen_frame_events(dt, events):
 
 
 class OrganoidWrapper():
-    def __init__(self, N, *, use_torch=None, input_scale=200,
-                 noise_rate=0.1, noise_size=0.1, dt=1, do_stdp=False):
+    def __init__(self, N, *, use_torch=None,
+                 input_scale=200, dt=1, do_stdp=False,
+                 noise_rate=0.1, noise_size=0.1, p_rewire=2.5e-2,
+                 world_bigness=10, scale_inhibitory=8,
+                 G_mu=-1.8, G_sigma=0.94):
         """
         Wraps an Organoid with easier initialization and timestepping
         for machine learning applications. An Organoid with N cells is
@@ -522,7 +525,7 @@ class OrganoidWrapper():
 
         Simulations are run with the timestep dt, and you can select
         whether to use the torch backend and whether to attempt to
-        ``learn'' using STDP by passing keyword arguments.
+        learn using STDP by passing keyword arguments.
         """
 
         # In my experiments, CPU torch was always slower than numpy,
@@ -561,9 +564,9 @@ class OrganoidWrapper():
         # parameters were originally derived from a biological source
         # describing the distribution in rat V1, but in theory the
         # actual values shouldn't be very important.
-        G = np.random.lognormal(mean=-1.8, sigma=0.94, size=(N,N))
+        G = np.random.lognormal(mean=G_mu, sigma=G_sigma, size=(N,N))
         # Inhibitory synapses are stronger because there are 4x fewer.
-        G[:,Ne:] *= 8
+        G[:,Ne:] *= scale_inhibitory
 
         # XY : µm planar positions of the cells,
         XY = np.random.rand(2,N) * 75
@@ -577,8 +580,9 @@ class OrganoidWrapper():
         # This is a boolean connectivity matrix, which is used to
         # delete most of the synapses.
         beta = np.zeros((1,N))
-        beta[:Ne] = 2.5e-2
-        G *= _analysis.small_world(XY/10, plocal=0.5, beta=beta)
+        beta[:Ne] = p_rewire
+        G *= _analysis.small_world(XY/world_bigness,
+                                   plocal=0.5, beta=beta)
 
         self.org = Organoid(XY=XY, G=G, tau=tau, a=a, b=b, c=c, d=d,
                             k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp, Vn=Vn,
