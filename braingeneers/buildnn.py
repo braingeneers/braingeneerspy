@@ -16,6 +16,8 @@ class Neurons():
         Reset the states of all the neurons to their resting value.
         """
         self.fired = np.zeros(self.N, dtype=np.bool)
+        for syn in self.input_synapses:
+            syn.reset()
 
     def Isyn(self):
         """
@@ -261,6 +263,13 @@ class Synapses():
         """
         pass
 
+    def reset(self):
+        """
+        Reset the state variables of the synapses to their resting
+        values, to support resetting of neural cultures.
+        """
+        raise NotImplementedError
+
 
 class ExponentialSynapses(Synapses):
     """
@@ -284,6 +293,9 @@ class ExponentialSynapses(Synapses):
     def _step(self):
         self.a[self.inputs.fired] += 1
         self.a -= self.dt/self.tau * self.a
+
+    def reset(self):
+        self.a *= 0
 
 
 class DiehlCook2015(AggregateCulture):
