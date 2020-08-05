@@ -505,10 +505,10 @@ def _gen_frame_events(dt, events):
 
 
 
-class OrganoidWrapper():
+class OrganoidWrapper(Organoid):
     def __init__(self, N, *, use_torch=None,
                  input_scale=200, dt=1, do_stdp=False,
-                 noise_rate=0.1, noise_size=0.1, p_rewire=2.5e-2,
+                 noise_rate=1, noise_size=0.1, p_rewire=2.5e-2,
                  world_bigness=10, scale_inhibitory=8,
                  G_mu=-1.8, G_sigma=0.94):
         """
@@ -584,14 +584,13 @@ class OrganoidWrapper():
         G *= _analysis.small_world(XY/world_bigness,
                                    plocal=0.5, beta=beta)
 
-        self.org = Organoid(XY=XY, G=G, tau=tau, a=a, b=b, c=c, d=d,
-                            k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp, Vn=Vn,
-                            noise_event_rate=noise_rate,
-                            noise_event_size=noise_size,
-                            do_stdp=do_stdp,
-                            backend=backend_torch if use_torch
-                            else backend_numpy)
-        self.N = N
+        super().__init__(XY=XY, G=G, tau=tau, a=a, b=b, c=c, d=d,
+                         k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp, Vn=Vn,
+                         noise_event_rate=noise_rate,
+                         noise_event_size=noise_size,
+                         do_stdp=do_stdp,
+                         backend=backend_torch if use_torch
+                         else backend_numpy)
         self.dt = dt
         self.input_scale = input_scale
 
@@ -619,11 +618,11 @@ class OrganoidWrapper():
         activations at the end of that time.
         """
         self.total_firings(input, interval)
-        return self.org.A
+        return self.A
 
     def synapses(self):
         "Retrieves the synaptic strengths from the organoid."
-        return self.org.G
+        return self.G
 
     def collect_spikes(self, duration):
         """
@@ -633,9 +632,9 @@ class OrganoidWrapper():
         spike_times, spike_idces = [], []
         tsteps = duration // self.dt
         for t in range(tsteps):
-            self.org.step(self.dt, 0)
+            self.step(self.dt, 0)
 
-            for i in np.arange(self.org.N)[self.org.fired]:
+            for i in np.arange(self.N)[self.fired]:
                 spike_times.append(t*self.dt)
                 spike_idces.append(i)
 
