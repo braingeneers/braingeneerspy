@@ -47,8 +47,7 @@ class Neurons():
 
     def _step(self, Iin):
         """
-        Simulate the neural culture for a short duration equal to the
-        intrinsic dt of the model.
+        Simulate the neural culture forward one step.
         """
         raise NotImplementedError
 
@@ -247,6 +246,7 @@ class Synapses():
         self.N = self.outputs.N
         self.dt = self.inputs.dt
         self.outputs.input_synapses.append(self)
+        self.reset()
 
     def output(self):
         """
@@ -258,8 +258,8 @@ class Synapses():
 
     def _step(self):
         """
-        If these synapses have intrinsic dynamics, advance them by a
-        time interval dt, returning nothing.
+        If these synapses have intrinsic dynamics, advance them one
+        timestep, returning nothing.
         """
         pass
 
@@ -277,25 +277,38 @@ class ExponentialSynapses(Synapses):
     an exponentially-decaying synaptic conductance. To simplify
     things, the synaptic reversal potential is specified for an entire
     synapse group rather than per-presynaptic-neuron.
+
+    Additionally, stochastic activity is supported by passing the
+    parameters noise_event_rate and noise_event_size. These determine
+    the frequency and magnitude of spontaneous synaptic activations.
     """
-    def __init__(self, inputs, outputs=None, *, tau, G, Vn):
+    def __init__(self, inputs, outputs=None, *, tau, G, Vn,
+                 noise_event_rate=0, noise_event_size=0.1):
         super().__init__(inputs, outputs)
         self.G = np.asarray(G)
         assert self.G.shape == (self.N, self.M), \
             f'Synaptic matrix should be (N,M), but is {self.G.shape}'
         self.tau = tau
         self.Vn = Vn
-        self.a = np.zeros(self.M)
+        self.noise_event_rate = noise_event_rate
+        self.noise_event_size = noise_event_size
 
     def output(self):
         return (self.G@self.a) * (self.Vn - self.outputs.V)
 
     def _step(self):
         self.a[self.inputs.fired] += 1
+        # TODO: this noise is correlated between postsynaptic cells,
+        # but creating noise per-synapse is horribly inefficient.
+        # It's probably best to compute a normal approximation to
+        # a sum of Poisson RVs.
+        num_events = np.random.poisson(size=self.M,
+                                       lam=self.dt*self.noise_event_rate)
+        self.a += self.noise_event_size * num_events
         self.a -= self.dt/self.tau * self.a
 
     def reset(self):
-        self.a *= 0
+        self.a = np.zeros(self.M)
 
 
 class DiehlCook2015(AggregateCulture):
