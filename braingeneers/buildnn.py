@@ -1,4 +1,5 @@
 import numpy as np
+import functools
 
 class Neurons():
     """
@@ -24,10 +25,10 @@ class Neurons():
         Compute the total input to this culture from all of its
         synaptic predecessors.
         """
-        Iin = np.zeros(self.N)
+        Isyn = np.zeros(self.N)
         for syn in self.input_synapses:
-            Iin += syn.output()
-        return Iin
+            Isyn += syn.output()
+        return Isyn
 
     def list_firings(self, Iin, time):
         """
@@ -234,7 +235,9 @@ class Synapses():
     Base class for a group of synaptic connections between two neural
     cultures `inputs` and `outputs`.
     """
-    def __init__(self, inputs, outputs=None):
+    def __init__(self, G, inputs, outputs=None):
+        # Recurrent by default, but allow connections between two
+        # separate groups of neurons.
         self.inputs = inputs
         if outputs is None:
             self.outputs = inputs
@@ -242,9 +245,17 @@ class Synapses():
             self.outputs = outputs
             assert inputs.dt == outputs.dt, \
                 'Synapses can only connect cultures with identical dt.'
+
         self.M = self.inputs.N
         self.N = self.outputs.N
         self.dt = self.inputs.dt
+
+        # The synaptic matrix needs to be in the superclass so it can
+        # be relied upon by mixins.
+        self.G = np.asarray(G)
+        assert self.G.shape == (self.N, self.M), \
+            f'Synaptic matrix should be (N,M), but is {self.G.shape}'
+
         self.outputs.input_synapses.append(self)
         self.reset()
 
@@ -271,6 +282,87 @@ class Synapses():
         raise NotImplementedError
 
 
+def SynapticScaling(self, *, tau, rate_target, Ascaling):
+    self.tau_scaling = tau
+    self.rate_target = rate_target
+    self.Ascaling = Ascaling
+
+    @functools.wraps(self._step)
+    def _step():
+        _step.__wrapped__()
+
+        # Continuous dynamics of the trace.
+        self.x_scaling -= self.x_scaling
+
+        # Control G towards a desired rate. Note that if a neuron is
+        # firing at some rate r, the time average value of a synaptic
+        # trace that decays at a rate tau is exactly r*tau.
+        x_err = self.x_scaling - self.rate_target*self.tau_scaling
+        self.G[self.outputs.fired,:] *= 1 - self.Ascaling * x_err
+
+        # Update the trace to include postsynaptic firing events.
+        self.x_scaling[self.outputs.fired] += 1
+
+    @functools.wraps(self.reset)
+    def reset():
+        reset.__wrapped__()
+        self.x_scaling = np.zeros(self.N)
+
+    self._step = _step
+    self.reset = reset
+
+
+def TripletSTDP(self, *, tau_pre, tau_post1, tau_post2,
+                Aplus2, Aplus3, Aminus2):
+    """
+    Modifies an existing synapse group object to add STDP by the
+    triplet rule of Pfister and Gerstner (2006), using one presynaptic
+    and two postsynaptic traces, all at different time constants.
+    """
+    # Save the time constants into the object so they act like normal
+    # properties, e.g. can be modified by the user.
+    self.tau_pre = tau_pre
+    self.tau_post1 = tau_post1
+    self.tau_post2 = tau_post2
+    self.Aplus2 = Aplus2
+    self.Aplus3 = Aplus3
+    self.Aminus2 = Aminus2
+
+    # Add evolution of the traces to the step method.
+    @functools.wraps(self._step)
+    def _step():
+        _step.__wrapped__()
+
+        # First, update the continuous dynamics of the traces.
+        self.x_pre -= self.x_pre * self.dt/self.tau_pre
+        self.x_post1 -= self.x_post1 * self.dt/self.tau_post1
+        self.x_post2 -= self.x_post2 * self.dt/self.tau_post2
+
+        # Update the synaptic weights.
+        self.G[:,self.inputs.fired] -= self.x_post1*self.Aminus2
+        self.G[self.outputs.fired,:] += self.x_pre*(
+            self.Aplus2 + self.Aplus3*self.x_post2)
+
+        # Finally, bump the traces of the cells that have fired.
+        self.x_pre[:,self.inputs.fired] += 1
+        self.x_post1[:,self.outputs.fired] += 1
+        self.x_post2[:,self.outputs.fired] += 1
+    self._step = _step
+
+    # Reset the traces too.
+    @functools.wraps(self.reset)
+    def reset():
+        reset.__wrapped__()
+        self.x_pre = np.zeros(self.M)
+        self.x_post1 = np.zeros(self.N)
+        self.x_post2 = np.zeros(self.N)
+    self.reset = reset
+
+    # Just like a regular Synapses.__init__ method, reset state.
+    self.reset()
+    return self
+
+
 class ExponentialSynapses(Synapses):
     """
     A synaptic connection block where each presynaptic firing creates
@@ -282,19 +374,19 @@ class ExponentialSynapses(Synapses):
     parameters noise_event_rate and noise_event_size. These determine
     the frequency and magnitude of spontaneous synaptic activations.
     """
-    def __init__(self, inputs, outputs=None, *, tau, G, Vn,
+    def __init__(self, G, inputs, outputs=None, *, tau, Vn,
                  noise_event_rate=0, noise_event_size=0.1):
-        super().__init__(inputs, outputs)
-        self.G = np.asarray(G)
-        assert self.G.shape == (self.N, self.M), \
-            f'Synaptic matrix should be (N,M), but is {self.G.shape}'
+        super().__init__(G, inputs, outputs)
         self.tau = tau
         self.Vn = Vn
         self.noise_event_rate = noise_event_rate
         self.noise_event_size = noise_event_size
 
     def output(self):
-        return (self.G@self.a) * (self.Vn - self.outputs.V)
+        Isyn = self.G@(self.a*self.Vn) - (self.G@self.a)*self.outputs.V
+        if np.any(np.abs(Isyn) > 9e5):
+            raise ValueError('100 Vegetae')
+        return Isyn
 
     def _step(self):
         self.a[self.inputs.fired] += 1
