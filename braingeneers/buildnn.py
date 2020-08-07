@@ -374,29 +374,20 @@ class ExponentialSynapses(Synapses):
     parameters noise_event_rate and noise_event_size. These determine
     the frequency and magnitude of spontaneous synaptic activations.
     """
-    def __init__(self, G, inputs, outputs=None, *, tau, Vn,
-                 noise_event_rate=0, noise_event_size=0.1):
+    def __init__(self, G, inputs, outputs=None, *,
+                 tau, Vn, noise_rate=0):
         super().__init__(G, inputs, outputs)
         self.tau = tau
         self.Vn = Vn
-        self.noise_event_rate = noise_event_rate
-        self.noise_event_size = noise_event_size
+        self.noise_rate = noise_rate
 
     def output(self):
-        Isyn = self.G@(self.a*self.Vn) - (self.G@self.a)*self.outputs.V
-        if np.any(np.abs(Isyn) > 9e5):
-            raise ValueError('100 Vegetae')
-        return Isyn
+        return self.G@(self.a*self.Vn) \
+            - (self.G@self.a)*self.outputs.V \
+            + self.G.sum(1)*self.noise_rate*np.random.randn(self.M)
 
     def _step(self):
         self.a[self.inputs.fired] += 1
-        # TODO: this noise is correlated between postsynaptic cells,
-        # but creating noise per-synapse is horribly inefficient.
-        # It's probably best to compute a normal approximation to
-        # a sum of Poisson RVs.
-        num_events = np.random.poisson(size=self.M,
-                                       lam=self.dt*self.noise_event_rate)
-        self.a += self.noise_event_size * num_events
         self.a -= self.dt/self.tau * self.a
 
     def reset(self):
