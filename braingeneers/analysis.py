@@ -158,7 +158,7 @@ def small_world(XY, plocal, beta):
     return edges
 
 
-def criticality_metric(times, idces):
+def criticality_metric(times):
     """
     Given lists of spike times and indices, separate them into
     avalanches and calculate a metric of criticality.
@@ -174,7 +174,6 @@ def criticality_metric(times, idces):
     power-law-style criticality in the first place.
     """
     times = np.array(times)
-    idces = np.array(idces)
 
     # First, decide on a threshold (per bin) from firing rate quantiles.
     bin_size = 20

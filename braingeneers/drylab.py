@@ -455,6 +455,4 @@ class OrganoidWrapper(Organoid):
         events = self.list_firings(0, duration)
         if len(events) == 0:
             return np.inf
-        times = [t for t,i in events]
-        idces = [i for t,i in events]
-        return _analysis.criticality_metric(times, idces)
+        return _analysis.criticality_metric([t for (t,i) in events])
