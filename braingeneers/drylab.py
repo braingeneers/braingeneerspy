@@ -4,6 +4,8 @@ from functools import partial
 import numpy as np
 from scipy import sparse, ndimage
 import braingeneers.analysis as _analysis
+import braingeneers.buildnn as _buildnn
+
 
 # If we don't have matplotlib, create a dummy object instead that
 # raises an error if any attribute is requested, so that there is only
@@ -64,221 +66,63 @@ NEURON_TYPES = {
     'ls':  [0.17,  5, -45, 100,  20, 0.3, -66, -40, 30, -70, 20]}
 
 
-class Organoid():
+class Organoid(_buildnn.IzhikevichNeurons):
     """
-    A simulated 2D culture of cortical cells using models from
-    Dynamical Systems in Neuroscience, with synapses implemented as
-    exponential PSPs for both excitatory and inhibitory cells.
+    A simulated 2D culture of cortical cells as Izhikevich neurons
+    with all-to-all connectivity through conductance synapses with
+    exponential time activation.
 
-    The model represents the excitability of a neuron using three
-    phase variables: the membrane voltage v : mV, the "recovery" or
-    "leakage" current u : pA, and the synaptic activation at each
-    cell, a unitless A.
-
-    The synapses in the updated model are conductance-type, with
-    synaptic conductance following the alpha function of the synaptic
-    actiavtion times the peak conductance G[i,j]. This adds another
-    parameter to each cell: the Nernst reversal potential Vn of its
-    neurotransmitter. Synaptic activation pulls the membrane voltage
-    of the postsynaptic cell towards the reversal potential of the
-    presynaptic cell.
-
-    The individual neuron model contains the following static
-    parameters, on a per cell basis by providing arrays of size (N,):
-     a : 1/ms time constant of recovery current
-     b : nS steady-state conductance for recovery current
-     c : mV membrane voltage after a downstroke
-     d : pA bump to recovery current after a downstroke
-     C : pF membrane capacitance
-     k : nS/mV voltage-gated Na+ channel conductance
-     Vr: mV resting membrane voltage when u=0
-     Vt: mV threshold voltage when u=0
-     Vp: mV action potential peak, after which reset happens
-     Vn: mV Nernst potential of the cell's neurotransmitter
-    tau: ms time constant for synaptic activation
-
-    Additionally, ion channel stochasticity is modeled by adding two
-    parameters to each cell: the average number of channel openings
-    per millisecond noise_event_rate, and the fraction of available
-    conductance each of these events contributes noise_event_size.
-    Stochastically opened channels close by the same process as
-    channels opened by synaptic events.
-
-    Finally, there is an optional triplet STDP rule for unsupervised
-    learning, from Pfister and Gerstner, J. Neurosci. 26(38):9673.
-    Synaptic scaling is implemented by slowly attempting to control
-    the value of the calcium trace towards a target.
-
-    The default parameters for STDP are taken from the same source,
-    which derived them from a fit to V1 data recorded by Sjoström.
+    These features are implemented by the classes IzhikevichNeurons
+    and ExponentialSynapses in the braingeneers.buildnn package.
     """
-    def __init__(self, *, XY=None, G,
-                 # per-cell parameters
-                 a, b, c, d, C, k, Vr, Vt, Vp, Vn, tau,
-                 # pass one of the backends from this package
+    def __init__(self, *, XY=None, G, dt=1,
+                 a, b, c, d, C, k, Vr, Vt, Vp, Vn, tau, noise_rate,
                  backend=backend_numpy,
-                 # channel noise parameters.
-                 noise_event_rate=0, noise_event_size=0,
-                 # STDP parameters.
-                 do_stdp=False, stdp_tau_plus=15, stdp_tau_minus=35,
-                 stdp_tau_y=115, stdp_Aplus=6.5e-3, stdp_Aminus=7e-3,
-                 synaptic_scaling_rate=1e-4):
+                 # STDP parameters, updated slightly.
+                 do_stdp=False,
+                 stdp_tau_pre=15, stdp_tau_post1=35,
+                 stdp_tau_post2=115, stdp_Aplus2=0,
+                 stdp_Aplus3=6.5e-3, stdp_Aminus2=7.1e-3,
+                 # Synaptic scaling parameters, independent of STDP.
+                 do_scaling=False, scaling_A=1e-3,
+                 scaling_rate_target=0.05, scaling_tau=1000):
 
-        self._backend = backend
+        # The torch backend is not yet supported by buildnn simulation
+        # code, so error if it is requested.
+        if backend is not backend_numpy:
+            raise NotImplementedError
 
-        self.G = backend.array(G)
-        self.N = self.G.shape[0]
-        if XY is not None:
-            self.XY = backend.array(XY)
-        self.a = backend.array(a)
-        self.b = backend.array(b)
-        self.c = backend.array(c)
-        self.d = backend.array(d)
-        self.C = backend.array(C)
-        self.k = backend.array(k)
-        self.Vr = backend.array(Vr)
-        self.Vt = backend.array(Vt)
-        self.Vp = backend.array(Vp)
-        self.Vn = backend.array(Vn)
-        self.tau = backend.array(tau)
-        self.VUA = backend.array(np.zeros((4,self.N)))
+        # Just pass the parameters on.
+        super().__init__(N=G.shape[0], dt=dt, a=a, b=b, c=c, d=d,
+                         C=C, k=k, Vr=Vr, Vt=Vt, Vp=Vp)
+        self.syn = _buildnn.ExponentialSynapses(
+            G, self, Vn=Vn, tau=tau, noise_rate=noise_rate)
 
-        self.noise_event_size = noise_event_size
-        self.noise_event_rate = noise_event_rate
+        if do_stdp:
+            _buildnn.TripletSTDP(
+                self.syn, tau_pre=stdp_tau_pre, tau_post1=stdp_tau_post1,
+                tau_post2=stdp_tau_post2, A_plus2=stdp_Aplus2,
+                Aplus3=stdp_Aplus3, Aminus2=stdp_Aminus2)
 
-        # STDP by the triplet model of Pfister and Gerstner (2006),
-        # using three synaptic traces at three different time constants.
-        self.do_stdp = do_stdp
-        self.traces = backend.array(np.zeros((3,self.N)))
-        stdp_taus = [stdp_tau_plus, stdp_tau_minus, stdp_tau_y]
-        self.tau_stdp = backend.array([[tau] for tau in stdp_taus])
-        self.Aplus = stdp_Aplus
-        self.Aminus = stdp_Aminus
-        self.Ascaling = synaptic_scaling_rate
-        self.reset()
-
-    def reset(self):
-        self.VUA[0,:] = self.Vr
-        self.fired = self.V >= self.Vp
-        self.VUA[1:,:] = 0
-
-    def VUAdot(self, Iin):
-        NAcurrent = self.k*(self.V - self.Vr)*(self.V - self.Vt)
-        # Save the synaptic and dynamical currents as instrumentation
-        # for extracellular voltages.
-        self.Isyn = self.G@(self.A * self.Vn) - (self.G@self.A) * self.V
-        self.Idyn = NAcurrent - self.U + Iin
-        Vdot = (self.Idyn + self.Isyn) / self.C
-        Udot = self.a * (self.b*(self.V - self.Vr) - self.U)
-        Adot = self.Adot / self.tau
-        Addot = -(self.A + 2*self.Adot) / self.tau
-        return self._backend.stack([Vdot, Udot, Adot, Addot])
+        if do_scaling:
+            _buildnn.SynapticScaling(self.syn, tau=scaling_tau,
+                                     rate_target=scaling_rate_target,
+                                     Ascaling=scaling_A)
 
     def step(self, dt, Iin):
-        """
-        Simulate the organoid for a time dt, subject to an input
-        current Iin.
-        """
-
-        # Apply the correction to any cells that crossed the AP peak
-        # in the last update step, so that this step puts them into
-        # the start of the refractory period.
-        self.V[self.fired] = self.c[self.fired]
-        self.U[self.fired] += self.d[self.fired]
-        self.Adot[self.fired] += 1
-
-        # Channel stochasticity, which affects conductances but
-        # doesn't count as spiking activity for STDP purposes.
-        num_noise_events = np.random.poisson(
-            lam=self.noise_event_rate*dt, size=self.N)
-        self.Adot += self.noise_event_size * num_noise_events
-
-        if self.do_stdp:
-            if self.fired.any():
-                # Update for presynaptic spikes
-                pre_mod = self.traces[1,self.fired]
-                self.G[:,self.fired] -= self.Aminus * pre_mod
-
-                # Update for postsynaptic spikes.
-                post_mod = self.traces[0,:] \
-                    * self.traces[2,self.fired,np.newaxis]
-                self.G[self.fired,:] += self.Aplus * post_mod
-
-                # Excitatory synaptic scaling: nudge the excitatory
-                # inputs to all cells towards a certain fixed firing
-                # rate - as long as this happens slowly, it's probably
-                # kind of okay? It's still weird...
-                target_err = self.traces[2,:,np.newaxis] - 0.5
-                self.G[:,self.Vn > self.Vt] -= \
-                    target_err * dt*self.Ascaling
-
-                # Make sure there are no negative conductances!
-                np.clip(self.G, 0, None, out=self.G)
-
-                # Also update the synaptic traces. Apparently it's
-                # quite important to use all-to-all interaction.
-                self.traces[:,self.fired] += 1
-
-            # Even if no cells fired, the traces decay
-            self.traces *= 1 - dt / self.tau_stdp
-
-        # Actually do the stepping, using the midpoint method for
-        # integration. This costs as much as halving the timestep
-        # would in forward Euler, but increases the order to 2.
-        Iin = self._backend.array(Iin)
-        k1 = self.VUAdot(Iin)
-        self.VUA += k1 * dt/2
-        k2 = self.VUAdot(Iin)
-        self.VUA += k2*dt - k1*dt/2
-
-        # The synaptic and dynamical currents have been computed by
-        # the above VUAdot step, but needs to be adjusted during the
-        # reset to account for the change in voltage: each cell that
-        # fired had its voltage adjusted from Vp to c.
-        deltaV = self.c[self.fired] - self.Vp[self.fired]
-        self.Idyn[self.fired] += self.C[self.fired] * deltaV
-
-        # Make a note of which cells this step has caused to fire,
-        # then correct their membrane voltages down to the peak.  This
-        # can make some of the traces look a little weird; it may be
-        # prettier to adjust the previous point UP to self.Vp and set
-        # this point to self.c, but that's not possible here since we
-        # don't save all states.
-        self.fired = self.V >= self.Vp
-        self.V[self.fired] = self.Vp[self.fired]
-
-
-    @property
-    def V(self):
-        return self.VUA[0,:]
-
-    @V.setter
-    def V(self, value):
-        self.VUA[0,:] = value
-
-    @property
-    def U(self):
-        return self.VUA[1,:]
-
-    @U.setter
-    def U(self, value):
-        self.VUA[1,:] = value
+        if dt != self.dt:
+            raise ValueError('Variable timesteps are not supported.')
+        self.fired = self._step(Iin + self.Isyn())
+        for syn in self.input_synapses:
+            syn._step()
 
     @property
     def A(self):
-        return self.VUA[2,:]
+        return self.syn.a
 
     @A.setter
     def A(self, value):
-        self.VUA[2,:] = value
-
-    @property
-    def Adot(self):
-        return self.VUA[3,:]
-
-    @Adot.setter
-    def Adot(self, value):
-        self.VUA[3,:] = value
+        self.syn.a[:] = value
 
 
 def pointwise_distance(As, Bs):
@@ -506,9 +350,9 @@ def _gen_frame_events(dt, events):
 
 
 class OrganoidWrapper(Organoid):
-    def __init__(self, N, *, use_torch=None,
-                 input_scale=200, dt=1, do_stdp=False,
-                 noise_rate=1, noise_size=0.1, p_rewire=2.5e-2,
+    def __init__(self, N, *, use_torch=None, dt=1, do_stdp=False,
+                 input_scale=100, input_offset=50,
+                 noise_rate=0.1, p_rewire=2.5e-2,
                  world_bigness=10, scale_inhibitory=8,
                  G_mu=-1.8, G_sigma=0.94):
         """
@@ -586,60 +430,31 @@ class OrganoidWrapper(Organoid):
 
         super().__init__(XY=XY, G=G, tau=tau, a=a, b=b, c=c, d=d,
                          k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp, Vn=Vn,
-                         noise_event_rate=noise_rate,
-                         noise_event_size=noise_size,
+                         noise_rate=noise_rate,
                          do_stdp=do_stdp,
                          backend=backend_torch if use_torch
                          else backend_numpy)
         self.dt = dt
         self.input_scale = input_scale
+        self.input_offset = input_offset
 
-
-    def total_firings(self, input, interval):
-        """
-        Simulates the Organoid for a time interval subject to a fixed
-        input current, and returns an array containing the number of
-        firings for each cell during that time.
-        """
-        firings = np.zeros(self.N)
-        while interval > self.dt:
-            self.org.step(self.dt, self.input_scale * input)
-            firings[self.org.fired] += 1
-            interval -= self.dt
-        self.org.step(interval, self.input_scale * input)
-
-        return firings
-
-
-    def activation_after(self, input, interval):
+    def activation_after(self, inp, interval):
         """
         Simulates the Organoid for a time interval subject to a fixed
         input current, and returns the array of presynaptic
         activations at the end of that time.
         """
-        self.total_firings(input, interval)
+        self.list_firings(inp, interval)
         return self.A
 
-    def synapses(self):
-        "Retrieves the synaptic strengths from the organoid."
-        return self.G
-
-    def collect_spikes(self, duration):
-        """
-        Simulates the organoid for a given duration and saves all
-        firing events that occur in that time.
-        """
-        spike_times, spike_idces = [], []
-        tsteps = duration // self.dt
-        for t in range(tsteps):
-            self.step(self.dt, 0)
-
-            for i in np.arange(self.N)[self.fired]:
-                spike_times.append(t*self.dt)
-                spike_idces.append(i)
-
-        return spike_times, spike_idces
+    def list_firings(self, inp, interval):
+        inp = self.input_scale*inp + self.input_offset
+        return super().list_firings(inp, interval)
 
     def measure_criticality(self, duration):
-        return _analysis.criticality_metric(
-            *self.collect_spikes(duration))
+        events = self.list_firings(0, duration)
+        if len(events) == 0:
+            return np.inf
+        times = [t for t,i in events]
+        idces = [i for t,i in events]
+        return _analysis.criticality_metric(times, idces)
