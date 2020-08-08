@@ -108,6 +108,11 @@ class AggregateCulture(Neurons):
 
         return self.fired
 
+    def reset(self):
+        for c in self.cultures:
+            c.reset()
+        super().reset()
+
 
 class PoissonNeurons(Neurons):
     """
@@ -259,6 +264,13 @@ class Synapses():
         self.outputs.input_synapses.append(self)
         self.reset()
 
+    def remove(self):
+        """
+        Removes this synapse group from the Neurons object to which it
+        provides its output.
+        """
+        self.outputs.input_synapses.remove(self)
+
     def output(self):
         """
         Return the numerical input that these synapses should be
@@ -292,24 +304,27 @@ def SynapticScaling(self, *, tau, rate_target, Ascaling):
         _step.__wrapped__()
 
         # Continuous dynamics of the trace.
-        self.x_scaling -= self.x_scaling
+        self.x_scaling -= self.dt * self.x_scaling/self.tau_scaling
 
         # Control G towards a desired rate. Note that if a neuron is
         # firing at some rate r, the time average value of a synaptic
         # trace that decays at a rate tau is exactly r*tau.
         x_err = self.x_scaling - self.rate_target*self.tau_scaling
-        self.G[self.outputs.fired,:] *= 1 - self.Ascaling * x_err
+        self.G *= 1 - self.Ascaling * x_err[:,np.newaxis] * self.dt
 
         # Update the trace to include postsynaptic firing events.
         self.x_scaling[self.outputs.fired] += 1
+    self._step = _step
 
     @functools.wraps(self.reset)
     def reset():
         reset.__wrapped__()
-        self.x_scaling = np.zeros(self.N)
-
-    self._step = _step
+        x_target = self.rate_target*self.tau_scaling
+        self.x_scaling = np.ones(self.N) * x_target
     self.reset = reset
+
+    self.reset()
+    return self
 
 
 def TripletSTDP(self, *, tau_pre, tau_post1, tau_post2,
@@ -384,7 +399,7 @@ class ExponentialSynapses(Synapses):
     def output(self):
         return self.G@(self.a*self.Vn) \
             - (self.G@self.a)*self.outputs.V \
-            + self.G.sum(1)*self.noise_rate*np.random.randn(self.M)
+            + self.G.sum(1)*self.noise_rate*np.random.randn(self.N)
 
     def _step(self):
         self.a[self.inputs.fired] += 1
