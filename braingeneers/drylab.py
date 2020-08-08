@@ -350,9 +350,9 @@ def _gen_frame_events(dt, events):
 
 
 class OrganoidWrapper(Organoid):
-    def __init__(self, N, *, use_torch=None, dt=1, do_stdp=False,
-                 input_scale=100, input_offset=50,
-                 noise_rate=0.1, p_rewire=2.5e-2,
+    def __init__(self, N, *, use_torch=None, do_scaling=False,
+                 input_scale=100, dt=1, do_stdp=False,
+                 noise_rate=5, p_rewire=2.5e-2,
                  world_bigness=10, scale_inhibitory=8,
                  G_mu=-1.8, G_sigma=0.94):
         """
@@ -431,12 +431,11 @@ class OrganoidWrapper(Organoid):
         super().__init__(XY=XY, G=G, tau=tau, a=a, b=b, c=c, d=d,
                          k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp, Vn=Vn,
                          noise_rate=noise_rate,
-                         do_stdp=do_stdp,
+                         do_stdp=do_stdp, do_scaling=do_scaling,
                          backend=backend_torch if use_torch
                          else backend_numpy)
         self.dt = dt
         self.input_scale = input_scale
-        self.input_offset = input_offset
 
     def activation_after(self, inp, interval):
         """
@@ -448,8 +447,7 @@ class OrganoidWrapper(Organoid):
         return self.A
 
     def list_firings(self, inp, interval):
-        inp = self.input_scale*inp + self.input_offset
-        return super().list_firings(inp, interval)
+        return super().list_firings(self.input_scale*inp, interval)
 
     def measure_criticality(self, duration):
         events = self.list_firings(0, duration)

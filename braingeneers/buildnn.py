@@ -66,13 +66,16 @@ class Neurons():
             raster[i, int(t//bin_size)] = True
         return raster
 
-    def total_firings(self, Iin, total_time):
+    def total_firings(self, Iin, time):
         """
         Simulate the network for a fixed total time with a constant
         input parameter and return the total number of times each cell
         fired during that time.
         """
-        return self.spike_raster(Iin, total_time, self.dt).sum(1)
+        counts = np.zeros(self.N, dtype=np.int)
+        for _,i in self.list_firings(Iin, time):
+            counts[i] += 1
+        return counts
 
 
 class AggregateCulture(Neurons):
@@ -91,7 +94,8 @@ class AggregateCulture(Neurons):
         super().__init__(N, dt)
 
     def Isyn(self):
-        return np.hstack([c.Isyn() for c in self.cultures])
+        Isyn_sub = np.hstack([c.Isyn() for c in self.cultures])
+        return super().Isyn() + Isyn_sub
 
     def _step(self, Iin):
         # For each culture, update the corresponding part of the
@@ -358,6 +362,10 @@ def TripletSTDP(self, *, tau_pre, tau_post1, tau_post2,
         self.G[self.outputs.fired,:] += self.x_pre*(
             self.Aplus2 + self.Aplus3*self.x_post2)
 
+        # Make sure there's no way to get negative conductances.
+        np.clip(self.G[:,self.inputs.fired], 0, None,
+                out=self.G[:,self.inputs.fired])
+
         # Finally, bump the traces of the cells that have fired.
         self.x_pre[:,self.inputs.fired] += 1
         self.x_post1[:,self.outputs.fired] += 1
@@ -407,51 +415,3 @@ class ExponentialSynapses(Synapses):
 
     def reset(self):
         self.a = np.zeros(self.M)
-
-
-class DiehlCook2015(AggregateCulture):
-    def __init__(self, N, dt):
-        # Populations of input, excitatory, and inhibitory neurons.
-        self.input_layer = PoissonNeurons(784, dt)
-        self.exc = LIFNeurons(N, dt, Vr=-65, c=-65, Vp=-52,
-                              tau=100, t_refrac=5)
-        self.inh = LIFNeurons(N, dt, Vr=-60, c=-45, Vp=-40,
-                              tau=10, t_refrac=2)
-
-        # Input->excitatory synapses.
-        ExponentialSynapses(self.input_layer, self.exc,
-                            tau=1, Vn=0,
-                            G=0.05*np.random.rand(N,784)
-                            *(np.random.rand(N,784) < 0.1))
-        # Excitatory->inhibitory synapses.
-        ExponentialSynapses(self.exc, self.inh,
-                            tau=1, Vn=0,
-                            G=1*np.eye(N))
-        # Synapses for lateral inhibition.
-        ExponentialSynapses(self.inh, self.exc,
-                            tau=2, Vn=-100,
-                            G=1*(1-np.eye(N)))
-
-        super().__init__(self.input_layer, self.exc, self.inh)
-
-    def list_firings(self, Iin, time):
-        """
-        Simulate the network for some amount of time. This network
-        only accepts a reduced version of the typical Iin to set the
-        rates of the Poisson input layer.
-        """
-        Iin_full = np.zeros(self.N)
-        Iin_full[:self.input_layer.N] = np.asarray(Iin).flatten()
-        return super().list_firings(Iin_full, time)
-
-    def present(self, digit, off_time=150, on_time=350):
-        """
-        Present a digit to the network: first, allow the network to
-        relax with zero input, then use the input digit as the rate
-        argument to the input layer, and return the results.
-        """
-        self.total_firings(np.zeros(self.input_layer.N), off_time)
-
-        # Flatten the input digit and provide it to the input layer,
-        # but also include zeros to send to the rest of the neurons.
-        return self.total_firings(digit, on_time)[784:784+self.exc.N]
