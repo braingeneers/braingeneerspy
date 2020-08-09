@@ -313,18 +313,17 @@ def SynapticScaling(self, *, tau, rate_target, Ascaling):
         # Control G towards a desired rate. Note that if a neuron is
         # firing at some rate r, the time average value of a synaptic
         # trace that decays at a rate tau is exactly r*tau.
-        x_err = self.x_scaling - self.rate_target*self.tau_scaling
+        x_err = self.x_scaling / self.rate_target - 1
         self.G *= 1 - self.Ascaling * x_err[:,np.newaxis] * self.dt
 
         # Update the trace to include postsynaptic firing events.
-        self.x_scaling[self.outputs.fired] += 1
+        self.x_scaling[self.outputs.fired] += 1/self.tau_scaling
     self._step = _step
 
     @functools.wraps(self.reset)
     def reset():
         reset.__wrapped__()
-        x_target = self.rate_target*self.tau_scaling
-        self.x_scaling = np.ones(self.N) * x_target
+        self.x_scaling = np.ones(self.N) * self.rate_target
     self.reset = reset
 
     self.reset()
@@ -332,7 +331,7 @@ def SynapticScaling(self, *, tau, rate_target, Ascaling):
 
 
 def TripletSTDP(self, *, tau_pre, tau_post1, tau_post2,
-                Aplus2, Aplus3, Aminus2):
+                Aplus2, Aplus3, Aminus2, maximum_conductance=None):
     """
     Modifies an existing synapse group object to add STDP by the
     triplet rule of Pfister and Gerstner (2006), using one presynaptic
@@ -346,6 +345,7 @@ def TripletSTDP(self, *, tau_pre, tau_post1, tau_post2,
     self.Aplus2 = Aplus2
     self.Aplus3 = Aplus3
     self.Aminus2 = Aminus2
+    self.G_max = maximum_conductance
 
     # Add evolution of the traces to the step method.
     @functools.wraps(self._step)
@@ -357,19 +357,29 @@ def TripletSTDP(self, *, tau_pre, tau_post1, tau_post2,
         self.x_post1 -= self.x_post1 * self.dt/self.tau_post1
         self.x_post2 -= self.x_post2 * self.dt/self.tau_post2
 
-        # Update the synaptic weights.
-        self.G[:,self.inputs.fired] -= self.x_post1*self.Aminus2
-        self.G[self.outputs.fired,:] += self.x_pre*(
-            self.Aplus2 + self.Aplus3*self.x_post2)
+        fo = self.outputs.fired
+        if fo.any():
+            # Synapses from cells which have fired recently onto cells
+            # which just fired are subject to LTP.
+            self.G[fo,:] += self.x_pre*(
+                self.Aplus2 + self.Aplus3*self.x_post2[fo,np.newaxis])
 
-        # Make sure there's no way to get negative conductances.
-        np.clip(self.G[:,self.inputs.fired], 0, None,
-                out=self.G[:,self.inputs.fired])
+            # Bump the synaptic input trace.
+            self.x_post1[fo] += 1
+            self.x_post2[fo] += 1
 
-        # Finally, bump the traces of the cells that have fired.
-        self.x_pre[:,self.inputs.fired] += 1
-        self.x_post1[:,self.outputs.fired] += 1
-        self.x_post2[:,self.outputs.fired] += 1
+        fi = self.inputs.fired
+        if fi.any():
+            # Synapses from cells which haven't fired recently onto
+            # cells which just fired are subject to LTD.
+            self.G[:,fi] -= self.x_post1[:,np.newaxis]*self.Aminus2
+
+            # Make sure there's no way to get negative conductances.
+            self.G[:,fi] = np.clip(self.G[:,fi], 0, self.G_max)
+
+            # Bump the synaptic input trace.
+            self.x_pre[fi] += 1
+
     self._step = _step
 
     # Reset the traces too.
