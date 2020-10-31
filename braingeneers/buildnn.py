@@ -8,8 +8,8 @@ class Neurons():
     """
     def __init__(self, N, dt):
         self.N = N
-        self.dt = dt
         self.input_synapses = []
+        self.dt = dt
         self.reset()
 
     def reset(self):
@@ -77,6 +77,16 @@ class Neurons():
             counts[i] += 1
         return counts
 
+    @property
+    def dt(self):
+        return self._dt
+
+    @dt.setter
+    def dt(self, dt):
+        self._dt = dt
+        for syn in self.input_synapses:
+            syn.dt = dt
+
 
 class AggregateCulture(Neurons):
     """
@@ -88,10 +98,7 @@ class AggregateCulture(Neurons):
         self.cultures = cultures
         N = sum(c.N for c in cultures)
 
-        dt = cultures[0].dt
-        assert all(c.dt == dt for c in cultures)
-
-        super().__init__(N, dt)
+        super().__init__(N, cultures[0].dt)
 
     def Isyn(self):
         Isyn_sub = np.hstack([c.Isyn() for c in self.cultures])
@@ -116,6 +123,18 @@ class AggregateCulture(Neurons):
         for c in self.cultures:
             c.reset()
         super().reset()
+
+    @property
+    def dt(self):
+        return self._dt
+
+    @dt.setter
+    def dt(self, dt):
+        self._dt = dt
+        for syn in self.input_synapses:
+            syn.dt = dt
+        for c in self.cultures:
+            c.dt = dt
 
 
 class PoissonNeurons(Neurons):
