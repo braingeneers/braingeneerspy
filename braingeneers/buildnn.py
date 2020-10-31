@@ -329,13 +329,17 @@ def SynapticScaling(self, *, tau, rate_target, Ascaling):
         # Continuous dynamics of the trace.
         self.x_scaling -= self.dt * self.x_scaling/self.tau_scaling
 
-        # Control G towards a desired rate. Note that if a neuron is
-        # firing at some rate r, the time average value of a synaptic
-        # trace that decays at a rate tau is exactly r*tau.
+        # Control G towards a desired rate. This multiplication is a
+        # first-order approximation to the exact integration of a
+        # linear ODE, which has the same convergence characteristics
+        # as the forward Euler used to update the firing traces, but
+        # broadcasts so takes only O(N) space.
         x_err = self.x_scaling / self.rate_target - 1
         self.G *= 1 - self.Ascaling * x_err[:,np.newaxis] * self.dt
 
-        # Update the trace to include postsynaptic firing events.
+        # Update the trace to include postsynaptic firing events. The
+        # scaling factor makes the trace an estimate of the cell's
+        # actual firing rate.
         self.x_scaling[self.outputs.fired] += 1/self.tau_scaling
     self._step = _step
 
@@ -349,22 +353,26 @@ def SynapticScaling(self, *, tau, rate_target, Ascaling):
     return self
 
 
-def TripletSTDP(self, *, tau_pre, tau_post1, tau_post2,
-                Aplus2, Aplus3, Aminus2, maximum_conductance=None):
+def MinimalTripletSTDP(self, *, G_max=None,
+                       tau_pre=16.8, tau_post1=33.7, tau_post2=125.,
+                       Aplus=6.5e-3, Aminus=7.1e-3):
     """
     Modifies an existing synapse group object to add STDP by the
     triplet rule of Pfister and Gerstner (2006), using one presynaptic
     and two postsynaptic traces, all at different time constants.
+    This is the minimal version where LTD doesn't include triplets
+    and LTP doesn't include pairs, reducing the number of parameters
+    to "only" five. The defaults are the ones Pfister & Gerstner
+    originally fit to Sjöström's V1 experiments, from their Table 3.
     """
     # Save the time constants into the object so they act like normal
     # properties, e.g. can be modified by the user.
     self.tau_pre = tau_pre
     self.tau_post1 = tau_post1
     self.tau_post2 = tau_post2
-    self.Aplus2 = Aplus2
-    self.Aplus3 = Aplus3
-    self.Aminus2 = Aminus2
-    self.G_max = maximum_conductance
+    self.Aplus = Aplus
+    self.Aminus = Aminus
+    self.G_max = G_max
 
     # Add evolution of the traces to the step method.
     @functools.wraps(self._step)
@@ -380,8 +388,8 @@ def TripletSTDP(self, *, tau_pre, tau_post1, tau_post2,
         if fo.any():
             # Synapses from cells which have fired recently onto cells
             # which just fired are subject to LTP.
-            self.G[fo,:] += self.x_pre*(
-                self.Aplus2 + self.Aplus3*self.x_post2[fo,np.newaxis])
+            self.G[fo,:] += self.x_pre * \
+                self.Aplus*self.x_post2[fo,np.newaxis]
 
             # Bump the synaptic input trace.
             self.x_post1[fo] += 1
@@ -391,7 +399,7 @@ def TripletSTDP(self, *, tau_pre, tau_post1, tau_post2,
         if fi.any():
             # Synapses from cells which haven't fired recently onto
             # cells which just fired are subject to LTD.
-            self.G[:,fi] -= self.x_post1[:,np.newaxis]*self.Aminus2
+            self.G[:,fi] -= self.x_post1[:,np.newaxis]*self.Aminus
 
             # Make sure there's no way to get negative conductances.
             self.G[:,fi] = np.clip(self.G[:,fi], 0, self.G_max)
@@ -434,13 +442,13 @@ class ExponentialSynapses(Synapses):
         self.noise_rate = noise_rate
 
     def output(self):
-        return self.G@(self.a*self.Vn) \
-            - (self.G@self.a)*self.outputs.V \
-            + self.G.sum(1)*self.noise_rate*np.random.randn(self.N)
+        return np.einsum('ij,j,i->i', self.G, self.a,
+                         self.Vn - self.outputs.V) + \
+            self.G.sum(1)*self.noise_rate*np.random.randn(self.N)
 
     def _step(self):
-        self.a[self.inputs.fired] += 1
         self.a -= self.dt/self.tau * self.a
+        self.a[self.inputs.fired] += 1
 
     def reset(self):
         self.a = np.zeros(self.M)
