@@ -5,6 +5,7 @@ import braingeneers as bgr
 import matplotlib.pyplot as plt
 import plotly.express as px
 import time
+import copy
 
 from scipy  import sparse
 from scipy  import signal
