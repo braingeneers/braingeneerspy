@@ -60,6 +60,44 @@ class Neuron:
         self.fs = fs
         self.sp_sparse = sparse.coo_matrix(self.spikes).tocsr()
 
+   def load_spike_times(spike_times,fs=1,window_size=10000000,max_neurons=10):
+    '''Take in list of list of spike times
+    spike_times[0] -> list of spike times for neuron 0
+    spike_times[0][10] -> neuron zero at timestep 10
+    
+    outputs dense array of size (neurons, timesteps)
+    '''
+        
+    self.spike_times = copy.deepcopy(spike_times)
+    self.fs = fs
+
+    t_max = 0
+    for neuron in spike_times:
+        cur_t_max = max(neuron)
+        if cur_t_max > t_max:
+            t_max = cur_t_max
+            
+            
+    t_max = np.min([t_max+1,window_size])
+    #Create
+    neuron_num = min(len(spike_times),max_neurons)
+    self.spike_dense = np.zeros((neuron_num,t_max))
+
+
+    for neuron_index, waveform in enumerate(spike_times):
+        if neuron_index >= max_neurons:
+            break
+        for timestep in waveform:
+            if timestep >= t_max:
+                break
+            self.spike_dense[neuron_index,timestep] = 1
+
+    
+
+    return self.spike_dense
+
+        
+        
 
     def load_map(self, map_arr=None):
         #Take in list of coordinates with (x,y,z) as positions of neurons
