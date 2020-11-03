@@ -60,7 +60,7 @@ class Neuron:
         self.fs = fs
         self.sp_sparse = sparse.coo_matrix(self.spikes).tocsr()
 
-    def load_spike_times(spike_times,fs=1,window_size=10000000,max_neurons=10):
+    def load_spike_times(self, spike_times,fs=1,window_size=10000000,max_neurons=10):
         '''Take in list of list of spike times
         spike_times[0] -> list of spike times for neuron 0
         spike_times[0][10] -> neuron zero at timestep 10
