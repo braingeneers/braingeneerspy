@@ -181,11 +181,14 @@ class LIFNeurons(Neurons):
         dVdt = Iin - (self.V - self.Vr)/self.tau
         V_test = self.V + self.dt*dVdt
         dVdt = Iin - (V_test - self.Vr)/self.tau
-        self.V[self.timer <= 0] += dVdt[self.timer <= 0] * self.dt
-        self.timer -= self.dt
+        self.V += dVdt * self.dt
 
-        # And fire! :)
-        return self.V >= self.Vp
+        # Detect firings and handle refractory period: new events
+        # can't occur until the absolute refractory period is over,
+        # but integration continues. This is a bit weird, but
+        # consistent with the model of Diehl & Cook (2015).
+        self.timer -= self.dt
+        return (self.timer <= 0) & (self.V >= self.Vp)
 
 
 class IzhikevichNeurons(Neurons):
@@ -402,7 +405,7 @@ def MinimalTripletSTDP(self, *, G_max=None,
             self.G[:,fi] -= self.x_post1[:,np.newaxis]*self.Aminus
 
             # Make sure there's no way to get negative conductances.
-            self.G[:,fi] = np.clip(self.G[:,fi], 0, self.G_max)
+            np.clip(self.G[:,fi], 0, self.G_max, out=self.G[:,fi])
 
             # Bump the synaptic input trace.
             self.x_pre[fi] += 1
@@ -442,9 +445,11 @@ class ExponentialSynapses(Synapses):
         self.noise_rate = noise_rate
 
     def output(self):
-        return np.einsum('ij,j,i->i', self.G, self.a,
-                         self.Vn - self.outputs.V) + \
-            self.G.sum(1)*self.noise_rate*np.random.randn(self.N)
+        if self.noise_rate != 0:
+            return (self.Vn - self.outputs.V) * (self.G @ self.a) + \
+                self.G.sum(1)*self.noise_rate*np.random.randn(self.N)
+        else:
+            return (self.Vn - self.outputs.V) * (self.G @ self.a)
 
     def _step(self):
         self.a -= self.dt/self.tau * self.a
