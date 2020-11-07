@@ -34,7 +34,8 @@ def load_batch(batch_uuid):
     if r.ok:
         return r.json()
     else:
-        raise Exception('Are you sure '+ batch_uuid+ ' is the right uuid?')
+        print(full_path_for_prp)
+        raise Exception('Path:', full_path_for_prp, '\nAre you sure '+ batch_uuid + ' is the right uuid?')
 
 def load_experiment(batch_uuid, experiment_num):
     """
@@ -59,16 +60,17 @@ def load_experiment(batch_uuid, experiment_num):
             return json.load(f)
 
     # Each experiment has a metadata file with all *.rhd headers and other sample info
-    
+
     full_path_for_prp = str(get_archive_url()) + '/' + batch_uuid +'/derived/' +  batch["experiments"][experiment_num]
     r = requests.get(full_path_for_prp)
+    print("Full path for PRP:", full_path_for_prp)
     if r.ok:
         return r.json()
     else:
+        print("Full path for PRP:", full_path_for_prp)
         raise Exception('Are you sure '+ str(experiment_num)+ ' an experiment number?')
 
-
-def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
+def load_files_axion(metadata, batch_uuid, experiment_num, start, stop):
     """
     Load signal blocks of data from a single experiment
     Parameters
@@ -90,11 +92,90 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     fs : float
         Sample rate in Hz
     """
-    metadata = load_experiment(batch_uuid, experiment_num)
-    assert start >= 0 and start < len(metadata["blocks"])
-    assert not stop or stop >= 0 and stop <= len(metadata["blocks"])
-    assert not stop or stop > start
+    raise Exception('Axion data loading function not implemented')
+    return
 
+
+def load_files_raspi(metadata, batch_uuid, experiment_num, start, stop):
+    """
+    Load signal blocks of data from a single experiment
+    Parameters
+    ----------
+    batch_uuid : str
+        UUID of batch of experiments within the Braingeneer's archive'
+    experiment_num : int
+        Which experiment in the batch to load
+    start : int, optional
+        First rhd data block to return
+    stop : int, optional
+        Last-1 rhd data block to return
+    Returns
+    -------
+    X : ndarray
+        Numpy matrix of shape frames, channels
+    t : ndarray
+        Numpy array with time in milliseconds for each frame
+    fs : float
+        Sample rate in Hz
+    """
+    # Load all the raw files into a single matrix
+    if os.path.exists("{}/{}/derived/".format(get_archive_path(), batch_uuid)):
+        # Load from local archive
+        filename = "{}/{}/derived/{}".format(get_archive_path(), batch_uuid, metadata["blocks"][0]["path"])
+        raw_data = np.fromfile(filename, dtype='>i2', count=-1, offset=4)
+
+    else:
+        # Load from PRP S3
+        url = "{}/{}/derived/{}".format(get_archive_url(), batch_uuid, metadata["blocks"][0]["path"])
+        with np.DataSource(None).open(url, "rb") as f:
+                raw_data = np.fromfile(f, dtype='>i2', count=-1, offset=4)
+
+
+    #throw away last partial frame
+    max_index = (len(raw_data)//metadata["num_channels"])*metadata["num_channels"]
+    raw_data = raw_data[:max_index]
+
+    #scale the data
+    uV_data= raw_data*metadata["scaler"]
+
+    #shape data into (frames, channels) (x, y)
+    X = np.reshape(uV_data, (-1, metadata["num_channels"]),  order="C")
+
+    #S ampling rate
+    fs = metadata["sample_rate"] #kHz
+
+    # Time
+    T = 1.0/(fs*1000)
+    start_t = 0
+    end_t = start_t + (T * X.shape[0])
+    t = np.linspace(start_t, end_t, X.shape[0], endpoint=False) #MILISECOND_TIMESCALE
+    assert t.shape[0] == X.shape[0]
+
+    return X, t, fs
+
+
+def load_files_intan(metadata, batch_uuid, experiment_num, start, stop):
+    """
+    Load signal blocks of data from a single experiment
+    Parameters
+    ----------
+    batch_uuid : str
+        UUID of batch of experiments within the Braingeneer's archive'
+    experiment_num : int
+        Which experiment in the batch to load
+    start : int, optional
+        First rhd data block to return
+    stop : int, optional
+        Last-1 rhd data block to return
+    Returns
+    -------
+    X : ndarray
+        Numpy matrix of shape frames, channels
+    t : ndarray
+        Numpy array with time in milliseconds for each frame
+    fs : float
+        Sample rate in Hz
+    """
     def _load_path(path):
         with open(path, "rb") as f:
             f.seek(8, os.SEEK_SET)
@@ -133,25 +214,65 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
 
     return X, t, fs
 
+
+def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
+    """
+    Load signal blocks of data from a single experiment for Axion, Indan and Raspi
+    Parameters
+    ----------
+    batch_uuid : str
+        UUID of batch of experiments within the Braingeneer's archive'
+    experiment_num : int
+        Which experiment in the batch to load
+    start : int, optional
+        First rhd data block to return
+    stop : int, optional
+        Last-1 rhd data block to return
+    Returns
+    -------
+    X : ndarray
+        Numpy matrix of shape frames, channels
+    t : ndarray
+        Numpy array with time in milliseconds for each frame
+    fs : float
+        Sample rate in Hz
+    """
+    metadata = load_experiment(batch_uuid, experiment_num)
+    assert start >= 0 and start < len(metadata["blocks"])
+    assert not stop or stop >= 0 and stop <= len(metadata["blocks"])
+    assert not stop or stop > start
+
+    if ("Raspi" in metadata["hardware"]):
+        X, t, fs = load_files_raspi(metadata, batch_uuid, experiment_num, start, stop)
+    elif ("Axion" in metadata["hardware"]):
+        X, t, fs = load_files_axion(metadata, batch_uuid, experiment_num, start, stop)
+    elif ("Intan" in metadata["hardware"]):
+        X, t, fs = load_files_intan(metadata, batch_uuid, experiment_num, start, stop)
+    else:
+        raise Exception('hardware field in metadata.json must contain keyword Axion, Raspi, or Intan')
+
+    return X, t, fs
+
+
 def load_spikes(batch_uuid, experiment_num):
     batch = load_batch(batch_uuid)
     experiment_name_with_json = batch['experiments'][experiment_num]
     experiment_name = experiment_name_with_json[:-5].rsplit('/',1)[-1]
     path_of_firings = '/public/groups/braingeneers/ephys/' + batch_uuid + '/nico_spikes/' + experiment_name + '_spikes.npy'
     print(path_of_firings)
-    
+
     try:
         firings = np.load(path_of_firings)
         spike_times= firings[1]
         return spike_times
-    except: 
+    except:
         path_of_firings_on_prp = get_archive_url() + '/'+batch_uuid + '/nico_spikes/' + experiment_name + '_spikes.npy'
         response = requests.get(path_of_firings_on_prp, stream=True)
 
         with open('firings.npy', 'wb') as fin:
             shutil.copyfileobj(response.raw, fin)
-        
-        firings = np.load('firings.npy') 
+
+        firings = np.load('firings.npy')
         spikes = firings[1]
         return spikes
 
@@ -164,11 +285,11 @@ def load_firings(batch_uuid, experiment_num, sorting_type): #sorting type is "ms
     if (sorting_type == "klusta"):
         path_of_firings = '/public/groups/braingeneers/ephys/' + batch_uuid + '/klusta_spikes/' + experiment_name + '_spikes.npy'
     print(path_of_firings)
-    
+
     try:
         firings = np.load(path_of_firings)
         return firings
-    except: 
+    except:
         if (sorting_type == "ms4"):
             path_of_firings_on_prp = get_archive_url() + '/'+batch_uuid + '/nico_spikes/' + experiment_name + '_spikes.npy'
         if (sorting_type == "klusta"):
@@ -177,8 +298,8 @@ def load_firings(batch_uuid, experiment_num, sorting_type): #sorting type is "ms
 
         with open('firings.npy', 'wb') as fin:
             shutil.copyfileobj(response.raw, fin)
-        
-        firings = np.load('firings.npy') 
+
+        firings = np.load('firings.npy')
         return firings
 
 
@@ -187,12 +308,12 @@ def min_max_blocks(experiment, batch_uuid):
     index = batch['experiments'].index("{}.json".format(experiment['name']))
     for i in range(len(experiment["blocks"])):
         print("Computing Block: ", str(i))
-        X, t, fs = load_blocks(batch_uuid, index, i, i+1)        
+        X, t, fs = load_blocks(batch_uuid, index, i, i+1)
         X= np.transpose(X)
         X= X[:int(experiment['num_voltage_channels'])]
         step = int(fs / 1000)
         yield np.array([[
-            np.amin(X[:,j:min(j + step, X.shape[1]-1)]), 
+            np.amin(X[:,j:min(j + step, X.shape[1]-1)]),
             np.amax(X[:,j:min(j + step, X.shape[1]-1)])]
           for j in range(0, X.shape[1], step)])
 
@@ -210,25 +331,25 @@ def create_overview(batch_uuid, experiment_num, with_spikes = True):
 
     print('Overview Shape:',overview.shape)
 
-    
+
     plt.title("Overview for Batch: {} Experiment: {}".format(batch_uuid, experiment["name"]))
     plt.fill_between(range(0, overview.shape[0]), overview[:,0], overview[:,1])
-    
+
     blocks = load_blocks(batch_uuid, experiment_num, 0)
-    
+
     if with_spikes:
-        
+
         spikes = load_spikes(batch_uuid, experiment_num)
-    
+
         fs = blocks[2]
 
         step = int(fs / 1000)
 
-        spikes_in_correct_units = spikes/step 
+        spikes_in_correct_units = spikes/step
 
         for i in spikes_in_correct_units:
             plt.axvline(i, .1, .2, color = 'r', linewidth = .8, linestyle='-', alpha = .05)
-            
+
 
     plt.show()
 
