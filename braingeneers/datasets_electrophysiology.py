@@ -142,10 +142,10 @@ def load_files_raspi(metadata, batch_uuid, experiment_num, start, stop):
     X = np.reshape(uV_data, (-1, metadata["num_channels"]),  order="C")
 
     #S ampling rate
-    fs = metadata["sample_rate"] #kHz
+    fs = metadata["sample_rate"] #Hz
 
     # Time
-    T = 1.0/(fs*1000)
+    T = 1.0/(fs)
     start_t = 0
     end_t = start_t + (T * X.shape[0])
     t = np.linspace(start_t, end_t, X.shape[0], endpoint=False) #MILISECOND_TIMESCALE
