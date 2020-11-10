@@ -145,7 +145,7 @@ def load_files_raspi(metadata, batch_uuid, experiment_num, start, stop):
     fs = metadata["sample_rate"] #Hz
 
     # Time
-    T = 1.0/(fs)
+    T = (1.0/fs)*1000 #ms (given fs in Hz)
     start_t = 0
     end_t = start_t + (T * X.shape[0])
     t = np.linspace(start_t, end_t, X.shape[0], endpoint=False) #MILISECOND_TIMESCALE
