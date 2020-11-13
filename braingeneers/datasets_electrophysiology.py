@@ -242,7 +242,7 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     assert not stop or stop >= 0 and stop <= len(metadata["blocks"])
     assert not stop or stop > start
 
-    if("hardware" in experiment):
+    if("hardware" in metadata):
         if ("Raspi" in metadata["hardware"]):
             X, t, fs = load_files_raspi(metadata, batch_uuid, experiment_num, start, stop)
         elif ("Axion" in metadata["hardware"]):
