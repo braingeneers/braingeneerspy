@@ -145,7 +145,7 @@ def load_files_raspi(metadata, batch_uuid, experiment_num, start, stop):
     fs = metadata["sample_rate"] #Hz
 
     # Time
-    T = 1.0/(fs)
+    T = (1.0/fs)*1000 #ms (given fs in Hz)
     start_t = 0
     end_t = start_t + (T * X.shape[0])
     t = np.linspace(start_t, end_t, X.shape[0], endpoint=False) #MILISECOND_TIMESCALE
@@ -242,14 +242,17 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     assert not stop or stop >= 0 and stop <= len(metadata["blocks"])
     assert not stop or stop > start
 
-    if ("Raspi" in metadata["hardware"]):
-        X, t, fs = load_files_raspi(metadata, batch_uuid, experiment_num, start, stop)
-    elif ("Axion" in metadata["hardware"]):
-        X, t, fs = load_files_axion(metadata, batch_uuid, experiment_num, start, stop)
-    elif ("Intan" in metadata["hardware"]):
+    if("hardware" in metadata):
+        if ("Raspi" in metadata["hardware"]):
+            X, t, fs = load_files_raspi(metadata, batch_uuid, experiment_num, start, stop)
+        elif ("Axion" in metadata["hardware"]):
+            X, t, fs = load_files_axion(metadata, batch_uuid, experiment_num, start, stop)
+        elif ("Intan" in metadata["hardware"]):
+            X, t, fs = load_files_intan(metadata, batch_uuid, experiment_num, start, stop)
+        else:
+            raise Exception('hardware field in metadata.json must contain keyword Axion, Raspi, or Intan')
+    else: #assume intan
         X, t, fs = load_files_intan(metadata, batch_uuid, experiment_num, start, stop)
-    else:
-        raise Exception('hardware field in metadata.json must contain keyword Axion, Raspi, or Intan')
 
     return X, t, fs
 
