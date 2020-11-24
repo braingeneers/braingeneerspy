@@ -148,6 +148,63 @@ class PoissonNeurons(Neurons):
         return np.random.poisson(rates*self.dt, self.N) > 0
 
 
+class RateCoding(PoissonNeurons):
+    """
+    Poisson neurons which rate-encode their inputs following a
+    high-pass filter, a simple hybrid of spike rate and time coding
+    schemes which allows fast responses to sudden events. (Step inputs
+    will produce bursty output patterns, for example.)
+
+    The parameter `alpha` determines how much of the lower frequencies
+    are subtracted; the unit step response decays from 1 to 1-alpha.
+    """
+    def __init__(self, N, dt, tau, alpha=1.0):
+        super().__init__(N,dt)
+        self.tau = tau
+        self.alpha = alpha
+
+    def reset(self):
+        self.rates = np.zeros(self.N)
+        super().reset()
+
+    def _step(self, rates):
+        self.rates += self.dt/self.tau * (rates - self.rates)
+        return super()._step(rates - self.alpha*self.rates)
+
+
+class PlaceCells(PoissonNeurons):
+    """
+    A grid of Poisson neurons which rate-encode position within the
+    Euclidean unit box in dimension `len(Nouts)`. If the input exactly
+    matches a grid point, the output neuron corresponding to it will
+    fire at a rate `a0`, falling off as a Gaussian with distance
+    with with sigma set so that adjacent cells falling off half as fast
+    in each dimension.
+    """
+    def __init__(self, Nouts, dt, a0):
+        super().__init__(np.product(Nouts), dt)
+        self.a0 = a0
+
+        # Generate a sparse grid of N points with spacing 1/N in each
+        # axis, offset evenly on both sides from the unit box.
+        self.grid = np.ogrid[tuple(slice(1/N/2, 1-1/N/2, N*1j)
+                                   for N in Nouts)]
+        # Fit the "standard deviation" of our Gaussian to the
+        # separation between points so points adjacent to an active
+        # cell are firing at half the maximal rate. Actually this is
+        # the standard deviation squared, multiplied by two, just
+        # because it would be redundant to divide by 2 here.
+        self.vars = [1/N**2 / np.log(2)
+                     for N in Nouts]
+
+    def _step(self, inputs):
+        dxs = [(grid - inp)**2 / var
+               for grid,var,inp in
+               zip(self.grid, self.vars, inputs)]
+        rates = self.a0 * np.exp(-sum(dxs)).flatten()
+        return super()._step(rates)
+
+
 class LIFNeurons(Neurons):
     """
     Leaky Integrate-and-Fire neuron model: the input value is
