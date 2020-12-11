@@ -129,6 +129,7 @@ def load_files_raspi(metadata, batch_uuid, experiment_num, start, stop):
             #f.seek(8, os.SEEK_SET)
             return np.fromfile(f, dtype='>i2', count=-1, offset=int(metadata['offset']/32))
 
+    print("Loading file raspi.. start:", start, " stop:", stop)
     # Load all the raw files into a single matrix
     if os.path.exists("{}/{}/derived/".format(get_archive_path(), batch_uuid)):
         # Load from local archive
@@ -147,7 +148,7 @@ def load_files_raspi(metadata, batch_uuid, experiment_num, start, stop):
             for s in metadata["blocks"][start:stop]], axis=0)
 
 
-            
+
     #throw away last partial frame
     max_index = (len(raw_data)//metadata["num_channels"])*metadata["num_channels"]
     raw_data = raw_data[:max_index]
