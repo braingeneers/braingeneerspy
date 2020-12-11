@@ -118,19 +118,36 @@ def load_files_raspi(metadata, batch_uuid, experiment_num, start, stop):
     fs : float
         Sample rate in Hz
     """
+
+    def _load_path(path):
+        with open(path, "rb") as f:
+            #f.seek(8, os.SEEK_SET)
+            return np.fromfile(f, dtype='>i2', count=-1, offset=int(metadata['offset']/32))
+
+    def _load_url(url):
+        with np.DataSource(None).open(url, "rb") as f:
+            #f.seek(8, os.SEEK_SET)
+            return np.fromfile(f, dtype='>i2', count=-1, offset=int(metadata['offset']/32))
+
     # Load all the raw files into a single matrix
     if os.path.exists("{}/{}/derived/".format(get_archive_path(), batch_uuid)):
         # Load from local archive
-        filename = "{}/{}/derived/{}".format(get_archive_path(), batch_uuid, metadata["blocks"][0]["path"])
-        raw_data = np.fromfile(filename, dtype='>i2', count=-1, offset=4)
-
+        #filename = "{}/{}/derived/{}".format(get_archive_path(), batch_uuid, metadata["blocks"][0]["path"])
+        #raw_data = np.fromfile(filename, dtype='>i2', count=-1, offset=metadata['offset']/32)
+        raw_data = np.concatenate([
+            _load_path("{}/{}/derived/{}".format(get_archive_path(), batch_uuid, s["path"]))
+            for s in metadata["blocks"][start:stop]], axis=0)
     else:
         # Load from PRP S3
-        url = "{}/{}/derived/{}".format(get_archive_url(), batch_uuid, metadata["blocks"][0]["path"])
-        with np.DataSource(None).open(url, "rb") as f:
-                raw_data = np.fromfile(f, dtype='>i2', count=-1, offset=4)
+        #url = "{}/{}/derived/{}".format(get_archive_url(), batch_uuid, metadata["blocks"][0]["path"])
+        #with np.DataSource(None).open(url, "rb") as f:
+        #        raw_data = np.fromfile(f, dtype='>i2', count=-1, offset=metadata['offset']/32)
+        raw_data = np.concatenate([
+            _load_url("{}/{}/derived/{}".format(get_archive_url(), batch_uuid, s["path"]))
+            for s in metadata["blocks"][start:stop]], axis=0)
 
 
+            
     #throw away last partial frame
     max_index = (len(raw_data)//metadata["num_channels"])*metadata["num_channels"]
     raw_data = raw_data[:max_index]
