@@ -262,12 +262,16 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
 
     if("hardware" in metadata):
         if ("Raspi" in metadata["hardware"]):
+            print("Raspi")
             X, t, fs = load_files_raspi(metadata, batch_uuid, experiment_num, start, stop)
         elif ("Axion" in metadata["hardware"]):
+            print("Axion")
             X, t, fs = load_files_axion(metadata, batch_uuid, experiment_num, start, stop)
         elif ("Intan" in metadata["hardware"]):
+            print("Intan")
             X, t, fs = load_files_intan(metadata, batch_uuid, experiment_num, start, stop)
         else:
+            print("Intan")
             raise Exception('hardware field in metadata.json must contain keyword Axion, Raspi, or Intan')
     else: #assume intan
         X, t, fs = load_files_intan(metadata, batch_uuid, experiment_num, start, stop)
