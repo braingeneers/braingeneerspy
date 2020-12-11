@@ -129,7 +129,7 @@ def load_files_raspi(metadata, batch_uuid, experiment_num, start, stop):
             #f.seek(8, os.SEEK_SET)
             return np.fromfile(f, dtype='>i2', count=-1, offset=int(metadata['offset']/32))
 
-    print("Loading file raspi.. start:", start, " stop:", stop)
+    print("Loading file Raspi... start:", start, " stop:", stop)
     # Load all the raw files into a single matrix
     if os.path.exists("{}/{}/derived/".format(get_archive_path(), batch_uuid)):
         # Load from local archive
@@ -204,6 +204,7 @@ def load_files_intan(metadata, batch_uuid, experiment_num, start, stop):
             f.seek(8, os.SEEK_SET)
             return np.fromfile(f, dtype=np.int16)
 
+    print("Loading file Intan... start:", start, " stop:", stop)
     # Load all the raw files into a single matrix
     if os.path.exists("{}/{}/derived/".format(get_archive_path(), batch_uuid)):
         # Load from local archive
@@ -262,16 +263,12 @@ def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
 
     if("hardware" in metadata):
         if ("Raspi" in metadata["hardware"]):
-            print("Raspi")
             X, t, fs = load_files_raspi(metadata, batch_uuid, experiment_num, start, stop)
         elif ("Axion" in metadata["hardware"]):
-            print("Axion")
             X, t, fs = load_files_axion(metadata, batch_uuid, experiment_num, start, stop)
         elif ("Intan" in metadata["hardware"]):
-            print("Intan")
             X, t, fs = load_files_intan(metadata, batch_uuid, experiment_num, start, stop)
         else:
-            print("Intan")
             raise Exception('hardware field in metadata.json must contain keyword Axion, Raspi, or Intan')
     else: #assume intan
         X, t, fs = load_files_intan(metadata, batch_uuid, experiment_num, start, stop)
