@@ -2,7 +2,7 @@ from warnings import warn
 from functools import partial
 
 import numpy as np
-from scipy import sparse, ndimage
+from scipy import sparse, ndimage, spatial
 import braingeneers.analysis as _analysis
 import braingeneers.buildnn as _buildnn
 
@@ -46,24 +46,6 @@ except ImportError as e:
         def __getattr__(self, attr):
             raise self.e
     backend_torch = backend_torch(e)
-
-
-
-# A map from neuron type abbreviation to ordered list of parameters
-# a, b, c, d, C, k, Vr, Vt, Vp, Vn, and tau from Dynamical Systems in
-# Neuroscience.  NB: many of these models have some extra bonus
-# features in the book, used to more accurately reproduce traces from
-# electrophysiological experiments in the appropriate model
-# organisms. In particular,
-#  - LTS caps the value of u but (along with a few other types) allows
-#     it to influence the effective value of spike threshold and c.
-#  - Several other types have PWL u nullclines.
-NEURON_TYPES = {
-    'rs':  [0.03, -2, -50, 100, 100, 0.7, -60, -40, 35,   0,  5],
-    'ib':  [0.01,  5, -56, 130, 150, 1.2, -75, -45, 50,   0,  5],
-    'ch':  [0.03,  1, -40, 150,  50, 1.5, -60, -40, 25,   0,  5],
-    'lts': [0.03,  8, -53,  20, 100, 1.0, -56, -42, 20, -70, 20],
-    'ls':  [0.17,  5, -45, 100,  20, 0.3, -66, -40, 30, -70, 20]}
 
 
 class Organoid(_buildnn.IzhikevichNeurons):
@@ -125,23 +107,6 @@ class Organoid(_buildnn.IzhikevichNeurons):
         self.syn.a[:] = value
 
 
-def pointwise_distance(As, Bs):
-    """
-    Given two sets As and Bs of m and n Cartesian coordinates in R^k
-    with shape (k,m1,...,ma) and (k,n1,...,nb) respectively, return an
-    array of Euclidean distances between those points with shape
-    (m1,...,ma,n1,...,nb).
-    """
-    As, Bs = np.asarray(As), np.asarray(Bs)
-    nda = len(As.shape) - 1
-    ndb = len(Bs.shape) - 1
-
-    colon = slice(None)
-    As = As[(colon,...,) + (None,)*ndb]
-    Bs = Bs[(colon,) + (None,)*nda + (...,)]
-    return np.linalg.norm(As - Bs, axis=0, ord=2)
-
-
 class DipoleOrganoid(Organoid):
     """
     An extension o the above Organoid class for fast computation of
@@ -153,8 +118,9 @@ class DipoleOrganoid(Organoid):
         self.dXdY = dXdY
 
     def probe_at(self, points, radius=5):
-        dijA = radius + pointwise_distance(points, self.XY)
-        dijB = radius + pointwise_distance(points, self.XY + self.dXdY)
+        dijA = radius + spatial.distance_matrix(points, self.XY)
+        dijB = radius + spatial.distance_matrix(points, self.XY
+                                                + self.dXdY)
         Itot = self.Idyn + self.Isyn
         return -1/(4*np.pi*0.3) * (1/dijA - 1/dijB) @ Itot
 
@@ -173,9 +139,11 @@ class TripoleOrganoid(Organoid):
         self.dde = dXdY_dend
 
     def probe_at(self, points, radius=5):
-        dijS = radius + pointwise_distance(points, self.XY)
-        dijA = radius + pointwise_distance(points, self.XY + self.dax)
-        dijD = radius + pointwise_distance(points, self.XY + self.dde)
+        dijS = radius + spatial.distance_matrix(points, self.XY)
+        dijA = radius + spatial.distance_matrix(points, self.XY
+                                                + self.dax)
+        dijD = radius + spatial.distance_matrix(points, self.XY
+                                                + self.dde)
         VA = (1/dijA - 1/dijS) @ self.Idyn
         VD = (1/dijS - 1/dijD) @ self.Isyn
         return -1/(4*np.pi*0.3) * (VA + VD)
@@ -388,21 +356,21 @@ class OrganoidWrapper(Organoid):
         # uniform, whereas excitatory identity is squared to create a
         # bias towards RS cells, which are more common in vivo.
         identity = np.random.rand(N)
-        celltypes = np.zeros((4,N))
-        celltypes[0,:Ne] = identity[:Ne]**2
-        celltypes[1,:Ne] = 1 - celltypes[0,:Ne]
-        celltypes[2,Ne:] = identity[Ne:]
-        celltypes[3,Ne:] = 1 - celltypes[2,Ne:]
+        celltypes = np.zeros((N,4))
+        celltypes[:Ne,0] = identity[:Ne]**2
+        celltypes[:Ne,1] = 1 - celltypes[:Ne,0]
+        celltypes[Ne:,2] = identity[Ne:]
+        celltypes[Ne:,3] = 1 - celltypes[Ne:,2]
+        params = _buildnn.IzhikevichNeurons.cell_types('RS CH LTS LS'.split(),
+                                                       celltypes)
 
-        # Stack the parameters of each type into one array.
-        typeparams = np.array([
-            NEURON_TYPES['rs'],
-            NEURON_TYPES['ch'],
-            NEURON_TYPES['lts'],
-            NEURON_TYPES['ls']])
-
-        # Compute the parameters by interpolation.
-        a, b, c, d, C, k, Vr, Vt, Vp, Vn, tau = typeparams.T @ celltypes
+        # You also need to provide the synaptic parameters here.
+        tau = np.zeros(N)
+        tau[:Ne] = 5
+        tau[Ne:] = 20
+        Vn = np.ones(N)
+        Vn[:Ne] = 0
+        Vn[Ne:] = -100
 
         # Synaptic conductances are lognormally distributed; the
         # parameters were originally derived from a biological source
@@ -428,8 +396,7 @@ class OrganoidWrapper(Organoid):
         G *= _analysis.small_world(XY/world_bigness,
                                    plocal=0.5, beta=beta)
 
-        super().__init__(XY=XY, G=G, tau=tau, a=a, b=b, c=c, d=d,
-                         k=k, C=C, Vr=Vr, Vt=Vt, Vp=Vp, Vn=Vn,
+        super().__init__(XY=XY, G=G, **params, tau=tau, Vn=Vn,
                          noise_rate=noise_rate,
                          do_stdp=do_stdp, do_scaling=do_scaling,
                          backend=backend_torch if use_torch

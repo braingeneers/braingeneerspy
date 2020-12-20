@@ -92,17 +92,27 @@ class AggregateCulture(Neurons):
     """
     The basic disjoint union operation on neuronal cultures: collects
     multiple different groups of cells into an aggregate that can be
-    simulated in an order-independent manner.
+    simulated in an order-independent manner. Also handles the case
+    where only the first `Nin` neurons in total are allowed to receive
+    inputs by setting the rest of the inputs to zero.
     """
-    def __init__(self, *cultures):
+    def __init__(self, *cultures, Nin=None):
         self.cultures = cultures
-        N = sum(c.N for c in cultures)
+        self.Nin = Nin
 
+        N = sum(c.N for c in cultures)
         super().__init__(N, cultures[0].dt)
 
     def Isyn(self):
         Isyn_sub = np.hstack([c.Isyn() for c in self.cultures])
         return super().Isyn() + Isyn_sub
+
+    def list_firings(self, Iin, time):
+        if self.Nin is not None:
+            Iin_partial = Iin
+            Iin = np.zeros(self.N)
+            Iin[:self.Nin] = Iin_partial
+        return super().list_firings(Iin, time)
 
     def _step(self, Iin):
         # For each culture, update the corresponding part of the
@@ -267,6 +277,43 @@ class IzhikevichNeurons(Neurons):
      Vt: mV threshold voltage when u=0
      Vp: mV action potential peak, after which reset happens
     """
+
+    # Define neuron types to make initialization simpler. These
+    # parameter values are from Dynamical Systems in Neuroscience, but
+    # some of the models aren't fully handled here: many allow the
+    # value of `u` to affect spike peak voltage, and a few have only
+    # piecewise linear differential equations for `u`.
+    RS = {'a': 0.03, 'b': -2, 'c': -50, 'd': 100,
+          'C': 100, 'k': 0.7, 'Vr': -60, 'Vt': -40, 'Vp': 35}
+    IB = {'a': 0.01, 'b': 5, 'c': -56, 'd': 130,
+          'C': 150, 'k': 1.2, 'Vr': -75, 'Vt': -45, 'Vp': 40}
+    CH = {'a': 0.03, 'b': 1, 'c': -40, 'd': 150,
+          'C': 50, 'k': 1.5, 'Vr': -60, 'Vt': -40, 'Vp': 25}
+    LTS = {'a': 0.03, 'b': 8.0, 'c': -53, 'd': 20,
+           'C': 100, 'k': 1.0, 'Vr': -56, 'Vt': -42, 'Vp': 20}
+    LS = {'a': 0.17, 'b': 5, 'c': -45, 'd': 100,
+          'C': 20, 'k': 0.3, 'Vr': -66, 'Vt': -40, 'Vp': 30}
+
+    @staticmethod
+    def cell_types(types, values):
+        """
+        Given a list of M cell type parameter dictionaries (of the
+        same form as IzhikevichNeurons.RS) and an N×M coefficient
+        matrix, creates a parameter dictionary for N neurons with
+        parameters formed by linear combinations of the input
+        parameter types.
+        """
+        ts = []
+        for t in types:
+            try:
+                ts.append(getattr(IzhikevichNeurons, t))
+            except TypeError:
+                ts.append(t)
+        return {
+            p: values @ np.array([t[p] for t in ts])
+            for p in 'a b c d C k Vr Vt Vp'.split()
+        }
+
     def __init__(self, N, dt, *, a, b, c, d, C, k, Vr, Vt, Vp):
         self.a = a
         self.b = b
@@ -378,6 +425,15 @@ class Synapses():
 
 
 def SynapticScaling(self, *, tau, rate_target, Ascaling):
+    """
+    Modifies an existing synapse group object to add synaptic scaling
+    by a biologically plausible purely local method common in the
+    literature but with no single original source as far as I know.
+    The neuron estimates its own firing rate with a slowly decaying
+    synaptic trace, and all synaptic weights are linearly controlled
+    with rate constant `Ascaling` towards the firing rate setpoint
+    `rate_target`.
+    """
     self.tau_scaling = tau
     self.rate_target = rate_target
     self.Ascaling = Ascaling
