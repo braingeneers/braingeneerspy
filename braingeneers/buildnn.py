@@ -92,17 +92,27 @@ class AggregateCulture(Neurons):
     """
     The basic disjoint union operation on neuronal cultures: collects
     multiple different groups of cells into an aggregate that can be
-    simulated in an order-independent manner.
+    simulated in an order-independent manner. Also handles the case
+    where only the first `Nin` neurons in total are allowed to receive
+    inputs by setting the rest of the inputs to zero.
     """
-    def __init__(self, *cultures):
+    def __init__(self, *cultures, Nin=None):
         self.cultures = cultures
-        N = sum(c.N for c in cultures)
+        self.Nin = Nin
 
+        N = sum(c.N for c in cultures)
         super().__init__(N, cultures[0].dt)
 
     def Isyn(self):
         Isyn_sub = np.hstack([c.Isyn() for c in self.cultures])
         return super().Isyn() + Isyn_sub
+
+    def list_firings(self, Iin, time):
+        if self.Nin is not None:
+            Iin_partial = Iin
+            Iin = np.zeros(self.N)
+            Iin[:self.Nin] = Iin_partial
+        return super().list_firings(Iin, time)
 
     def _step(self, Iin):
         # For each culture, update the corresponding part of the
@@ -146,6 +156,63 @@ class PoissonNeurons(Neurons):
     """
     def _step(self, rates):
         return np.random.poisson(rates*self.dt, self.N) > 0
+
+
+class RateCoding(PoissonNeurons):
+    """
+    Poisson neurons which rate-encode their inputs following a
+    high-pass filter, a simple hybrid of spike rate and time coding
+    schemes which allows fast responses to sudden events. (Step inputs
+    will produce bursty output patterns, for example.)
+
+    The parameter `alpha` determines how much of the lower frequencies
+    are subtracted; the unit step response decays from 1 to 1-alpha.
+    """
+    def __init__(self, N, dt, tau, alpha=1.0):
+        super().__init__(N,dt)
+        self.tau = tau
+        self.alpha = alpha
+
+    def reset(self):
+        self.rates = np.zeros(self.N)
+        super().reset()
+
+    def _step(self, rates):
+        self.rates += self.dt/self.tau * (rates - self.rates)
+        return super()._step(rates - self.alpha*self.rates)
+
+
+class PlaceCells(PoissonNeurons):
+    """
+    A grid of Poisson neurons which rate-encode position within the
+    Euclidean unit box in dimension `len(Nouts)`. If the input exactly
+    matches a grid point, the output neuron corresponding to it will
+    fire at a rate `a0`, falling off as a Gaussian with distance
+    with with sigma set so that adjacent cells falling off half as fast
+    in each dimension.
+    """
+    def __init__(self, Nouts, dt, a0):
+        super().__init__(np.product(Nouts), dt)
+        self.a0 = a0
+
+        # Generate a sparse grid of N points with spacing 1/N in each
+        # axis, offset evenly on both sides from the unit box.
+        self.grid = np.ogrid[tuple(slice(1/N/2, 1-1/N/2, N*1j)
+                                   for N in Nouts)]
+        # Fit the "standard deviation" of our Gaussian to the
+        # separation between points so points adjacent to an active
+        # cell are firing at half the maximal rate. Actually this is
+        # the standard deviation squared, multiplied by two, just
+        # because it would be redundant to divide by 2 here.
+        self.vars = [1/N**2 / np.log(2)
+                     for N in Nouts]
+
+    def _step(self, inputs):
+        dxs = [(grid - inp)**2 / var
+               for grid,var,inp in
+               zip(self.grid, self.vars, inputs)]
+        rates = self.a0 * np.exp(-sum(dxs)).flatten()
+        return super()._step(rates)
 
 
 class LIFNeurons(Neurons):
@@ -210,6 +277,43 @@ class IzhikevichNeurons(Neurons):
      Vt: mV threshold voltage when u=0
      Vp: mV action potential peak, after which reset happens
     """
+
+    # Define neuron types to make initialization simpler. These
+    # parameter values are from Dynamical Systems in Neuroscience, but
+    # some of the models aren't fully handled here: many allow the
+    # value of `u` to affect spike peak voltage, and a few have only
+    # piecewise linear differential equations for `u`.
+    RS = {'a': 0.03, 'b': -2, 'c': -50, 'd': 100,
+          'C': 100, 'k': 0.7, 'Vr': -60, 'Vt': -40, 'Vp': 35}
+    IB = {'a': 0.01, 'b': 5, 'c': -56, 'd': 130,
+          'C': 150, 'k': 1.2, 'Vr': -75, 'Vt': -45, 'Vp': 40}
+    CH = {'a': 0.03, 'b': 1, 'c': -40, 'd': 150,
+          'C': 50, 'k': 1.5, 'Vr': -60, 'Vt': -40, 'Vp': 25}
+    LTS = {'a': 0.03, 'b': 8.0, 'c': -53, 'd': 20,
+           'C': 100, 'k': 1.0, 'Vr': -56, 'Vt': -42, 'Vp': 20}
+    LS = {'a': 0.17, 'b': 5, 'c': -45, 'd': 100,
+          'C': 20, 'k': 0.3, 'Vr': -66, 'Vt': -40, 'Vp': 30}
+
+    @staticmethod
+    def cell_types(types, values):
+        """
+        Given a list of M cell type parameter dictionaries (of the
+        same form as IzhikevichNeurons.RS) and an N×M coefficient
+        matrix, creates a parameter dictionary for N neurons with
+        parameters formed by linear combinations of the input
+        parameter types.
+        """
+        ts = []
+        for t in types:
+            try:
+                ts.append(getattr(IzhikevichNeurons, t))
+            except TypeError:
+                ts.append(t)
+        return {
+            p: values @ np.array([t[p] for t in ts])
+            for p in 'a b c d C k Vr Vt Vp'.split()
+        }
+
     def __init__(self, N, dt, *, a, b, c, d, C, k, Vr, Vt, Vp):
         self.a = a
         self.b = b
@@ -321,6 +425,15 @@ class Synapses():
 
 
 def SynapticScaling(self, *, tau, rate_target, Ascaling):
+    """
+    Modifies an existing synapse group object to add synaptic scaling
+    by a biologically plausible purely local method common in the
+    literature but with no single original source as far as I know.
+    The neuron estimates its own firing rate with a slowly decaying
+    synaptic trace, and all synaptic weights are linearly controlled
+    with rate constant `Ascaling` towards the firing rate setpoint
+    `rate_target`.
+    """
     self.tau_scaling = tau
     self.rate_target = rate_target
     self.Ascaling = Ascaling
