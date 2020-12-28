@@ -81,7 +81,7 @@ class Organoid(_buildnn.IzhikevichNeurons):
             G, self, Vn=Vn, tau=tau, noise_rate=noise_rate)
 
         if do_stdp:
-            _buildnn.TripletSTDP(
+            _buildnn.MinimalTripletSTDP(
                 self.syn, tau_pre=stdp_tau_pre, tau_post1=stdp_tau_post1,
                 tau_post2=stdp_tau_post2, A_plus2=stdp_Aplus2,
                 Aplus3=stdp_Aplus3, Aminus2=stdp_Aminus2)
