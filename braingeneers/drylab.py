@@ -91,13 +91,6 @@ class Organoid(_buildnn.IzhikevichNeurons):
                                      rate_target=scaling_rate_target,
                                      Ascaling=scaling_A)
 
-    def step(self, dt, Iin):
-        if dt != self.dt:
-            raise ValueError('Variable timesteps are not supported.')
-        self.fired = self._step(Iin + self.Isyn())
-        for syn in self.input_synapses:
-            syn._step()
-
     @property
     def A(self):
         return self.syn.a
@@ -380,8 +373,13 @@ class OrganoidWrapper(Organoid):
         # Inhibitory synapses are stronger because there are 4x fewer.
         G[:,Ne:] *= scale_inhibitory
 
-        # XY : µm planar positions of the cells,
-        XY = np.random.rand(2,N) * 75
+        # XY : µm planar positions of the cells.
+        # These positions are supposed to approximately fit the areal
+        # density of neurons in the chimpanzee cerebral cortex based
+        # on a paper I looked up once, but the exact value is really
+        # not important. This works together with the world_bigness
+        # parameter to determine the locality of connectivity.
+        XY = np.random.rand(2,N) * np.sqrt(N) * 2.5
 
         # Use those positions to generate random small-world
         # connectivity using the modified Watts-Strogatz algorithm
@@ -404,6 +402,13 @@ class OrganoidWrapper(Organoid):
         self.dt = dt
         self.input_scale = input_scale
 
+    def synapses(self):
+        """
+        Returns a copy of the synaptic connectivity matrix for
+        external analysis.
+        """
+        return self.syn.G.copy()
+
     def activation_after(self, inp, interval):
         """
         Simulates the Organoid for a time interval subject to a fixed
@@ -411,7 +416,7 @@ class OrganoidWrapper(Organoid):
         activations at the end of that time.
         """
         self.list_firings(inp, interval)
-        return self.A
+        return self.syn.a
 
     def list_firings(self, inp, interval):
         return super().list_firings(self.input_scale*inp, interval)
