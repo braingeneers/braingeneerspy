@@ -20,33 +20,6 @@ except ImportError as e:
             raise self.e
     mpl = mpl(e)
 
-# Create the default numpy backend.
-class backend_numpy():
-    array = partial(np.asarray, dtype=np.float32)
-    stack = np.stack
-    exp = np.exp
-    sign = np.sign
-
-# Try to import torch; if successful, create the torch backend,
-# otherwise create a fake backend that will error if used, like mpl.
-try:
-    import torch
-    class backend_torch():
-        _has_cuda = torch.cuda.is_available()
-        array = torch.cuda.FloatTensor if torch.cuda.is_available() \
-            else torch.FloatTensor
-        stack = torch.stack
-        exp = torch.exp
-        sign = torch.sign
-except ImportError as e:
-    class backend_torch():
-        _has_cuda = False
-        def __init__(self, e):
-            self.e = e
-        def __getattr__(self, attr):
-            raise self.e
-    backend_torch = backend_torch(e)
-
 
 class Organoid(_buildnn.IzhikevichNeurons):
     """
@@ -54,49 +27,114 @@ class Organoid(_buildnn.IzhikevichNeurons):
     with all-to-all connectivity through conductance synapses with
     exponential time activation.
 
-    These features are implemented by the classes IzhikevichNeurons
-    and ExponentialSynapses in the braingeneers.buildnn package.
+    Simulations are run with the timestep dt, and the kwarg `do_stdp`
+    selects whether to attempt to learn by STDP.
+
+    Inputs are prescaled by `input_scale`; the default value of 200 is
+    tuned for inputs in the range (0,1). Additional synaptic noise is
+    controlled by `noise_rate`.
+
+    The arguments `p_rewire`, `world_bigness`, `scale_inhibitory`,
+    `G_mu`, and `G_sigma` parametrize the initial construction of the
+    synaptic weight matrix.
     """
-    def __init__(self, *, XY=None, G, dt=1,
-                 a, b, c, d, C, k, Vr, Vt, Vp, Vn, tau, noise_rate,
-                 backend=backend_numpy,
-                 # STDP parameters, updated slightly.
-                 do_stdp=False, stdp_tau_pre=16.8,
-                 stdp_tau_post1=33.7, stdp_tau_post2=125.0,
-                 stdp_Aplus=6.5e-3, stdp_Aminus=7.1e-3,
-                 # Synaptic scaling parameters, independent of STDP.
-                 do_scaling=False, scaling_A=1e-3,
-                 scaling_rate_target=0.05, scaling_tau=1000):
+    def __init__(self, N, dt=1, *, do_stdp=False,
+                 input_scale=200, noise_rate=5,
+                 p_rewire=2.5e-2, world_bigness=10, scale_inhibitory=8,
+                 G_mu=-1.8, G_sigma=0.94):
 
-        # The torch backend is not yet supported by buildnn simulation
-        # code, so error if it is requested.
-        if backend is not backend_numpy:
-            raise NotImplementedError
+        # Let 80% of neurons be excitatory as observed in vivo.
+        Ne = int(0.8 * N)
 
-        # Just pass the parameters on.
-        super().__init__(N=G.shape[0], dt=dt, a=a, b=b, c=c, d=d,
-                         C=C, k=k, Vr=Vr, Vt=Vt, Vp=Vp)
+        # We're going to assign cells to four different types:
+        # excitatory cells linearly interpolate between RS and Ch, and
+        # inhibitory cells between LTS and LS. The weights are random,
+        # but with different distributions: inhibitory identity is
+        # uniform, whereas excitatory identity is squared to create a
+        # bias towards RS cells, which are more common in vivo.
+        identity = np.random.rand(N)
+        celltypes = np.zeros((N,4))
+        celltypes[:Ne,0] = identity[:Ne]**2
+        celltypes[:Ne,1] = 1 - celltypes[:Ne,0]
+        celltypes[Ne:,2] = identity[Ne:]
+        celltypes[Ne:,3] = 1 - celltypes[Ne:,2]
+        params = _buildnn.IzhikevichNeurons.cell_types(
+            'RS CH LTS LS'.split(), celltypes)
+
+        # Generate totally invariant synaptic parameters. This should
+        # probably be randomized the same way eventually.
+        tau = np.zeros(N)
+        tau[:Ne] = 5
+        tau[Ne:] = 20
+        Vn = np.ones(N)
+        Vn[:Ne] = 0
+        Vn[Ne:] = -100
+
+        # Real synaptic conductances are lognormally distributed; the
+        # parameters were originally derived from a biological source
+        # describing the distribution in rat V1, but in theory the
+        # actual values shouldn't be very important.
+        G = np.random.lognormal(mean=G_mu, sigma=G_sigma, size=(N,N))
+        # Inhibitory synapses are stronger because there are 4x fewer.
+        G[:,Ne:] *= scale_inhibitory
+
+        # XY : µm planar positions of the cells.
+        # These positions are supposed to approximately fit the areal
+        # density of neurons in the chimpanzee cerebral cortex based
+        # on a paper I looked up once, but the exact value is really
+        # not important. This works together with the world_bigness
+        # parameter to determine the locality of connectivity.
+        XY = np.random.rand(2,N) * np.sqrt(N) * 2.5
+
+        # Use those positions to generate random small-world
+        # connectivity using the modified Watts-Strogatz algorithm
+        # from the braingeneers.analysis sublibrary. I've chosen
+        # a characteristic length scale of 10μm and local connection
+        # probability within that region of 50%. Then, only excitatory
+        # synapses have a 2.5% chance of rewiring to a distant neighbor.
+        # This is a boolean connectivity matrix, which is used to
+        # delete most of the synapses.
+        beta = np.zeros((1,N))
+        beta[:Ne] = p_rewire
+        G *= _analysis.small_world(XY/world_bigness,
+                                   plocal=0.5, beta=beta)
+
+        super().__init__(N=N, dt=dt, **params)
+
         self.syn = _buildnn.ExponentialSynapses(
             G, self, Vn=Vn, tau=tau, noise_rate=noise_rate)
 
         if do_stdp:
-            _buildnn.MinimalTripletSTDP(
-                self.syn, tau_pre=stdp_tau_pre,
-                tau_post1=stdp_tau_post1, tau_post2=stdp_tau_post2,
-                Aplus=stdp_Aplus, Aminus=stdp_Aminus)
+            _buildnn.MinimalTripletSTDP(self.syn)
+            _buildnn.SynapticScaling(self.syn, tau=1000.0,
+                                     rate_target=0.05, Ascaling=1e-3)
 
-        if do_scaling:
-            _buildnn.SynapticScaling(self.syn, tau=scaling_tau,
-                                     rate_target=scaling_rate_target,
-                                     Ascaling=scaling_A)
+        self.input_scale = input_scale
 
-    @property
-    def A(self):
+    def synapses(self):
+        """
+        Returns a copy of the synaptic connectivity matrix for
+        external analysis.
+        """
+        return self.syn.G.copy()
+
+    def activation_after(self, inp, interval):
+        """
+        Simulates the Organoid for a time interval subject to a fixed
+        input current, and returns the array of presynaptic
+        activations at the end of that time.
+        """
+        self.list_firings(inp, interval)
         return self.syn.a
 
-    @A.setter
-    def A(self, value):
-        self.syn.a[:] = value
+    def list_firings(self, inp, interval):
+        return super().list_firings(self.input_scale*inp, interval)
+
+    def measure_criticality(self, duration):
+        events = self.list_firings(0, duration)
+        if len(events) == 0:
+            return np.inf
+        return _analysis.criticality_metric([t for (t,i) in events])
 
 
 class DipoleOrganoid(Organoid):
@@ -306,122 +344,3 @@ def _gen_frame_events(dt, events):
             T += dt
             evs = []
         evs.append((T - time, cell))
-
-
-
-class OrganoidWrapper(Organoid):
-    def __init__(self, N, *, use_torch=None, do_scaling=False,
-                 input_scale=100, dt=1, do_stdp=False,
-                 noise_rate=5, p_rewire=2.5e-2,
-                 world_bigness=10, scale_inhibitory=8,
-                 G_mu=-1.8, G_sigma=0.94):
-        """
-        Wraps an Organoid with easier initialization and timestepping
-        for machine learning applications. An Organoid with N cells is
-        constructed; this has been tested mostly at N=1000, so if you
-        have a different number of inputs, use an input matrix that
-        assigns each input to a random subset of neurons.
-
-        Inputs are prescaled to convert from unitless values to
-        currents; the default value of 200 is tuned towards inputs in
-        the range (0,1). Additionally, random noise is added to the
-        input before injecting it to the Organoid, with SNR=noise.
-
-        Simulations are run with the timestep dt, and you can select
-        whether to use the torch backend and whether to attempt to
-        learn using STDP by passing keyword arguments.
-        """
-
-        # In my experiments, CPU torch was always slower than numpy,
-        # and GPU torch is faster only for very large networks, so
-        # this chooses between torch and numpy by that heuristic.
-        if use_torch is None:
-            use_torch = backend_torch._has_cuda and N > 2500
-
-        # Let 80% of neurons be excitatory as observed in vivo.
-        Ne = int(0.8 * N)
-
-        # We're going to assign cells to four different types:
-        # excitatory cells linearly interpolate between RS and Ch, and
-        # inhibitory cells between LTS and LS. The weights are random,
-        # but with different distributions: inhibitory identity is
-        # uniform, whereas excitatory identity is squared to create a
-        # bias towards RS cells, which are more common in vivo.
-        identity = np.random.rand(N)
-        celltypes = np.zeros((N,4))
-        celltypes[:Ne,0] = identity[:Ne]**2
-        celltypes[:Ne,1] = 1 - celltypes[:Ne,0]
-        celltypes[Ne:,2] = identity[Ne:]
-        celltypes[Ne:,3] = 1 - celltypes[Ne:,2]
-        params = _buildnn.IzhikevichNeurons.cell_types('RS CH LTS LS'.split(),
-                                                       celltypes)
-
-        # You also need to provide the synaptic parameters here.
-        tau = np.zeros(N)
-        tau[:Ne] = 5
-        tau[Ne:] = 20
-        Vn = np.ones(N)
-        Vn[:Ne] = 0
-        Vn[Ne:] = -100
-
-        # Synaptic conductances are lognormally distributed; the
-        # parameters were originally derived from a biological source
-        # describing the distribution in rat V1, but in theory the
-        # actual values shouldn't be very important.
-        G = np.random.lognormal(mean=G_mu, sigma=G_sigma, size=(N,N))
-        # Inhibitory synapses are stronger because there are 4x fewer.
-        G[:,Ne:] *= scale_inhibitory
-
-        # XY : µm planar positions of the cells.
-        # These positions are supposed to approximately fit the areal
-        # density of neurons in the chimpanzee cerebral cortex based
-        # on a paper I looked up once, but the exact value is really
-        # not important. This works together with the world_bigness
-        # parameter to determine the locality of connectivity.
-        XY = np.random.rand(2,N) * np.sqrt(N) * 2.5
-
-        # Use those positions to generate random small-world
-        # connectivity using the modified Watts-Strogatz algorithm
-        # from the braingeneers.analysis sublibrary. I've chosen
-        # a characteristic length scale of 10μm and local connection
-        # probability within that region of 50%. Then, only excitatory
-        # synapses have a 2.5% chance of rewiring to a distant neighbor.
-        # This is a boolean connectivity matrix, which is used to
-        # delete most of the synapses.
-        beta = np.zeros((1,N))
-        beta[:Ne] = p_rewire
-        G *= _analysis.small_world(XY/world_bigness,
-                                   plocal=0.5, beta=beta)
-
-        super().__init__(XY=XY, G=G, **params, tau=tau, Vn=Vn,
-                         noise_rate=noise_rate,
-                         do_stdp=do_stdp, do_scaling=do_scaling,
-                         backend=backend_torch if use_torch
-                         else backend_numpy)
-        self.dt = dt
-        self.input_scale = input_scale
-
-    def synapses(self):
-        """
-        Returns a copy of the synaptic connectivity matrix for
-        external analysis.
-        """
-        return self.syn.G.copy()
-
-    def activation_after(self, inp, interval):
-        """
-        Simulates the Organoid for a time interval subject to a fixed
-        input current, and returns the array of presynaptic
-        activations at the end of that time.
-        """
-        self.list_firings(inp, interval)
-        return self.syn.a
-
-    def list_firings(self, inp, interval):
-        return super().list_firings(self.input_scale*inp, interval)
-
-    def measure_criticality(self, duration):
-        events = self.list_firings(0, duration)
-        if len(events) == 0:
-            return np.inf
-        return _analysis.criticality_metric([t for (t,i) in events])
