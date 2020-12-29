@@ -61,10 +61,9 @@ class Organoid(_buildnn.IzhikevichNeurons):
                  a, b, c, d, C, k, Vr, Vt, Vp, Vn, tau, noise_rate,
                  backend=backend_numpy,
                  # STDP parameters, updated slightly.
-                 do_stdp=False,
-                 stdp_tau_pre=15, stdp_tau_post1=35,
-                 stdp_tau_post2=115, stdp_Aplus2=0,
-                 stdp_Aplus3=6.5e-3, stdp_Aminus2=7.1e-3,
+                 do_stdp=False, stdp_tau_pre=16.8,
+                 stdp_tau_post1=33.7, stdp_tau_post2=125.0,
+                 stdp_Aplus=6.5e-3, stdp_Aminus=7.1e-3,
                  # Synaptic scaling parameters, independent of STDP.
                  do_scaling=False, scaling_A=1e-3,
                  scaling_rate_target=0.05, scaling_tau=1000):
@@ -82,9 +81,9 @@ class Organoid(_buildnn.IzhikevichNeurons):
 
         if do_stdp:
             _buildnn.MinimalTripletSTDP(
-                self.syn, tau_pre=stdp_tau_pre, tau_post1=stdp_tau_post1,
-                tau_post2=stdp_tau_post2, A_plus2=stdp_Aplus2,
-                Aplus3=stdp_Aplus3, Aminus2=stdp_Aminus2)
+                self.syn, tau_pre=stdp_tau_pre,
+                tau_post1=stdp_tau_post1, tau_post2=stdp_tau_post2,
+                Aplus=stdp_Aplus, Aminus=stdp_Aminus)
 
         if do_scaling:
             _buildnn.SynapticScaling(self.syn, tau=scaling_tau,
