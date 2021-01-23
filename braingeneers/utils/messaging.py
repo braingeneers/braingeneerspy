@@ -1,20 +1,25 @@
 """ A simplified MQTT client for Braingeneers specific connections """
+import boto3
 import awsiot
 import awscrt
-from typing import Callable
-import boto3
+import redis
 import tempfile
 import functools
 import json
 import inspect
 import logging
 import os
+import io
+import configparser
+from typing import Callable, Tuple, List
 
 
 MQTT_ENDPOINT = 'ahp00abmtph4i-ats.iot.us-west-2.amazonaws.com'
 AWS_REGION = 'us-west-2'
 PRP_ENDPOINT = 'https://s3.nautilus.optiputer.net'
 AWS_PROFILE = 'aws-braingeneers-iot'
+REDIS_HOST = 'redis.braingeneers.gi.ucsc.edu'
+REDIS_PORT = 6379
 logger = logging.getLogger()
 
 
@@ -123,6 +128,33 @@ class MessageBroker:
         subscribe_future.result()
 
     def subscribe_data_stream(self, stream_name: str, callback: Callable) -> None:
+        """
+        Subscribes to all new data on a stream. callback is a function with signature
+
+          def mycallback(data: bytes, timestamp: int)
+
+        data is a BLOBs (binary data). timestamps is the update timestamp (note: not a standard unix timestamp format)
+
+        This function asynchronously calls callback each time new data is available. If you prefer to poll for
+        new data use the `poll_data_stream` function instead.
+
+        :param stream_name: name of the data stream, see standard naming convention documentation at:
+            https://github.com/braingeneers/redis
+        :param callback: a self defined function with signature defined above.
+        """
+        pass
+
+    def poll_data_stream(self, stream_name: str, last_timestamp: int) -> Tuple[List[bytes], List[int]]:
+        """
+        Polls for new
+        :param stream_name: name of the data stream, see standard naming convention documentation at:
+            https://github.com/braingeneers/redis
+        :param last_timestamp: the last timestamp to get data from the stream, can be 0 to get the full stream,
+            pass it the last timestamp from the previous call on subsequent calls.
+        :return: a tuple of two lists, (data_list, timestamps_list) which contain 0 or more data blocks in bytes
+            format and an equal number of timestamps for each of those blocks. When no new data exists a tuple of empty
+            lists is returned: ([], [])
+        """
         pass
 
     def get_device_state(self, device: str) -> dict:
@@ -150,34 +182,77 @@ class MessageBroker:
     def _on_connection_resumed(*args, **kwargs):
         logger.error(f'Connection resumed: {args}, {kwargs}')
 
-    def __init__(self, thing_name, endpoint='us-west-2'):
+    @property
+    def mqtt_connection(self):
+        """ Lazy initialization of mqtt connection. """
+        if self._mqtt_connection is None:
+            # write the aws root cert to a temp location, doing this to avoid configuration dependencies, for simplicity
+            self.certs_temp_dir = tempfile.TemporaryDirectory()  # cleans up automatically on exit
+            with open(f'{self.certs_temp_dir.name}/AmazonRootCA1.pem', 'wb') as f:
+                f.write(AWS_ROOT_CA1.encode('utf-8'))
+
+            event_loop_group = awscrt.io.EventLoopGroup(1)
+            host_resolver = awscrt.io.DefaultHostResolver(event_loop_group)
+            client_bootstrap = awscrt.io.ClientBootstrap(event_loop_group, host_resolver)
+            credentials_provider = awscrt.auth.AwsCredentialsProvider.new_default_chain(client_bootstrap)
+
+            self._mqtt_connection = awsiot.mqtt_connection_builder.websockets_with_default_aws_signing(
+                endpoint=MQTT_ENDPOINT,
+                client_bootstrap=client_bootstrap,
+                region=AWS_REGION,
+                credentials_provider=credentials_provider,
+                ca_filepath=f'{self.certs_temp_dir.name}/AmazonRootCA1.pem',
+                on_connection_interrupted=self._on_connection_interrupted,
+                on_connection_resumed=self._on_connection_resumed,
+                client_id=self.name,
+                clean_session=False,
+                keep_alive_secs=6
+            )
+
+            connect_future = self.mqtt_connection.connect()
+            logger.info('MQTT connected: ', connect_future.result())
+
+        return self._mqtt_connection
+
+    @property
+    def redis_client(self):
+        """ Lazy initialization of the redis client. """
+        if self._redis_client is None:
+            config = configparser.ConfigParser()
+            config.read_file(io.StringIO(self._credentials))
+            self._redis_client = redis.Redis(
+                host=REDIS_HOST, port=REDIS_PORT, password=config['redis']['password']
+            )
+
+        return self._redis_client
+
+    def __init__(self, name, endpoint='us-west-2', credentials=None):
+        """
+
+        :param name: name of device or client, must be a globally unique string ID.
+        :param endpoint: optional AWS endpoint, defaults to Braingeneers standard us-west-2
+        :param credentials: optional file path string or file-like object containing the
+            standard `~/.aws/credentials` file. See https://github.com/braingeneers/wiki/blob/main/shared/permissions.md
+            defaults to looking in `~/.aws/credentials` if left as None. This file expects to find profiles named
+            'aws-braingeneers-iot' and 'redis' in it.
+        """
         os.environ['AWS_PROFILE'] = AWS_PROFILE  # sets the AWS profile name for credentials
+        self.name = name
+        self.endpoint = endpoint
 
-        # write the aws root cert to a temp location, doing this to avoid configuration dependencies, for simplicity
-        self.certs_temp_dir = tempfile.TemporaryDirectory()  # cleans up automatically on exit
-        with open(f'{self.certs_temp_dir.name}/AmazonRootCA1.pem', 'wb') as f:
-            f.write(AWS_ROOT_CA1.encode('utf-8'))
+        if credentials is None:
+            credentials = os.path.expanduser('~/.aws/credentials')  # default credentials location
 
-        event_loop_group = awscrt.io.EventLoopGroup(1)
-        host_resolver = awscrt.io.DefaultHostResolver(event_loop_group)
-        client_bootstrap = awscrt.io.ClientBootstrap(event_loop_group, host_resolver)
-        credentials_provider = awscrt.auth.AwsCredentialsProvider.new_default_chain(client_bootstrap)
+        if isinstance(credentials, str):
+            with open(credentials, 'r') as f:
+                self._credentials = f.read()
+        else:
+            self._credentials = credentials.read()
 
-        self.mqtt_connection = awsiot.mqtt_connection_builder.websockets_with_default_aws_signing(
-            endpoint=MQTT_ENDPOINT,
-            client_bootstrap=client_bootstrap,
-            region=AWS_REGION,
-            credentials_provider=credentials_provider,
-            ca_filepath=f'{self.certs_temp_dir.name}/AmazonRootCA1.pem',
-            on_connection_interrupted=self._on_connection_interrupted,
-            on_connection_resumed=self._on_connection_resumed,
-            client_id=thing_name,
-            clean_session=False,
-            keep_alive_secs=6
-        )
+        self.certs_temp_dir = None
+        self._mqtt_connection = None
 
-        connect_future = self.mqtt_connection.connect()
-        logger.info('MQTT connected: ', connect_future.result())
+        self._redis_client = None
 
 
 # The AWS root certificate. Embedded here to avoid requiring installing it as a dependency.

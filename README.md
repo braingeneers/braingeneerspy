@@ -8,6 +8,6 @@ part of the Braingeneers project. There are five subpackages:
   * `braingeneers.datasets_fluidics` contains methods which load and manipulate fluidics data.
   * `braingeneers.datasets_imaging` contains methods which load and manipulate imaging data.
   * `braingeneers.drylab` contains code for neuronal simulations.
-  * `braingeneers.utils.messaging` a single interface for all messaging and data transfer functions (MQTT, redis, device state, etc.)
+  * `braingeneers.utils.messaging` a single interface for all messaging and inter-device data transfer functions (MQTT, redis, device state, etc.)
 
 [github]: https://www.github.com/braingeneers/braingeneerspy
