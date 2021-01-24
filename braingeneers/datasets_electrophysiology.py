@@ -154,7 +154,9 @@ def load_files_raspi(metadata, batch_uuid, experiment_num, start, stop):
     raw_data = raw_data[:max_index]
 
     #scale the data
-    uV_data= raw_data*metadata["scaler"]
+    if "scaler" in metadata: scale = metadata["scaler"] #legacy
+    else: scale = metadata["voltage_scaling_factor"]
+    uV_data= raw_data*scale
 
     #shape data into (frames, channels) (x, y)
     X = np.reshape(uV_data, (-1, metadata["num_channels"]),  order="C")
@@ -218,10 +220,14 @@ def load_files_intan(metadata, batch_uuid, experiment_num, start, stop):
             for s in metadata["blocks"][start:stop]], axis=0)
         print('Just ignore all the stuff in the pink rectangle.')
 
+    # Get scale value for data from new or legacy format
+    if "scaler" in metadata: scale = metadata["scaler"] #legacy
+    else: scale = metadata["voltage_scaling_factor"]
+
     # Reshape interpreting as row major
     X = raw.reshape((-1, metadata["num_channels"]), order="C")
-    # Convert from the raw uint16 into float "units" via "offset" and "scaler"
-    X = np.multiply(metadata["scaler"], (X.astype(np.float32) - metadata["offset"]))
+    # Convert from the raw uint16 into float "units" via "offset" and "scale"
+    X = np.multiply(scale, (X.astype(np.float32) - metadata["offset"]))
 
     # Extract sample rate for first channel and construct a time axis in ms
     fs = metadata["sample_rate"]
