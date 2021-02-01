@@ -11,6 +11,9 @@ import logging
 import os
 import io
 import configparser
+import threading
+import queue
+import botocore.exceptions
 from typing import Callable, Tuple, List
 
 
@@ -21,6 +24,7 @@ AWS_PROFILE = 'aws-braingeneers-iot'
 REDIS_HOST = 'redis.braingeneers.gi.ucsc.edu'
 REDIS_PORT = 6379
 logger = logging.getLogger()
+logger.level = logging.INFO
 
 
 # todo
@@ -34,50 +38,74 @@ logger = logging.getLogger()
 class MessageBroker:
     """
     This class provides a simplified API for interacting with the AWS MQTT service and Redis service
-    for Braingeneers. It assumes all possible defaults specific to the Braingeneers use of MQTT,
-    handling details like AWS region, ca-certificates, etc. When instantiated the class will
+    for Braingeneers. It assumes all possible defaults specific to the Braingeneers use of Redis and MQTT,
+    handling details like AWS region, endpoints, etc. When instantiated the class will
     automatically connect to AWS IoT.
 
     See documentation at: https://github.com/braingeneers/wiki/blob/main/shared/mqtt.md
 
     Assumes the following:
         - `~/.aws/credentials` file has a profile [aws-braingeneers-iot] defined with AWS credentials
-        - Python dependencies: `awsiotsdk, boto3, smart_open`
+        - Python dependencies: `awsiotsdk, awscrt, boto3, redis`
 
     Public functions:
+        #
+        # Publish/subscribe short messages
+        #
         publish_message(topic: str, message:dict)  # publish a message to a topic
-        publish_data_stream(stream_name: str, data: bytes, stream_size: int)  # publish large data to a stream
-
         subscribe_topic(topic: str, callback: Callable)  # subscribe to a topic, callable is a function with signature (topic: str, message: str)
+
+        #
+        # Publish/subscribe to data streams (can be large chunks of data)
+        #
+        publish_data_stream(stream_name: str, data: bytes, stream_size: int)  # publish large data to a stream
         subscribe_data_stream(stream_name: str, callback: Callable)  # subscribe to data on a raw data stream
 
-        list_devices(filter: dict=None)
+        #
+        # List and register IoT devices
+        #
+        list_devices(**filters)  # list connected devices, filter by one or more state variables.
         create_device(device_name: str, device_type: str)  # create a new device if it doesn't already exist
 
+        #
+        # Get/set/update/subscribe to device state variables
+        #
         get_device_state(device_name: str)  # returns the device shadow file as a dictionary.
+        update_device_state(device: str, device_state: dict)  # updates one or more state variables for a registered device
         set_device_state(device_name: str, state: dict)  # saves the shadow file, a dict that is JSON serializable.
+        subscribe_device_state_change(device: str, device_state_keys: List[str], callback: Callable)  # subscribe to notifications when a device state changes
+
+    Example usage:
+        TODO
 
     Useful documentation references:
         https://github.com/braingeneers/wiki/blob/main/shared/mqtt.md
         https://aws.github.io/aws-iot-device-sdk-python-v2/
         https://awslabs.github.io/aws-crt-python/
     """
-    def create_device(self, device_name: str, device_type: str) -> bool:
+    def create_device(self, device_name: str, device_type: str) -> None:
         """
         This function creates a new device in AWS IoT.
+
+        Creating a device is not necessary to communicate over MQTT, if you do so when you
+        connect to MQTT with the device name that device will be searchable using list_devices.
 
         It may be called once or multiple times, when called multiple times only the first call
         has any effect, subsequent calls will identify that the device already exists and do nothing.
 
-        The first call to this function will create the device and copy the ca-certificates to S3 in the
-        standard location at s3://braingeneers/ca-certificates/$DEVICE_NAME/*
+        Will throw an exception if you try to create an existing device_name with a device_type that
+        doesn't match the existing device.
 
         :param device_name: Name of the device, for example 'marvin'
-        :param device_type: Device type as defined in AWS, standard device types are
-            ['ephys', 'picroscope', 'feeding', 'client']
-        :return: True if a new device was created, False if the device already existed and no action was taken.
+        :param device_type: Device type as defined in AWS, standard device types are ['ephys', 'picroscope', 'feeding']
         """
-        pass
+        if self._mqtt_connection is not None:
+            logger.warning(
+                'You have already connected to MQTT before calling create_device. If the device did not exist '
+                'previously it will appear offline until you restart this code. You should create the device '
+                'before publishing or subscribing messages.'
+            )
+        self.boto_iot_client.create_thing(thingName=device_name, thingTypeName=device_type)
 
     def publish_message(self, topic: str, message: (dict, list, str)) -> None:
         """
@@ -88,85 +116,207 @@ class MessageBroker:
         :param message: a message in dictionary/list format, JSON serializable, or a JSON string. May be None.
         """
         payload = json.dumps(message) if not isinstance(message, str) else message
-        publish_future, packet_id = self.mqtt_connection.publish_message(
+        publish_future, packet_id = self.mqtt_connection.publish(
             topic=topic,
             payload=payload,
             qos=awscrt.mqtt.QoS.AT_LEAST_ONCE
         )
         publish_future.result()
 
-    def publish_data_stream(self, stream_name: str, data: bytes, stream_size: int):
-        pass
-
     def subscribe_message(self, topic: str, callback: Callable) -> None:
         """
         Subscribes to receive messages on a given topic. When providing a topic you will be
         subscribing to all messages on that topic and any sub topic. For example, subscribing to
-        '/devices' would get messages on all devices, subscribing on '/devices/ephys' would subscribe
-        to all messages on all ephys devices, and '/devices/ephys/marvin' would subscribe to messages
+        '/devices' would get messages on all devices, subscribing on 'devices/ephys' would subscribe
+        to all messages on all ephys devices, and 'devices/ephys/marvin' would subscribe to messages
         to the marvin ephys device only.
 
         Note that callbacks to your function `callable` will be made in a separate thread.
 
         Example:
-            def my_callback(topic: str, message):
+            def my_callback(topic: str, message: dict):
                 print(f'Received message {message} on topic {topic}')  # Print message
 
             client = MqttClient('test')  # device named test
-            client.subscribe('/test', my_callback)  # subscribe to all topics under /test
+            client.subscribe('test', my_callback)  # subscribe to all topics under test
+
+        Polling messages instead of subscribing to push:
+            You can poll for new messages instead of subscribing to push notifications (which happen
+            in a separate thread) using the following example:
+
+            client = MqttClient('test')  # device named test
+            q = messaging.CallableQueue()  # a queue.Queue object that stores (topic, message) tuples
+            client.subscribe_message('test', q)  # subscribe to all topics under test
+            topic, message = q.get()
+            print(f'Topic {topic} received message {message}')  # Print message
 
         :param topic: topic: an MQTT topic as documented at
             https://github.com/braingeneers/wiki/blob/main/shared/mqtt.md
         :param callback: a function with the signature mycallbackfunction(topic: str, message),
             where message is a JSON object serialized to python format.
         """
-        subscribe_future, packet_id = self.mqtt_connection.subscribe_message(
+        subscribe_future, packet_id = self.mqtt_connection.subscribe(
             topic=topic,
             callback=functools.partial(self._callback_handler, callback=callback),
             qos=awscrt.mqtt.QoS.AT_LEAST_ONCE,
         )
         subscribe_future.result()
 
-    def subscribe_data_stream(self, stream_name: str, callback: Callable) -> None:
+    def publish_data_stream(self, stream_name: str, data: bytes, stream_size: int):
+        self.redis_client.xadd(
+            name=stream_name,
+            fields={'': data},
+            maxlen=stream_size,
+            approximate=True
+        )
+
+    def subscribe_data_stream(self, stream_name: str, callback: Callable,
+                              include_existing_stream_data: bool = True) -> None:
         """
+        Data streams are intended for streaming larger chunks of data vs. small messages.
+
         Subscribes to all new data on a stream. callback is a function with signature
 
-          def mycallback(data: bytes, timestamp: int)
+          def mycallback(stream_name:str, data: bytes)
 
         data is a BLOBs (binary data). timestamps is the update timestamp (note: not a standard unix timestamp format)
 
         This function asynchronously calls callback each time new data is available. If you prefer to poll for
-        new data use the `poll_data_stream` function instead.
+        new data use the `poll_data_stream` function instead. Note that if you subscribe to a stream
+        multiple times you will get multiple callbacks, this function should only be called once.
+
+        To poll for updates instead of receiving an asynchronous push use the following example:
+
+            client = MqttClient('test')  # device named test
+            q = messaging.CallableQueue()  # a queue.Queue object that stores (stream_name, data) tuples
+            client.subscribe_data_stream('test', q)  # subscribe to all topics under test
+            topic, message = q.get()
+            print(f'Topic {topic} received message {message}')  # Print message
 
         :param stream_name: name of the data stream, see standard naming convention documentation at:
             https://github.com/braingeneers/redis
         :param callback: a self defined function with signature defined above.
+        :param include_existing_stream_data: sends all data in the stream if True (default), otherwise
+            only sends new data on the stream after the subscribe_data_stream function was called.
         """
-        pass
+        if stream_name in self._subscribed_data_streams:
+            raise AttributeError(f'Stream {stream_name} is already subscribed, can\'t '
+                                 f'subscribe to the same stream twice.')
+        else:
+            logging.debug(f'Subscribing to data stream {stream_name} using callback {callback}')
+            t = threading.Thread(
+                target=self._redis_xread_thread,
+                args=(stream_name, callback, include_existing_stream_data)
+            )
+            t.name = f'redis_listener_{stream_name}'
+            t.daemon = True
+            self._subscribed_data_streams.add(stream_name)
+            t.start()
 
-    def poll_data_stream(self, stream_name: str, last_timestamp: int) -> Tuple[List[bytes], List[int]]:
+    def list_devices(self, **filters) -> List[Tuple[str, dict]]:
         """
-        Polls for new
-        :param stream_name: name of the data stream, see standard naming convention documentation at:
-            https://github.com/braingeneers/redis
-        :param last_timestamp: the last timestamp to get data from the stream, can be 0 to get the full stream,
-            pass it the last timestamp from the previous call on subsequent calls.
-        :return: a tuple of two lists, (data_list, timestamps_list) which contain 0 or more data blocks in bytes
-            format and an equal number of timestamps for each of those blocks. When no new data exists a tuple of empty
-            lists is returned: ([], [])
-        """
-        pass
+        Lists active/connected devices, filtered by one or more state variables. Returns
+        a list of tuples [(device_name, state_variables_dict), ...]
 
-    def get_device_state(self, device: str) -> dict:
-        """
+        This function supports both exact matches and ranges
 
-        :param device:
+        Example usage:
+          list_devices()  # list all connected devices
+          list_devices(sample_rate=25000)  # list connected devices with sample_rate of 25,000
+          list_devices(sample_rate=(12500, 25000)  # list devices with a sample rate between 12,500 and 25,000 inclusive
+          list_devices(sample_rate=(12500, 25000), num_channels=32)  # list devices within the range of sample_rates
+                                                                     # and state variable num_channels set to 32.
+
+        :param filters:
+        :return: a list of device names that match the filtering criteria.
+        """
+        raise NotImplemented('Not yet implemented, contact dfparks@ucsc.edu')
+
+    def get_device_state(self, device_name: str) -> dict:
+        """
+        Get a dictionary of the devices state. State is a dict of key:value pairs.
+        :param device_name: The devices name, example: "marvin"
+        :return: a dictionary of {key: value, ...} state key: value pairs.
+        """
+        try:
+            response = self.boto_iot_data_client.get_thing_shadow(thingName=device_name)
+            assert response['ResponseMetadata']['HTTPStatusCode'] == 200
+            shadow = json.loads(response['payload'].read())
+            shadow_reported = shadow['state']['reported']
+        except self.boto_iot_data_client.exceptions.ResourceNotFoundException:
+            shadow_reported = {}
+        return shadow_reported
+
+    def update_device_state(self, device_name: str, device_state: dict) -> None:
+        """
+        Updates a subset (or all) of a devices state variables as defined in the device_state dict.
+
+        :param device_name: device name
+        :param device_state: a dictionary of one or more device states to update or create
+        """
+        # Construct shadow file
+        shadow = {
+            'state': {
+                'reported': device_state
+            }
+        }
+
+        # Submit update to AWS
+        self.boto_iot_data_client.update_thing_shadow(
+            thingName=device_name,
+            payload=json.dumps(shadow).encode('utf-8')
+        )
+
+    def delete_device_state(self, device_name: str, device_state_keys: List[str] = None) -> None:
+        """
+        Delete one or more state variables.
+
+        :param device_name: device name
+        :param device_state_keys: a List of one or more state variables to delete. None to delete all.
         :return:
         """
-        pass
+        if device_state_keys is None:
+            # Delete the whole shadow file
+            try:
+                self.boto_iot_data_client.delete_thing_shadow(thingName=device_name)
+            except self.boto_iot_data_client.exceptions.ResourceNotFoundException:
+                pass  # ResourceNotFoundException thrown when no shadow file exits, the desired state anyway.
+        else:
+            # Delete specific keys from the shadow file
+            state = self.get_device_state(device_name)
+            for key in device_state_keys:
+                state[key] = None
+            self.update_device_state(device_name=device_name, device_state=state)
 
-    def set_device_state(self, device: str, device_state: dict) -> None:
-        pass
+    def subscribe_device_state_change(self, device_name: str, device_state_keys: List[str], callback: Callable) -> None:
+        """
+        Subscribe to be notified if one or more state variables changes.
+
+        Callback is a function with the following signature:
+          def mycallback(device: str, device_state_key: str, new_value)
+
+        There is one built-in state variable named 'connectivity.connected' which fires
+        if the device connected status changes, value will be True or False. All other
+        state variables are user defined as specified in [get|update|delete]_device_state methods.
+
+        :param device_name:
+        :param device_state_keys:
+        :param callback:
+        :return:
+        """
+        raise NotImplemented('Not yet implemented, contact dfparks@ucsc.edu')
+
+    def _redis_xread_thread(self, stream_name, callback, include_existing):
+        """ Performs blocking Redis XREAD operations in a continuous loop. """
+        last_timestamp = '0' if include_existing else '$'
+
+        while True:
+            streams = {stream_name: last_timestamp}
+            response = self.redis_client.xread(streams=streams, count=1, block=0)
+            stream_name = response[0][0].decode('utf-8')
+            data = response[0][1][0][1][b'']
+            last_timestamp = response[0][1][0][0].decode('utf-8')
+            callback(stream_name, data)
 
     @staticmethod
     def _callback_handler(topic, payload, callback):
@@ -215,6 +365,22 @@ class MessageBroker:
         return self._mqtt_connection
 
     @property
+    def boto_iot_data_client(self):
+        """ Lazy initialization of boto3 client """
+        if self._boto_iot_data_client is None:
+            boto_session = boto3.Session(profile_name=AWS_PROFILE)
+            self._boto_iot_data_client = boto_session.client('iot-data', region_name=AWS_REGION)
+        return self._boto_iot_data_client
+
+    @property
+    def boto_iot_client(self):
+        """ Lazy initialization of boto3 client """
+        if self._boto_iot_client is None:
+            boto_session = boto3.Session(profile_name=AWS_PROFILE)
+            self._boto_iot_client = boto_session.client('iot', region_name=AWS_REGION)
+        return self._boto_iot_client
+
+    @property
     def redis_client(self):
         """ Lazy initialization of the redis client. """
         if self._redis_client is None:
@@ -223,10 +389,11 @@ class MessageBroker:
             self._redis_client = redis.Redis(
                 host=REDIS_HOST, port=REDIS_PORT, password=config['redis']['password']
             )
+            self._redis_client.config_set(name='notify-keyspace-events', value='t')
 
         return self._redis_client
 
-    def __init__(self, name, endpoint='us-west-2', credentials=None):
+    def __init__(self, name, endpoint=AWS_REGION, credentials=None):
         """
 
         :param name: name of device or client, must be a globally unique string ID.
@@ -251,8 +418,16 @@ class MessageBroker:
 
         self.certs_temp_dir = None
         self._mqtt_connection = None
-
+        self._boto_iot_client = None
+        self._boto_iot_data_client = None
         self._redis_client = None
+
+        self._subscribed_data_streams = set()  # keep track of subscribed data streams
+
+
+class CallableQueue(queue.Queue):
+    def __call__(self, *args):
+        self.put(args)
 
 
 # The AWS root certificate. Embedded here to avoid requiring installing it as a dependency.
@@ -278,3 +453,32 @@ AWS_ROOT_CA1 = inspect.cleandoc("""
     rqXRfboQnoZsG4q5WTP468SQvvG5
     -----END CERTIFICATE-----
 """)
+
+"""
+# AWS Thing Indexing Notes
+
+aws --profile aws-braingeneers-iot --region us-west-2 iot update-indexing-configuration --thing-indexing-configuration '{"thingIndexingMode": "REGISTRY_AND_SHADOW", "thingConnectivityIndexingMode": "STATUS", "customFields": []}' 
+{
+  "thingIndexingMode": "OFF"|"REGISTRY"|"REGISTRY_AND_SHADOW",
+  "thingConnectivityIndexingMode": "OFF"|"STATUS",
+  "customFields": [
+    { name: field-name, type: String | Number | Boolean },
+    ...
+  ]
+}
+
+'{"thingIndexingMode": "REGISTRY_AND_SHADOW", "thingConnectivityIndexingMode": "STATUS", "customFields": []}'
+
+Useful CLI commands for testing:
+--------------------------------
+python3 pubsub.py --endpoint ahp00abmtph4i-ats.iot.us-west-2.amazonaws.com --root-ca AmazonRootCA1.pem --client-id "arn:aws:iot:us-west-2:443872533066:thing/test" --signing-region us-west-2 --use-websocket --count 100
+aws --profile aws-braingeneers-iot --region us-west-2 iot search-index --query-string connectivity.connected:true
+
+https://stackoverflow.com/questions/65639235/how-to-set-a-profile-on-an-aws-client
+https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/iot.html
+https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/iot-data.html
+boto_session = boto3.Session(profile_name='aws-braingeneers-iot')
+iot_client = boto_session.client('iot', region_name='us-west-2')
+iot_data_client = boto_session.client('iot-data', region_name='us-west-2')
+
+"""
