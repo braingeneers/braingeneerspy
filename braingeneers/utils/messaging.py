@@ -72,7 +72,6 @@ class MessageBroker:
         #
         get_device_state(device_name: str)  # returns the device shadow file as a dictionary.
         update_device_state(device: str, device_state: dict)  # updates one or more state variables for a registered device
-        set_device_state(device_name: str, state: dict)  # saves the shadow file, a dict that is JSON serializable.
         subscribe_device_state_change(device: str, device_state_keys: List[str], callback: Callable)  # subscribe to notifications when a device state changes
 
     Example usage:
