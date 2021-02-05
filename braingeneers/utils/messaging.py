@@ -14,7 +14,7 @@ import configparser
 import threading
 import queue
 import botocore.exceptions
-from typing import Callable, Tuple, List, Dict
+from typing import Callable, Tuple, List, Dict, Union
 
 
 MQTT_ENDPOINT = 'ahp00abmtph4i-ats.iot.us-west-2.amazonaws.com'
@@ -163,18 +163,20 @@ class MessageBroker:
         )
         subscribe_future.result()
 
-    def publish_data_stream(self, stream_name: str, data: Dict[bytes, bytes], stream_size: int) -> None:
+    def publish_data_stream(self, stream_name: str, data: Dict[Union[str, bytes], bytes], stream_size: int) -> None:
         """
         Publish (potentially large) data to a stream.
 
         :param stream_name: string name of the stream.
-        :param data: a dictionary of data, may contain large data, keys and values must both be bytes type.
+        :param data: a dictionary of data, may contain large data, keys are string or bytes and values must bytes type.
         :param stream_size: the maximum published data points to keep on the stream (technically approximate for efficiency)
         :return:
         """
+        data_bytes_type = {k.encode('utf-8') if isinstance(k, str) else k: v for k, v in data.items()}
+
         self.redis_client.xadd(
             name=stream_name,
-            fields=data,
+            fields=data_bytes_type,
             maxlen=stream_size,
             approximate=True
         )
@@ -225,17 +227,19 @@ class MessageBroker:
         self._subscribed_data_streams.add(stream_name)
         t.start()
 
-    def _update_timestamp_exclusive(self, timestamp: str):
+    @staticmethod
+    def _update_timestamp_exclusive(timestamp: (str, bytes)):
         # based on SO article this hacky method of incrementing the timestamp is necessary until Redis 6.2:
         # https://stackoverflow.com/questions/66035607/redis-xrange-err-invalid-stream-id-specified-as-stream-command-argument
-        if last_update_timestamp != b'-':
-            last_update_str = last_update_timestamp.decode('utf-8')
+        if timestamp not in ['-', b'-', '0-0']:
+            last_update_str = timestamp.decode('utf-8') if isinstance(timestamp, bytes) else timestamp
             last_update_exclusive = last_update_str[:-1] + str(int(last_update_str[-1]) + 1)
         else:
-            last_update_exclusive = last_update_timestamp
-        pass  # todo
+            last_update_exclusive = '0-0'
+        return last_update_exclusive
 
-    def poll_data_streams(self, stream_names_to_timestamps_dict: dict, count: int = -1) -> Dict[str, List[str, dict]]:
+    def poll_data_streams(self, stream_names_to_timestamps_dict: dict, count: int = -1) \
+            -> List[List[Union[bytes, List[Tuple[bytes, Dict[bytes, bytes]]]]]]:
         """
         subscribe_data_stream is preferred to poll_data_stream in most cases, this function is included for specific
         uses cases when maintaining an open connection is infeasible, such as with individual worker processes. It's
@@ -249,7 +253,10 @@ class MessageBroker:
         :return: a list of (last_update_timestamp, data_dict) pairs. Empty list if no data is available
             after waiting block_ms milliseconds or block_ms is None.
         """
-        result = self.redis_client.xread(streams=stream_names_to_timestamps_dict, count=count if count >= 1 else None)
+        # update timestamps to be exclusive (required for a pre Redis 6.2 version only)
+        streams_exclusive = {k: self._update_timestamp_exclusive(v) for k, v in stream_names_to_timestamps_dict.items()}
+
+        result = self.redis_client.xread(streams=streams_exclusive, count=count if count >= 1 else None)
         return result
 
     def list_devices(self, **filters) -> List[Tuple[str, dict]]:
@@ -345,16 +352,24 @@ class MessageBroker:
         """
         raise NotImplemented('Not yet implemented, contact dfparks@ucsc.edu')
 
-    def _redis_xread_thread(self, stream_name, callback, include_existing):
+    def _redis_xread_thread(self, stream_names, callback, include_existing):
         """ Performs blocking Redis XREAD operations in a continuous loop. """
-        last_timestamp = '0' if include_existing else '$'
+        # last_timestamps = ['0-0' if include_existing else '$' for _ in range(len(stream_names))]
+        streams = {
+            s: '0-0' if include_existing else '$'
+            for i, s in enumerate(stream_names)
+        }
 
         while True:
-            streams = {stream_name: last_timestamp}
-            response = self.redis_client.xread(streams=streams, count=1, block=0)
-            stream_name = response[0][0].decode('utf-8')
-            data = response[0][1][0][1]
-            callback(stream_name, data)
+            response = self.redis_client.xread(streams=streams, block=0)
+            for item_stream in response:
+                stream_name = item_stream[0].decode('utf-8')
+                for item in item_stream[1]:
+                    timestamp = item[0]
+                    data_dict = item[1]
+
+                    streams[stream_name] = timestamp
+                    callback(stream_name, data_dict)
 
     @staticmethod
     def _callback_handler(topic, payload, callback):
