@@ -14,7 +14,7 @@ import configparser
 import threading
 import queue
 import botocore.exceptions
-from typing import Callable, Tuple, List
+from typing import Callable, Tuple, List, Dict
 
 
 MQTT_ENDPOINT = 'ahp00abmtph4i-ats.iot.us-west-2.amazonaws.com'
@@ -58,8 +58,9 @@ class MessageBroker:
         #
         # Publish/subscribe to data streams (can be large chunks of data)
         #
-        publish_data_stream(stream_name: str, data: bytes, stream_size: int)  # publish large data to a stream
-        subscribe_data_stream(stream_name: str, callback: Callable)  # subscribe to data on a raw data stream
+        publish_data_stream(stream_name: str, data: dict, stream_size: int)  # publish large data to a stream.
+        subscribe_data_stream(stream_name: str, callback: Callable)  # subscribe to data on a raw data stream.
+        poll_data_stream(stream_name: str, last_update_timestamp: str)  # returns a list of (time_str, data_dict) tuples since the last time stamp, non blocking. It's preferrable to use subscribe_data_stream unless polling is required, see function docs.
 
         #
         # List and register IoT devices
@@ -71,8 +72,9 @@ class MessageBroker:
         # Get/set/update/subscribe to device state variables
         #
         get_device_state(device_name: str)  # returns the device shadow file as a dictionary.
-        update_device_state(device: str, device_state: dict)  # updates one or more state variables for a registered device
-        subscribe_device_state_change(device: str, device_state_keys: List[str], callback: Callable)  # subscribe to notifications when a device state changes
+        update_device_state(device: str, device_state: dict)  # updates one or more state variables for a registered device.
+        set_device_state(device_name: str, state: dict)  # saves the shadow file, a dict that is JSON serializable.
+        subscribe_device_state_change(device: str, device_state_keys: List[str], callback: Callable)  # subscribe to notifications when a device state changes.
 
     Example usage:
         TODO
@@ -161,24 +163,32 @@ class MessageBroker:
         )
         subscribe_future.result()
 
-    def publish_data_stream(self, stream_name: str, data: bytes, stream_size: int):
+    def publish_data_stream(self, stream_name: str, data: Dict[bytes, bytes], stream_size: int) -> None:
+        """
+        Publish (potentially large) data to a stream.
+
+        :param stream_name: string name of the stream.
+        :param data: a dictionary of data, may contain large data, keys and values must both be bytes type.
+        :param stream_size: the maximum published data points to keep on the stream (technically approximate for efficiency)
+        :return:
+        """
         self.redis_client.xadd(
             name=stream_name,
-            fields={'': data},
+            fields=data,
             maxlen=stream_size,
             approximate=True
         )
 
-    def subscribe_data_stream(self, stream_name: str, callback: Callable,
+    def subscribe_data_stream(self, stream_name: (str, List[str]), callback: Callable,
                               include_existing_stream_data: bool = True) -> None:
         """
         Data streams are intended for streaming larger chunks of data vs. small messages.
 
-        Subscribes to all new data on a stream. callback is a function with signature
+        Subscribes to all new data on one or more stream(s). callback is a function with signature
 
-          def mycallback(stream_name:str, data: bytes)
+          def mycallback(stream_name:str, data: Dict[bytes, bytes])
 
-        data is a BLOBs (binary data). timestamps is the update timestamp (note: not a standard unix timestamp format)
+        data is a BLOBs (binary data). uuid_timestamp is the update time (note: not a standard unix timestamp format)
 
         This function asynchronously calls callback each time new data is available. If you prefer to poll for
         new data use the `poll_data_stream` function instead. Note that if you subscribe to a stream
@@ -198,19 +208,49 @@ class MessageBroker:
         :param include_existing_stream_data: sends all data in the stream if True (default), otherwise
             only sends new data on the stream after the subscribe_data_stream function was called.
         """
-        if stream_name in self._subscribed_data_streams:
-            raise AttributeError(f'Stream {stream_name} is already subscribed, can\'t '
-                                 f'subscribe to the same stream twice.')
+        stream_names = [stream_name] if isinstance(stream_name, str) else stream_name
+
+        for stream_name in stream_names:
+            if stream_name in self._subscribed_data_streams:
+                raise AttributeError(f'Stream {stream_name} is already subscribed, can\'t '
+                                     f'subscribe to the same stream twice.')
+
+        logging.debug(f'Subscribing to data stream {stream_name} using callback {callback}')
+        t = threading.Thread(
+            target=self._redis_xread_thread,
+            args=(stream_names, callback, include_existing_stream_data)
+        )
+        t.name = f'redis_listener_{stream_name}'
+        t.daemon = True
+        self._subscribed_data_streams.add(stream_name)
+        t.start()
+
+    def _update_timestamp_exclusive(self, timestamp: str):
+        # based on SO article this hacky method of incrementing the timestamp is necessary until Redis 6.2:
+        # https://stackoverflow.com/questions/66035607/redis-xrange-err-invalid-stream-id-specified-as-stream-command-argument
+        if last_update_timestamp != b'-':
+            last_update_str = last_update_timestamp.decode('utf-8')
+            last_update_exclusive = last_update_str[:-1] + str(int(last_update_str[-1]) + 1)
         else:
-            logging.debug(f'Subscribing to data stream {stream_name} using callback {callback}')
-            t = threading.Thread(
-                target=self._redis_xread_thread,
-                args=(stream_name, callback, include_existing_stream_data)
-            )
-            t.name = f'redis_listener_{stream_name}'
-            t.daemon = True
-            self._subscribed_data_streams.add(stream_name)
-            t.start()
+            last_update_exclusive = last_update_timestamp
+        pass  # todo
+
+    def poll_data_streams(self, stream_names_to_timestamps_dict: dict, count: int = -1) -> Dict[str, List[str, dict]]:
+        """
+        subscribe_data_stream is preferred to poll_data_stream in most cases, this function is included for specific
+        uses cases when maintaining an open connection is infeasible, such as with individual worker processes. It's
+        recommended to use subscribe_data_stream unless you have a specific reason to use poll_data_stream.
+
+        :param stream_names_to_timestamps_dict: dictionary of {stream_name: last_update_timestamp} for 1 or more streams.
+            The last timestamp received in the previous call, will be a string. Use '-' to
+            get all available data on the stream, subsequent calls should use the timestamp received in
+            the previous call.
+        :param count: maximum number of entries to return, -1 for as many as are available.
+        :return: a list of (last_update_timestamp, data_dict) pairs. Empty list if no data is available
+            after waiting block_ms milliseconds or block_ms is None.
+        """
+        result = self.redis_client.xread(streams=stream_names_to_timestamps_dict, count=count if count >= 1 else None)
+        return result
 
     def list_devices(self, **filters) -> List[Tuple[str, dict]]:
         """
@@ -313,8 +353,7 @@ class MessageBroker:
             streams = {stream_name: last_timestamp}
             response = self.redis_client.xread(streams=streams, count=1, block=0)
             stream_name = response[0][0].decode('utf-8')
-            data = response[0][1][0][1][b'']
-            last_timestamp = response[0][1][0][0].decode('utf-8')
+            data = response[0][1][0][1]
             callback(stream_name, data)
 
     @staticmethod

@@ -23,13 +23,40 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         message_received_barrier.wait()  # will throw BrokenBarrierError if timeout
 
     def test_publish_subscribe_data_stream(self):
-        """ Uses polling method to test publish/subscribe data streams """
+        """ Uses queue method to test publish/subscribe data streams """
         q = messaging.CallableQueue(1)
         self.mb.subscribe_data_stream(stream_name='unittest', callback=q)
-        self.mb.publish_data_stream(stream_name='unittest', data=b'42', stream_size=1)
+        self.mb.publish_data_stream(stream_name='unittest', data={b'x': b'42'}, stream_size=1)
         result_stream_name, result_data = q.get(timeout=7)
         self.assertEqual(result_stream_name, 'unittest')
-        self.assertEqual(result_data, b'42')
+        self.assertDictEqual(result_data, {b'x': b'42'})
+
+    def test_subscribe_multiple_data_streams(self):
+        """ Tests subscribing to multiple streams. """
+        self.fail()  # todo
+
+    def test_poll_data_stream(self):
+        """ Uses more advanced poll_data_stream function """
+        self.mb.redis_client.delete('unittest')
+
+        self.mb.publish_data_stream(stream_name='unittest', data={b'x': b'42'}, stream_size=1)
+        self.mb.publish_data_stream(stream_name='unittest', data={b'x': b'43'}, stream_size=1)
+        self.mb.publish_data_stream(stream_name='unittest', data={b'x': b'44'}, stream_size=1)
+
+        result1 = self.mb.poll_data_stream(stream_name='unittest', last_update_timestamp=b'-', count=1)
+        self.assertEqual(len(result1), 1)
+        self.assertDictEqual(result1[0][1], {b'x': b'42'})
+
+        result2 = self.mb.poll_data_stream(stream_name='unittest', last_update_timestamp=result1[0][0], count=2)
+        self.assertEqual(len(result2), 2)
+        self.assertDictEqual(result2[0][1], {b'x': b'43'})
+        self.assertDictEqual(result2[1][1], {b'x': b'44'})
+
+        result3 = self.mb.poll_data_stream(stream_name='unittest', last_update_timestamp=b'-')
+        self.assertEqual(len(result3), 3)
+        self.assertDictEqual(result3[0][1], {b'x': b'42'})
+        self.assertDictEqual(result3[1][1], {b'x': b'43'})
+        self.assertDictEqual(result3[2][1], {b'x': b'44'})
 
     def test_delete_device_state(self):
         self.mb.delete_device_state('test')
