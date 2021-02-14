@@ -13,6 +13,7 @@ import io
 import configparser
 import threading
 import queue
+import uuid
 import botocore.exceptions
 from typing import Callable, Tuple, List, Dict, Union
 
@@ -53,7 +54,7 @@ class MessageBroker:
         # Publish/subscribe short messages
         #
         publish_message(topic: str, message:dict)  # publish a message to a topic
-        subscribe_topic(topic: str, callback: Callable)  # subscribe to a topic, callable is a function with signature (topic: str, message: str)
+        subscribe_message(topic: str, callback: Callable)  # subscribe to a topic, callable is a function with signature (topic: str, message: str)
 
         #
         # Publish/subscribe to data streams (can be large chunks of data)
@@ -124,7 +125,7 @@ class MessageBroker:
         )
         publish_future.result()
 
-    def subscribe_message(self, topic: str, callback: Callable) -> None:
+    def subscribe_message(self, topic: str, callback: Callable) -> Callable:
         """
         Subscribes to receive messages on a given topic. When providing a topic you will be
         subscribing to all messages on that topic and any sub topic. For example, subscribing to
@@ -151,10 +152,11 @@ class MessageBroker:
             topic, message = q.get()
             print(f'Topic {topic} received message {message}')  # Print message
 
-        :param topic: topic: an MQTT topic as documented at
+        :param topic: an MQTT topic as documented at
             https://github.com/braingeneers/wiki/blob/main/shared/mqtt.md
         :param callback: a function with the signature mycallbackfunction(topic: str, message),
             where message is a JSON object serialized to python format.
+        :return: the original callable, this is returned for convenience sake only, it's not altered in any way.
         """
         subscribe_future, packet_id = self.mqtt_connection.subscribe(
             topic=topic,
@@ -162,6 +164,7 @@ class MessageBroker:
             qos=awscrt.mqtt.QoS.AT_LEAST_ONCE,
         )
         subscribe_future.result()
+        return callback
 
     def publish_data_stream(self, stream_name: str, data: Dict[Union[str, bytes], bytes], stream_size: int) -> None:
         """
@@ -209,6 +212,7 @@ class MessageBroker:
         :param callback: a self defined function with signature defined above.
         :param include_existing_stream_data: sends all data in the stream if True (default), otherwise
             only sends new data on the stream after the subscribe_data_stream function was called.
+        :return: the original callable, this is returned for convenience sake only, it's not altered in any way.
         """
         stream_names = [stream_name] if isinstance(stream_name, str) else stream_name
 
@@ -226,6 +230,7 @@ class MessageBroker:
         t.daemon = True
         self._subscribed_data_streams.add(stream_name)
         t.start()
+        return callback
 
     @staticmethod
     def _update_timestamp_exclusive(timestamp: (str, bytes)):
@@ -446,7 +451,7 @@ class MessageBroker:
 
         return self._redis_client
 
-    def __init__(self, name, endpoint=AWS_REGION, credentials=None):
+    def __init__(self, name: str = None, endpoint: str = AWS_REGION, credentials: (str, io.IOBase) = None):
         """
 
         :param name: name of device or client, must be a globally unique string ID.
@@ -457,7 +462,7 @@ class MessageBroker:
             'aws-braingeneers-iot' and 'redis' in it.
         """
         os.environ['AWS_PROFILE'] = AWS_PROFILE  # sets the AWS profile name for credentials
-        self.name = name
+        self.name = name if name is not None else uuid.uuid4()
         self.endpoint = endpoint
 
         if credentials is None:
@@ -467,6 +472,7 @@ class MessageBroker:
             with open(credentials, 'r') as f:
                 self._credentials = f.read()
         else:
+            assert hasattr(credentials, 'read'), 'credentials parameter must be a filename string or file-like object.'
             self._credentials = credentials.read()
 
         self.certs_temp_dir = None
