@@ -1,5 +1,6 @@
 """ Unit test for BraingeneersMqttClient, assumes Braingeneers ~/.aws/credentials file exists """
 import unittest
+import unittest.mock
 import braingeneers.utils.messaging as messaging
 import threading
 
@@ -95,3 +96,8 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         self.assertTrue('x' in state)
         self.assertEqual(state['x'], 42)
         self.mb.delete_device_state('test')
+
+    def test_list_devices_basic(self):
+        self.mb.subscribe_message('devices/test', callback=unittest.mock.Mock())
+        devices_online = self.mb.list_devices()
+        assert len(devices_online) > 0

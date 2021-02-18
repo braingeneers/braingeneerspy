@@ -185,7 +185,7 @@ class MessageBroker:
         )
 
     def subscribe_data_stream(self, stream_name: (str, List[str]), callback: Callable,
-                              include_existing_stream_data: bool = True) -> None:
+                              include_existing_stream_data: bool = True) -> Callable:
         """
         Data streams are intended for streaming larger chunks of data vs. small messages.
 
@@ -264,10 +264,10 @@ class MessageBroker:
         result = self.redis_client.xread(streams=streams_exclusive, count=count if count >= 1 else None)
         return result
 
-    def list_devices(self, **filters) -> List[Tuple[str, dict]]:
+    def list_devices(self, **filters) -> List[str]:
         """
         Lists active/connected devices, filtered by one or more state variables. Returns
-        a list of tuples [(device_name, state_variables_dict), ...]
+        a list of device names in string format.
 
         This function supports both exact matches and ranges
 
@@ -281,7 +281,17 @@ class MessageBroker:
         :param filters:
         :return: a list of device names that match the filtering criteria.
         """
-        raise NotImplemented('Not yet implemented, contact dfparks@ucsc.edu')
+        query_string = 'connectivity.connected:true'  # always query for connected devices
+        for k, v in filters.items():
+            if isinstance(v, (tuple, list)):
+                assert len(v) == 2, f'One or two values expected for filter {k}, found {v}'
+                query_string = f'{query_string}'
+            else:
+                query_string = f'{query_string} AND shadow.{k}:{v}'
+
+        response = self.boto_iot_client.search_index(queryString=query_string)
+        ret_val = [thing['thingName'] for thing in response['things']]
+        return ret_val
 
     def get_device_state(self, device_name: str) -> dict:
         """
@@ -514,7 +524,7 @@ AWS_ROOT_CA1 = inspect.cleandoc("""
 """)
 
 """
-# AWS Thing Indexing Notes
+# AWS Thing Indexing Notes - this is misc dev documentation.
 
 aws --profile aws-braingeneers-iot --region us-west-2 iot update-indexing-configuration --thing-indexing-configuration '{"thingIndexingMode": "REGISTRY_AND_SHADOW", "thingConnectivityIndexingMode": "STATUS", "customFields": []}' 
 {
