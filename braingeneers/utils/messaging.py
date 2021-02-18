@@ -269,7 +269,12 @@ class MessageBroker:
         Lists active/connected devices, filtered by one or more state variables. Returns
         a list of device names in string format.
 
-        This function supports both exact matches and ranges
+        This function supports both exact matches and ranges. You can specify multiple conditions
+        which are joined by a logical AND.
+
+        The function doesn't currently support OR conditions which
+        are technically possible to do through the underlying client API and omitted for simplicity and
+        lack of a use case.
 
         Example usage:
           list_devices()  # list all connected devices
