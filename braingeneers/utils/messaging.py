@@ -459,6 +459,10 @@ class MessageBroker:
         if self._redis_client is None:
             config = configparser.ConfigParser()
             config.read_file(io.StringIO(self._credentials))
+            assert 'redis' in config, 'Your AWS credentials file is missing a section [redis], ' \
+                                      'you may have the wrong version of the credentials file.'
+            assert 'password' in config['redis'], 'Your AWS credentials file is malformed, ' \
+                                                  'password was not found under the [redis] section.'
             self._redis_client = redis.Redis(
                 host=REDIS_HOST, port=REDIS_PORT, password=config['redis']['password']
             )
