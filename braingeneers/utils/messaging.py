@@ -14,7 +14,6 @@ import configparser
 import threading
 import queue
 import uuid
-import botocore.exceptions
 from typing import Callable, Tuple, List, Dict, Union
 
 
@@ -27,14 +26,6 @@ REDIS_PORT = 6379
 logger = logging.getLogger()
 logger.level = logging.INFO
 
-
-# todo
-# class DeviceState(dict):
-#     device_name
-#     device_type
-#     status
-#     samples
-#     sampling_rate
 
 class MessageBroker:
     """
@@ -409,31 +400,33 @@ class MessageBroker:
     def mqtt_connection(self):
         """ Lazy initialization of mqtt connection. """
         if self._mqtt_connection is None:
-            # write the aws root cert to a temp location, doing this to avoid configuration dependencies, for simplicity
-            self.certs_temp_dir = tempfile.TemporaryDirectory()  # cleans up automatically on exit
-            with open(f'{self.certs_temp_dir.name}/AmazonRootCA1.pem', 'wb') as f:
-                f.write(AWS_ROOT_CA1.encode('utf-8'))
+            with TemporaryEnvironment('AWS_PROFILE', AWS_PROFILE):
+                # write the aws root cert to a temp location, doing this to avoid
+                # configuration dependencies, for simplicity
+                self.certs_temp_dir = tempfile.TemporaryDirectory()  # cleans up automatically on exit
+                with open(f'{self.certs_temp_dir.name}/AmazonRootCA1.pem', 'wb') as f:
+                    f.write(AWS_ROOT_CA1.encode('utf-8'))
 
-            event_loop_group = awscrt.io.EventLoopGroup(1)
-            host_resolver = awscrt.io.DefaultHostResolver(event_loop_group)
-            client_bootstrap = awscrt.io.ClientBootstrap(event_loop_group, host_resolver)
-            credentials_provider = awscrt.auth.AwsCredentialsProvider.new_default_chain(client_bootstrap)
+                event_loop_group = awscrt.io.EventLoopGroup(1)
+                host_resolver = awscrt.io.DefaultHostResolver(event_loop_group)
+                client_bootstrap = awscrt.io.ClientBootstrap(event_loop_group, host_resolver)
+                credentials_provider = awscrt.auth.AwsCredentialsProvider.new_default_chain(client_bootstrap)
 
-            self._mqtt_connection = awsiot.mqtt_connection_builder.websockets_with_default_aws_signing(
-                endpoint=MQTT_ENDPOINT,
-                client_bootstrap=client_bootstrap,
-                region=AWS_REGION,
-                credentials_provider=credentials_provider,
-                ca_filepath=f'{self.certs_temp_dir.name}/AmazonRootCA1.pem',
-                on_connection_interrupted=self._on_connection_interrupted,
-                on_connection_resumed=self._on_connection_resumed,
-                client_id=self.name,
-                clean_session=False,
-                keep_alive_secs=6
-            )
+                self._mqtt_connection = awsiot.mqtt_connection_builder.websockets_with_default_aws_signing(
+                    endpoint=MQTT_ENDPOINT,
+                    client_bootstrap=client_bootstrap,
+                    region=AWS_REGION,
+                    credentials_provider=credentials_provider,
+                    ca_filepath=f'{self.certs_temp_dir.name}/AmazonRootCA1.pem',
+                    on_connection_interrupted=self._on_connection_interrupted,
+                    on_connection_resumed=self._on_connection_resumed,
+                    client_id=self.name,
+                    clean_session=False,
+                    keep_alive_secs=6
+                )
 
-            connect_future = self.mqtt_connection.connect()
-            logger.info('MQTT connected: ', connect_future.result())
+                connect_future = self.mqtt_connection.connect()
+                logger.info('MQTT connected: ', connect_future.result())
 
         return self._mqtt_connection
 
@@ -480,7 +473,6 @@ class MessageBroker:
             defaults to looking in `~/.aws/credentials` if left as None. This file expects to find profiles named
             'aws-braingeneers-iot' and 'redis' in it.
         """
-        os.environ['AWS_PROFILE'] = AWS_PROFILE  # sets the AWS profile name for credentials
         self.name = name if name is not None else uuid.uuid4()
         self.endpoint = endpoint
 
@@ -501,6 +493,24 @@ class MessageBroker:
         self._redis_client = None
 
         self._subscribed_data_streams = set()  # keep track of subscribed data streams
+
+
+class TemporaryEnvironment:
+    """ Sets an environment variable temporarily using python `with` syntax. """
+    def __init__(self, env, value):
+        self.env = env
+        self.value = value
+        self.save_original_env_value = None
+
+    def __enter__(self):
+        self.save_aws_profile = os.environ.get(self.env)
+        os.environ[self.env] = self.value
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.save_original_env_value is None:
+            del os.environ[self.env]
+        else:
+            os.environ[self.env] = self.save_original_env_value
 
 
 class CallableQueue(queue.Queue):
