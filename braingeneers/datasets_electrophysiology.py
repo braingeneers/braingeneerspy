@@ -1,19 +1,22 @@
 import os
 import json
 import requests
-import numpy as np
 import matplotlib.pyplot as plt
 import numpy as np
 import shutil
+import scipy.io
+
 
 def get_archive_path():
     """/public/groups/braingeneers/ephys  Return path to archive on the GI public server """
     return os.getenv("BRAINGENEERS_ARCHIVE_PATH", "/public/groups/braingeneers/ephys")
 
+
 def get_archive_url():
     """  https://s3.nautilus.optiputer.net/braingeneers/ephys     Return URL to archive on PRP """
     return "{}/braingeneers/ephys".format(
         os.getenv("AWS_S3_ENDPOINT", "https://s3.nautilus.optiputer.net"))
+
 
 def load_batch(batch_uuid):
     """
@@ -36,6 +39,7 @@ def load_batch(batch_uuid):
     else:
         print(full_path_for_prp)
         raise Exception('Path:', full_path_for_prp, '\nAre you sure '+ batch_uuid + ' is the right uuid?')
+
 
 def load_experiment(batch_uuid, experiment_num):
     """
@@ -70,6 +74,7 @@ def load_experiment(batch_uuid, experiment_num):
         print("Full path for PRP:", full_path_for_prp)
         raise Exception('Are you sure '+ str(experiment_num)+ ' an experiment number?')
 
+
 def load_files_axion(metadata, batch_uuid, experiment_num, start, stop):
     """
     Load signal blocks of data from a single experiment
@@ -92,6 +97,7 @@ def load_files_axion(metadata, batch_uuid, experiment_num, start, stop):
     fs : float
         Sample rate in Hz
     """
+    # scipy.io.loadmat('axion_data_file')
     raise Exception('Axion data loading function not implemented')
     return
 

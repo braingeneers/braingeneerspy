@@ -1,0 +1,10 @@
+matplotlib
+requests
+numpy
+scipy
+boto3
+awsiot
+awscrt
+redis
+smart_open
+tenacity
