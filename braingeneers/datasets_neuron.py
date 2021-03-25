@@ -524,6 +524,36 @@ def load_ratings(fname):
     return NumpyS3Memmap(fname)[:]
 
 
+
+
+def load_all_rated():
+    '''
+    Loads all neurons(outputted from the sorter) that have been rated
+    
+
+    '''
+    na = NeuralAid()
+    #Local storage
+    na.set_data_path('./data/')
+    
+    ratings_dict = get_ratings_dict()
+    
+    neurons = []
+    ratings = []
+    for exp in ratings_dict.keys():
+        for well in ratings_dict[exp].keys():
+
+            na.load_experiment(exp)
+            n_temp,r_temp = na.load_well(well)
+            assert len(n_temp) == len(r_temp), "Number of neurons in the data and number of ratings must be the same, failure in {}".format(exp)
+            neurons = np.append(neurons,n_temp)
+            ratings = np.append(ratings,r_temp)
+
+    print('Loaded {} neurons and ratings'.format(len(neurons)))
+    return (neurons,ratings)
+
+
+
     
 # ############# Experiment Loading Functions ###################    
 
