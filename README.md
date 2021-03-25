@@ -30,7 +30,8 @@ print(uuids)
 
 ## braingeneers.utils.smart_open
 Configures smart_open for braingeneers use on PRP/S3. When importing this version of `smart_open` 
-braingeneers defaults will be auto configured.
+braingeneers defaults will be auto configured. Note that `smart_open` supports both local and S3 files so 
+it can be used for all files, not just S3 file access.
 
 Usage example:
 ```python
