@@ -8,6 +8,9 @@ import functools
 import subprocess
 from pathlib import Path
 
+from .utils import s3wrangler as wr
+from .utils.numpy_s3_memmap import NumpyS3Memmap
+
 from ipywidgets import interact, interactive, fixed, interact_manual
 import ipywidgets as widgets
 from IPython.display import display
@@ -157,6 +160,21 @@ class NeuralAid:
             self.well_dict[well][int(grp)] = ch
         
         return
+    
+    
+    def get_ratings_dict():
+        objs = wr.list_objects('s3://braingeneers/ephys/*/dataset/*.npy')
+
+        ratings_dict = {}
+
+        for o in objs:
+            #This is dirty
+            key = o.split('/')[4] + '/'
+            ratings_dict[key] = o
+            
+        self.ratings_dict = ratings_dict
+
+        return ratings_dict
 
   
     
@@ -418,6 +436,7 @@ class NeuralAid:
             cmd = f"{s3} cp {save_path + '.npy'} s3://{s3_path + s3_save_path} "
             process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
             output, error = process.communicate()
+            print('Uploaded Successfully')
 #             !{s3} cp {save_path + '.npy'} s3://{s3_path + s3_save_path} 
     
     def save_ratings_b(self,b):
@@ -456,6 +475,55 @@ def get_exp_list():
     output = str(output).split('\\n')
     exps = [t.split('PRE ')[1] for t in output if len(t.split('PRE ')) >1]
     return exps
+
+def get_ratings_list():
+    '''
+    Get list of uuids which have datasets
+    '''
+    objs = wr.list_objects('s3://braingeneers/ephys/*/dataset/*.npy')
+    
+    datasets = []
+    for o in objs:
+        #This is dirty
+        datasets.append(o.split('/')[4] + '/')
+
+    return datasets
+
+
+def get_ratings_dict():
+    '''
+    Returns dict of dict mapping UUID -> Well -> s3 path
+    
+    Usage of dict looks like d[uuid]['A1']
+    
+    '''
+    objs = wr.list_objects('s3://braingeneers/ephys/*/dataset/*.npy')
+    
+    ratings_dict = {}
+    seen_wells = []
+    
+    for o in objs:
+        #This is dirty
+        key = o.split('/')[4] + '/'
+        well = o.split('/')[6][:2]
+        if ratings_dict.get(key) == None:
+            ratings_dict[key] = {well:o}
+        else:
+            ratings_dict[key][well] = o
+
+    return ratings_dict
+
+
+def load_ratings(fname):
+    '''
+    Loads array of ratings from s3 filename
+    
+    Use get_ratings_dict to generate an easy method to index through the s3 filenames
+    
+    '''
+    return NumpyS3Memmap(fname)[:]
+
+
     
 # ############# Experiment Loading Functions ###################    
 
