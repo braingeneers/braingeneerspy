@@ -1,5 +1,5 @@
 """
-Configures smart_open for braingeneers user on PRP/S3
+Configures smart_open for braingeneers use on PRP/S3
 
 Usage example:
     import braingeneers.utils.smart_open as smart_open
