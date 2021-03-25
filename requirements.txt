@@ -8,3 +8,4 @@ awscrt
 redis
 smart_open
 tenacity
+awswrangler
