@@ -35,6 +35,8 @@ class NeuralAid:
         self.data_path = data_path
         self.exp = None
         self.select_exp = None
+        self.ratings_dict = get_ratings_dict()
+        
         return
 
     
@@ -209,21 +211,23 @@ class NeuralAid:
         print('Loading experiment: ' + self.exp[:-1])
 
         # Download files from exp
-        cmd = f'{s3} cp s3://{s3_path + self.exp + res_path} data/{self.exp}. --recursive --exclude="*" --include="*.zip"'
+        cmd = f'{s3} cp s3://{s3_path + self.exp + res_path} {self.data_path + self.exp}. --recursive --exclude="*" --include="*.zip"'
         process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
         output, error = process.communicate()
 #         !{s3} cp s3://{s3_path + exp + res_path} data/{exp}. --recursive --exclude="*" --include="*.zip"
 
         #Unzip those files
-        cmd = f"unzip -qn '{self.data_path + self.exp}*.zip' -d {self.data_path + self.exp[:-1]}"
-        process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
+        cmd = f"unzip -qn {self.data_path + self.exp}*.zip -d {self.data_path + self.exp[:-1]}"
+        process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         output, error = process.communicate()
+        print(error)
 #         !unzip -qn 'data/{exp}*.zip' -d data/{exp[:-1]}
 
-        cmd = f"rm {self.data_path + exp}*.zip"
-        process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
+        cmd = f"rm {self.data_path + self.exp}*.zip"
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE,stderr=subprocess.PIPE,shell=True)
         output, error = process.communicate()
 #         !rm data/{exp}*.zip
+        print(error)
 
 
         self.set_well_dict()
@@ -280,9 +284,10 @@ class NeuralAid:
         #Load ratings and assign
         ratings_path = f'{self.data_path}{self.exp}dataset/'
         ratings_path = glob.glob(ratings_path + well + '*.npy')
-
-        if len(ratings_path) > 0:
-            ratings = np.load(ratings_path[0])
+        
+        if self.exp in self.ratings_dict:
+            ratings = load_ratings(self.ratings_dict[self.exp][well])
+#             ratings = np.load(ratings_path[0])
             print('{} ratings loaded.'.format(len(ratings)))
 
         else:
