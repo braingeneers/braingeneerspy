@@ -3,8 +3,8 @@ requests
 numpy
 scipy
 boto3
-awsiot
-awscrt
+awsiot==1.5.7
+awscrt==0.10.8
 redis
 smart_open
 tenacity
