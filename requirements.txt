@@ -6,6 +6,6 @@ boto3
 awsiot==1.5.7
 awscrt==0.10.8
 redis
-smart_open
+smart_open==4.2.0
 tenacity
 awswrangler
