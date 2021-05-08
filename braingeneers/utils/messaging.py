@@ -1,7 +1,9 @@
 """ A simplified MQTT client for Braingeneers specific connections """
 import boto3
 import awsiot
+import awsiot.mqtt_connection_builder
 import awscrt
+import awscrt.auth
 import redis
 import tempfile
 import functools
