@@ -2,6 +2,40 @@ import numpy as np
 from scipy import stats, sparse, optimize
 
 
+def burstiness_index(times, bin_size=40):
+    '''
+    Compute the burstiness index [1], a number from 0 to 1 which
+    quantifies synchronization of activity in neural cultures.
+
+    Spikes are binned, and the fraction of spikes accounted for by
+    the top 15% will be 0.15 if activity is fully asynchronous, and
+    1.0 if activity is fully synchronized into just a few bins. This
+    is linearly rescaled to the range 0--1 for clearer interpretation.
+
+    [1] Wagenaar, D. A., Madhavan, R., Pine, J. & Potter, S. M.
+        Controlling bursting in cortical cultures with closed-loop
+        multi-electrode stimulation. J Neurosci 25:3, 680–688 (2005).
+    '''
+    binned = np.array(list(temporal_binning(times, bin_size)))
+    binned.sort()
+    N85 = int(np.round(len(binned) * 0.85))
+    f15 = binned[N85:].sum() / binned.sum()
+    return (f15 - 0.15) / 0.85
+
+
+def interspike_intervals(times, idces):
+    '''
+    Given arrays of firing times and the units which produced them,
+    return a dict mapping from unit to a list of interspike intevals.
+    '''
+    isis = {}
+    for i in set(idces):
+        ti = times[idces == i]
+        if len(ti) > 1:
+            isis[i] = ti[1:] - ti[:-1]
+    return isis
+
+
 def sparse_raster(times, idces, cells=None, bin_size=20):
     '''
     Given a list of spike times and the corresponding cells which
@@ -178,8 +212,7 @@ def criticality_metric(times):
     # First, decide on a threshold (per bin) from firing rate quantiles.
     bin_size = 20
     bin_sec = bin_size / 1e3
-    rates = np.array([bin for bin in
-                      temporal_binning(times, bin_size=bin_size)])
+    rates = np.array(list(temporal_binning(times, bin_size=bin_size)))
     thresh = stats.mstats.mquantiles(rates, [0.3])[0]
 
     # Now find the avalanches using methods above.
