@@ -26,17 +26,49 @@ def burstiness_index(times, bin_size=40):
 def interspike_intervals(times, idces):
     '''
     Given arrays of firing times and the units which produced them,
-    return a dict mapping from unit to a list of interspike intevals.
+    return a list of arrays of interspike intervals per unit.
     '''
-    isis = {}
-    for i in set(idces):
+    ISIs = []
+    for i in range(idces.max()+1):
         ti = times[idces == i]
-        if len(ti) > 1:
-            isis[i] = ti[1:] - ti[:-1]
-    return isis
+        ISIs.append(ti[1:] - ti[:-1])
+    return ISIs
 
 
-def sparse_raster(times, idces, cells=None, bin_size=20):
+def fano_factors(raster):
+    '''
+    Given arrays of spike times and the corresponding units which
+    produced them, computes the Fano factor of the corresponding spike
+    raster.
+
+    If a unit doesn't fire, a Fano factor of 1 is returned because in
+    the limit of events happening at a rate ε->0, either as
+    a Bernoulli process or in the many-bins limit of a single event,
+    the Fano factor converges to 1.
+    '''
+    if sparse.issparse(raster):
+        mean = np.array(raster.mean(1)).ravel()
+        moment = np.array(raster.multiply(raster).mean(1)).ravel()
+
+        # Silly numbers to make the next line return f=1 for a unit
+        # that never spikes.
+        moment[mean == 0] = 2
+        mean[mean == 0] = 1
+
+        # This is the variance/mean ratio computed in a sparse-friendly
+        # way. This algorithm is numerically unstable in general, but
+        # should only be a problem if your bin size is way too big.
+        return moment/mean - mean
+
+    else:
+        mean = raster.mean(1)
+        var = raster.var(1)
+        mean[mean == 0] = var[mean == 0] = 1.0
+        return var / mean
+
+
+
+def sparse_raster(times, idces, bin_size=20, cells=None):
     '''
     Given a list of spike times and the corresponding cells which
     produced them, bin the spike times and create a sparse matrix
@@ -63,14 +95,15 @@ def sparse_raster(times, idces, cells=None, bin_size=20):
     return sparse.csr_matrix((np.ones_like(indices), indices, indptr))
 
 
-def pearson(sparse_raster):
+def pearson(spikes):
     '''
-    Compute a Pearson correlation coefficient matrix for a sparse
-    spike raster in the format produced by sparse_raster(). Don't use
-    this method unless the spike raster is sparse: it's numerically
-    worse than the standard method used by scipy for dense matrices.
+    Compute a Pearson correlation coefficient matrix for a spike
+    raster. Includes a sparse-friendly method for very large spike
+    rasters, but falls back on np.corrcoef otherwise because this
+    method can be numerically unstable.
     '''
-    spikes = sparse_raster
+    if not sparse.issparse(spikes):
+        return np.corrcoef(spikes)
 
     Exy = (spikes @ spikes.T) / spikes.shape[1]
     Ex = np.array(spikes.mean(axis=1))
