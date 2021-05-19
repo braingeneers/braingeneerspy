@@ -12,9 +12,9 @@ def burstiness_index(times, bin_size=40):
     1.0 if activity is fully synchronized into just a few bins. This
     is linearly rescaled to the range 0--1 for clearer interpretation.
 
-    [1] Wagenaar, D. A., Madhavan, R., Pine, J. & Potter, S. M.
-        Controlling bursting in cortical cultures with closed-loop
-        multi-electrode stimulation. J Neurosci 25:3, 680–688 (2005).
+    [1] Wagenaar, Madhavan, Pine & Potter. Controlling bursting
+        in cortical cultures with closed-loop multi-electrode
+        stimulation. J Neurosci 25:3, 680–688 (2005).
     '''
     binned = np.array(list(temporal_binning(times, bin_size)))
     binned.sort()
@@ -67,7 +67,6 @@ def fano_factors(raster):
         return var / mean
 
 
-
 def sparse_raster(times, idces, bin_size=20, cells=None):
     '''
     Given a list of spike times and the corresponding cells which
@@ -94,6 +93,68 @@ def sparse_raster(times, idces, bin_size=20, cells=None):
     indptr = np.cumsum([0] + [(idces == i).sum() for i in cells])
     return sparse.csr_matrix((np.ones_like(indices), indices, indptr))
 
+
+def _sttc_ta(tA, delt):
+    '''
+    Helper function for spike time tiling coefficients: calculate the
+    total amount of time within a range delt of spikes within the
+    given sorted list of spike times tA.
+    '''
+    if len(tA) == 0:
+        return 0
+
+    tA = np.asarray(tA)
+    return 2*delt + np.minimum(np.diff(tA), 2*delt).sum()
+
+
+def _sttc_na(tA, tB, delt):
+    '''
+    Helper function for spike time tiling coefficients: given two
+    sorted lists of spike times, calculate the fraction of spikes in
+    spike train A within delt of any spike in spike train B. This
+    algorithm is my own, modified to use the closed interval instead
+    of open after reading the original code.
+    '''
+    count = 0
+    ia, ib = 0, 0
+
+    # Microoptimizations because Python won't do it for me: don't
+    # recompute len during each iteration, and subtract once.
+    LA, LB = len(tA), len(tB)
+
+    while ia < LA and ib < LB:
+        cg = tB[ib] - tA[ia]
+        if cg < -delt:
+            ib += 1
+        elif cg > delt:
+            ia += 1
+        else:
+            ia += 1
+            count += 1
+    return count
+
+
+def spike_time_tiling(tA, tB, delt=20, tmax=None):
+    '''
+    Given sorted lists of spike times for two neurons, compute the
+    spike time tiling coefficient [1], a metric for causal
+    relationships between spike trains with some improved intuitive
+    properties compared to the Pearson correlation coefficient.
+
+    [1] Cutts & Eglen. Detecting pairwise correlations in spike trains:
+        An objective comparison of methods and application to the
+        study of retinal waves. J Neurosci 34:43, 14288–14303 (2014).
+    '''
+    if tmax is None:
+        tmax = max(max(tA), max(tB))
+
+    TA = _sttc_ta(tA, delt) / tmax
+    TB = _sttc_ta(tB, delt) / tmax
+
+    PA = _sttc_na(tA, tB, delt) / len(tA)
+    PB = _sttc_na(tB, tA, delt) / len(tB)
+
+    return ((PA-TB)/(1 - PA*TB) + (PB - TA)/(1 - PB*TA))/2
 
 def pearson(spikes):
     '''
@@ -157,38 +218,6 @@ def get_avalanches(counts, thresh):
             this_av = []
     if this_av:
         yield this_av
-
-
-def vuong(data, A, B, deltaK=None):
-    """
-    Perform's Vuong's closeness test to compare the relative goodness
-    of fit between two (non-nested) models A and B following a
-    scipy.stats API.  Returns the statistic and its quantile on the
-    standard normal distribution. If deltaK, the difference in
-    parameter count of A vs. B, is not passed, it will be assumed
-    equal to the difference in the length of the distributions'
-    argument lists.
-
-    If the statistic is above the (1-alpha) quantile, model A is
-    preferred with significance level alpha; likewise, if the
-    statistic is below the alpha quantile, model B is preferred at
-    the same significance level.
-    """
-    # Log likelihood of each individual data point.
-    L1 = A.logpdf(data)
-    L2 = B.logpdf(data)
-
-    # Count the parameters...
-    if deltaK is None:
-        deltaK = len(A.args) - len(B.args)
-
-    # Log likelihood ratio, variance estimate, and the stat itself.
-    LR = L1.sum() - L2.sum() - 0.5*deltaK*np.log(len(data))
-    omega = np.std(L1 - L2)
-    stat = LR / omega / np.sqrt(len(data))
-
-    # Return the statistic and its quantile on the standard normal.
-    return stat, stats.norm.cdf(stat)
 
 
 def small_world(XY, plocal, beta):
