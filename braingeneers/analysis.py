@@ -98,7 +98,7 @@ def sparse_raster(times, idces, bin_size=20, cells=None):
     return sparse.csr_matrix((np.ones_like(indices), indices, indptr))
 
 
-def _sttc_ta(tA, delt):
+def _sttc_ta(tA, delt, tmax):
     '''
     Helper function for spike time tiling coefficients: calculate the
     total amount of time within a range delt of spikes within the
@@ -107,8 +107,8 @@ def _sttc_ta(tA, delt):
     if len(tA) == 0:
         return 0
 
-    tA = np.asarray(tA)
-    return 2*delt + np.minimum(np.diff(tA), 2*delt).sum()
+    base = min(delt, tA[0]) + min(delt, tmax - tA[-1])
+    return base + np.minimum(np.diff(tA), 2*delt).sum()
 
 
 def _sttc_na(tA, tB, delt):
@@ -152,13 +152,17 @@ def spike_time_tiling(tA, tB, delt=20, tmax=None):
     if tmax is None:
         tmax = max(max(tA), max(tB))
 
-    TA = _sttc_ta(tA, delt) / tmax
-    TB = _sttc_ta(tB, delt) / tmax
+    TA = _sttc_ta(tA, delt, tmax) / tmax
+    TB = _sttc_ta(tB, delt, tmax) / tmax
 
     PA = _sttc_na(tA, tB, delt) / len(tA)
     PB = _sttc_na(tB, tA, delt) / len(tB)
 
-    return ((PA-TB)/(1 - PA*TB) + (PB - TA)/(1 - PB*TA))/2
+    print(TA, TB, PA, PB)
+
+    aa = (PA-TB)/(1-PA*TB) if PA*TB != 1 else 0
+    bb = (PB-TA)/(1-PB*TA) if PB*TA != 1 else 0
+    return (aa + bb) / 2
 
 def pearson(spikes):
     '''

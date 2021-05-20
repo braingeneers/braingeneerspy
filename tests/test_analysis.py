@@ -124,15 +124,15 @@ class AnalysisTest(unittest.TestCase):
 
     def test_spike_time_tiling_ta(self):
         # Trivial base cases.
-        self.assertEqual(ba._sttc_ta([42], 1), 2)
-        self.assertEqual(ba._sttc_ta([], 1), 0)
+        self.assertEqual(ba._sttc_ta([42], 1, 100), 2)
+        self.assertEqual(ba._sttc_ta([], 1, 100), 0)
 
         # When spikes don't overlap, you should get exactly 2ndt.
-        self.assertEqual(ba._sttc_ta(np.arange(42), 0.5), 42.0)
+        self.assertEqual(ba._sttc_ta(np.arange(42)+1, 0.5, 100), 42.0)
 
         # When spikes overlap fully, you should get exactly
         # (tmax-tmin) + 2dt
-        self.assertEqual(ba._sttc_ta(np.arange(42), 100), 241)
+        self.assertEqual(ba._sttc_ta(np.arange(42)+100, 100, 300), 241)
 
     def test_spike_time_tiling_na(self):
         # Trivial base cases.
@@ -167,7 +167,7 @@ class AnalysisTest(unittest.TestCase):
 
         # Any spike train should be exactly equal to itself.
         foo = spikes()
-        self.assertEqual(ba.spike_time_tiling(foo, foo), 1.0)
+        self.assertEqual(ba.spike_time_tiling(foo, foo, 1), 1.0)
 
         # Default arguments, inferred value of tmax.
         foo, bar = spikes(), spikes()
@@ -186,6 +186,20 @@ class AnalysisTest(unittest.TestCase):
         baz = np.arange(N)
         self.assertAlmostEqual(ba.spike_time_tiling(baz, baz+0.5, 0.4),
                                -0.8, int(np.log10(N)))
+
+        # As you vary dt, that alternating spike train actually gets
+        # the STTC to go continuously from 0 to approach a limit of
+        # lim(dt to 0.5) STTC(dt) = -1, but STTC(dt >= 0.5) = 0.
+        self.assertEqual(ba.spike_time_tiling(baz, baz+0.5, 0.5), 0)
+
+        # Make sure it stays within range. Technically it goes a tiny
+        # bit out of range on the negative extremes due to numerical
+        # issues, but it should be fine in general.
+        for _ in range(100):
+            sttc = ba.spike_time_tiling(spikes(), spikes(),
+                                        np.random.lognormal())
+            self.assertLessEqual(sttc, 1)
+            self.assertGreaterEqual(sttc, -1)
 
 class AvalancheTest(unittest.TestCase):
     def test_binning_doesnt_lose_spikes(self):
