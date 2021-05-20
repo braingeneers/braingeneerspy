@@ -19,8 +19,12 @@ def burstiness_index(times, bin_size=40):
     binned = np.array(list(temporal_binning(times, bin_size)))
     binned.sort()
     N85 = int(np.round(len(binned) * 0.85))
-    f15 = binned[N85:].sum() / binned.sum()
-    return (f15 - 0.15) / 0.85
+
+    if N85 == len(binned):
+        return 1.0
+    else:
+        f15 = binned[N85:].sum() / binned.sum()
+        return (f15 - 0.15) / 0.85
 
 
 def interspike_intervals(times, idces):
@@ -61,8 +65,8 @@ def fano_factors(raster):
         return moment/mean - mean
 
     else:
-        mean = raster.mean(1)
-        var = raster.var(1)
+        mean = np.asarray(raster).mean(1)
+        var = np.asarray(raster).var(1)
         mean[mean == 0] = var[mean == 0] = 1.0
         return var / mean
 

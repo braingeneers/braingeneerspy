@@ -1,8 +1,20 @@
 import unittest
-from braingeneers.analysis import *
+from scipy import stats, sparse
+import numpy as np
+import braingeneers.analysis as ba
+
 
 class AnalysisTest(unittest.TestCase):
     def test_sparse_raster(self):
+        # Generate Poisson spike trains and make sure no spikes are
+        # lost in translation.
+        N = 10000
+        times = np.random.rand(N) * 1e4
+        idces = np.random.randint(10, size=N)
+        raster = ba.sparse_raster(times, idces)
+        self.assertEqual(raster.sum(), N)
+
+    def test_pearson(self):
         # These four cells are constructed so that A is perfectly
         # correlated with B, perfectly anticorrelated with C, and
         # uncorrelated with D.
@@ -16,44 +28,183 @@ class AnalysisTest(unittest.TestCase):
         # matrix generated is correct.
         ground_truth = np.stack((cellA, cellB, cellC, cellD))
         times, idces = np.where(ground_truth.T)
-        raster = sparse_raster(times, idces, bin_size=1)
-
-        self.assertTrue(np.all(raster == ground_truth), 
-                'Incorrect construction of spike raster.')
+        raster = ba.sparse_raster(times, idces, bin_size=1)
+        self.assertTrue(np.all(raster == ground_truth))
 
         # Finally, check the calculated Pearson coefficients to ensure
         # they're numerically close enough to the intended values.
         true_pearson = [
-                [1, 1, -1, 0],
-                [1, 1, -1, 0],
-                [-1, -1, 1, 0],
-                [0, 0, 0, 1]]
-        close = np.isclose(pearson(raster), true_pearson)
-        self.assertTrue(close.all(), 
-                'Wrong Pearson correlation matrix')
+            [1, 1, -1, 0],
+            [1, 1, -1, 0],
+            [-1, -1, 1, 0],
+            [0, 0, 0, 1]]
+        sparse_pearson = ba.pearson(raster)
+        self.assertTrue(np.isclose(sparse_pearson, true_pearson).all())
 
+        # Test on dense matrices (fallback to np.pearson).
+        dense_pearson = ba.pearson(raster.todense())
+        np_pearson = np.corrcoef(raster.todense())
+        self.assertTrue(np.isclose(dense_pearson, np_pearson).all())
+
+        # Also check the calculations.
+        self.assertEqual(dense_pearson.shape, sparse_pearson.shape)
+        self.assertTrue(np.isclose(dense_pearson, sparse_pearson).all())
+
+    def test_burstiness_index(self):
+        # Something completely uniform should have zero burstiness.
+        self.assertEqual(ba.burstiness_index(np.arange(1000), 10), 0)
+
+        # All spikes at the same time is technically super bursty,
+        # just make sure that they happen late enough that there are
+        # actually several bins to count.
+        self.assertEqual(ba.burstiness_index(np.ones(1000), 0.01), 1)
+
+        # Added code to deal with a corner case so it's really ALWAYS
+        # in the zero to one range. I think this only happens with
+        # very small values.
+        self.assertEqual(ba.burstiness_index([1]), 1)
+
+    def test_interspike_intervals(self):
+        # Uniform spike train: uniform ISIs. Also make sure it returns
+        # a list of just the one array.
+        N = 10000
+        ar = np.arange(N)
+        ii = ba.interspike_intervals(ar, np.zeros(N,int))
+        self.assertTrue((ii[0]==1).all())
+        self.assertEqual(len(ii[0]), N-1)
+        self.assertEqual(len(ii), 1)
+
+        # Also make sure multiple spike trains do the same thing.
+        ii = ba.interspike_intervals(ar, ar % 10)
+        self.assertEqual(len(ii), 10)
+        for i in ii:
+            self.assertTrue((i==10).all())
+            self.assertEqual(len(i), N/10 - 1)
+
+        # Finally, check with random ISIs.
+        truth = np.random.rand(N)
+        ii = ba.interspike_intervals(truth.cumsum(), np.zeros(N,int))
+        self.assertTrue(np.isclose(ii[0], truth[1:]).all())
+
+
+    def test_fano_factors(self):
+        N = 10000
+
+        def spikes():
+            return np.random.rand(N)*N
+
+        # If there's no variance, Fano factors should be zero, for
+        # both sparse and dense implementations. Also use todense()
+        # next to  toarray() to show that both np.matrix and np.array
+        # spike rasters are acceptable. Note that the numerical issues
+        # in the sparse version mean that it's not precisely zero, so
+        # we use assertAlmostEqual() in this case.
+        ones = sparse.csr_matrix(np.ones(N))
+        self.assertAlmostEqual(ba.fano_factors(ones)[0], 0)
+        self.assertEqual(ba.fano_factors(ones.todense())[0], 0)
+        self.assertEqual(ba.fano_factors(ones.toarray())[0], 0)
+
+        # Poisson spike trains should have Fano factors about 1.
+        # This is only rough because random, but the sparse and dense
+        # versions should both be equal to each other.
+        foo = ba.sparse_raster(spikes(), np.zeros(N), 1)
+        f_sparse = ba.fano_factors(foo)[0]
+        f_dense = ba.fano_factors(foo.toarray())[0]
+        self.assertAlmostEqual(f_sparse, 1, 1)
+        self.assertAlmostEqual(f_dense, 1, 1)
+        self.assertAlmostEqual(f_sparse, f_dense)
+
+        # Make sure the sparse and dense are equal when there are
+        # multiple spike trains as well.
+        idces = np.random.randint(10, size=N)
+        foo = ba.sparse_raster(spikes()/10, idces, 1)
+        f_sparse = ba.fano_factors(foo)
+        f_dense = ba.fano_factors(foo.toarray())
+        self.assertTrue(np.isclose(f_sparse, f_dense).all())
+
+    def test_spike_time_tiling_ta(self):
+        # Trivial base cases.
+        self.assertEqual(ba._sttc_ta([42], 1), 2)
+        self.assertEqual(ba._sttc_ta([], 1), 0)
+
+        # When spikes don't overlap, you should get exactly 2ndt.
+        self.assertEqual(ba._sttc_ta(np.arange(42), 0.5), 42.0)
+
+        # When spikes overlap fully, you should get exactly
+        # (tmax-tmin) + 2dt
+        self.assertEqual(ba._sttc_ta(np.arange(42), 100), 241)
+
+    def test_spike_time_tiling_na(self):
+        # Trivial base cases.
+        self.assertEqual(ba._sttc_na([1,2,3], [], 1), 0)
+        self.assertEqual(ba._sttc_na([], [1,2,3], 1), 0)
+
+        self.assertEqual(ba._sttc_na([1], [2], 0.5), 0)
+        self.assertEqual(ba._sttc_na([1], [2], 1), 1)
+
+        # Make sure closed intervals are being used.
+        na = ba._sttc_na(np.arange(10), np.arange(10)+0.5, 0.5)
+        self.assertEqual(na, 10)
+
+        # Skipping multiple spikes in spike train B.
+        self.assertEqual(ba._sttc_na([4], [1, 2, 3, 4.5], 0.1), 0)
+        self.assertEqual(ba._sttc_na([4], [1, 2, 3, 4.5], 0.5), 1)
+
+        # Many spikes in train B covering a single one in A.
+        self.assertEqual(ba._sttc_na([2], [1, 2, 3], 0.1), 1)
+        self.assertEqual(ba._sttc_na([2], [1, 2, 3], 1), 1)
+
+        # Many spikes in train A are covered by one in B.
+        self.assertEqual(ba._sttc_na([1, 2, 3], [2], 0.1), 1)
+        self.assertEqual(ba._sttc_na([1, 2, 3], [2], 1), 3)
+
+    def test_spike_time_tiling_coefficient(self):
+        # Examples to use in different cases.
+        N = 10000
+
+        def spikes():
+            return np.sort(np.random.rand(N) * N)
+
+        # Any spike train should be exactly equal to itself.
+        foo = spikes()
+        self.assertEqual(ba.spike_time_tiling(foo, foo), 1.0)
+
+        # Default arguments, inferred value of tmax.
+        foo, bar = spikes(), spikes()
+        tmax = max(foo.ptp(), bar.ptp())
+        self.assertEqual(ba.spike_time_tiling(foo, bar),
+                         ba.spike_time_tiling(foo, bar, tmax=tmax))
+
+        # The uncorrelated spike trains above should stay near zero.
+        # I'm not sure how many significant figures to expect with the
+        # randomness, though, so it's really easy to pass.
+        self.assertAlmostEqual(ba.spike_time_tiling(foo, bar, 1), 0, 1)
+
+        # Two spike trains that are in complete disagreement. This
+        # should be exactly -0.8, but there's systematic error
+        # proportional to 1/N, even in their original implementation.
+        baz = np.arange(N)
+        self.assertAlmostEqual(ba.spike_time_tiling(baz, baz+0.5, 0.4),
+                               -0.8, int(np.log10(N)))
 
 class AvalancheTest(unittest.TestCase):
     def test_binning_doesnt_lose_spikes(self):
         # Generate the times of a Poisson spike train, and ensure that
         # no spikes are lost in translation.
         times = stats.expon.rvs(size=1000).cumsum()
-        self.assertEqual(sum(temporal_binning(times, 5)), 1000,
-                'Temporal binning lost some spikes!')
+        self.assertEqual(sum(ba.temporal_binning(times, 5)), 1000)
 
     def test_binning(self):
         # Here's a totally arbitrary list of spike times to bin.
         times = [1, 2, 5, 15, 16, 20, 22, 25]
         self.assertListEqual(
-                list(temporal_binning(times, 4)),
-                [2, 1, 0, 1, 1, 2, 1],
-                'Mistake in temporal binning!')
+            list(ba.temporal_binning(times, 4)),
+            [2, 1, 0, 1, 1, 2, 1])
 
     def test_avalanches(self):
         # Here's a potential list of binned spike counts; ensure that
         # the final avalanche doesn't get dropped like it used to.
         counts = [2,5,3, 0,1,0,0, 2,2, 0, 42]
         self.assertListEqual(
-                [len(av) for av in get_avalanches(counts, 1)], 
-                [3, 2, 1],
-                'Counted avalanches wrong!')
+            [len(av) for av in ba.get_avalanches(counts, 1)],
+            [3, 2, 1])
