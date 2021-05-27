@@ -8,6 +8,7 @@ class SpikeData():
     Generic representation for spiking data from spike sorters and
     simulations.
     '''
+
     def __init__(self, arg1, arg2=None):
         '''
         Parses different argument list possibilities into the desired
@@ -46,6 +47,106 @@ class SpikeData():
         'Iterate over spike times for all units in order.'
         return heapq.merge(*self.train)
 
+    def binned(self, bin_size=40, unit=None):
+        '''
+        Quantizes time into intervals of bin_size and counts the
+        number of events in each bin. 
+        '''
+        bin, count = 1, 0
+        for time in self.times:
+            while time >= bin*bin_size:
+                yield count
+                bin, count = bin+1, 0
+            count += 1
+        yield count
+
+    def subset(self, units):
+        'Return a new SpikeData with spike times for only some units.'
+        train = [ts for i,ts in enumerate(self.train) if i in units]
+        return self.__class__(train)
+
+    def sparse_raster(self, bin_size=20):
+        '''
+        Bin all spike times and create a sparse matrix where entry
+        (i,j) is the number of times cell i fired in bin j.
+        '''
+        indices = np.hstack([ts // bin_size for ts in self.train])
+        units = np.hstack([0] + [len(ts) for ts in self.train])
+        indptr = np.cumsum(units)
+        values = np.ones_like(indices)
+        return sparse.csr_matrix((values, indices, indptr))
+
+    def interspike_intervals(self):
+        'Produce a list of arrays of interspike intervals per unit.'
+        return [ts[1:] - ts[:-1] for ts in self.train]
+
+    def burstiness_index(self, bin_size=40):
+        '''
+        Compute the burstiness index [1], a number from 0 to 1 which
+        quantifies synchronization of activity in neural cultures.
+
+        Spikes are binned, and the fraction of spikes accounted for by
+        the top 15% will be 0.15 if activity is fully asynchronous, and
+        1.0 if activity is fully synchronized into just a few bins. This
+        is linearly rescaled to the range 0--1 for clearer interpretation.
+
+        [1] Wagenaar, Madhavan, Pine & Potter. Controlling bursting
+            in cortical cultures with closed-loop multi-electrode
+            stimulation. J Neurosci 25:3, 680–688 (2005).
+        '''
+        binned = np.array(list(self.binned(bin_size)))
+        binned.sort()
+        N85 = int(np.round(len(binned) * 0.85))
+
+        if N85 == len(binned):
+            return 1.0
+        else:
+            f15 = binned[N85:].sum() / binned.sum()
+            return (f15 - 0.15) / 0.85
+
+    def spike_time_tiling(self, i, j, delt=20, tmax=None):
+        '''
+        Given the indices of two units of interest, compute the spike
+        time tiling coefficient [1], a metric for causal relationships
+        between spike trains with some improved intuitive properties
+        compared to the Pearson correlation coefficient.
+
+        [1] Cutts & Eglen. Detecting pairwise correlations in spike
+            trains: An objective comparison of methods and application
+            to the study of retinal waves. J Neurosci 34:43,
+            14288–14303 (2014).
+        '''
+        tA, tB = self.train[i], self.train[j]
+
+        if tmax is None:
+            tmax = max(max(tA), max(tB))
+
+        TA = _sttc_ta(tA, delt, tmax) / tmax
+        TB = _sttc_ta(tB, delt, tmax) / tmax
+
+        PA = _sttc_na(tA, tB, delt) / len(tA)
+        PB = _sttc_na(tB, tA, delt) / len(tB)
+
+        aa = (PA-TB)/(1-PA*TB) if PA*TB != 1 else 0
+        bb = (PB-TA)/(1-PB*TA) if PB*TA != 1 else 0
+        return (aa + bb) / 2
+
+    def avalanches(self, thresh, bin_size=40):
+        """
+        Given a list of spikes per bucket and a threshold number of spike
+        events above which a bucket is considered "active", generate the
+        spike counts in each bucket.
+        """
+        this_av = []
+        for count in self.binned(bin_size):
+            if count > thresh:
+                this_av.append(count)
+            elif this_av:
+                yield this_av
+                this_av = []
+        if this_av:
+            yield this_av
+
 
 def _train_from_i_t_list(idces, times):
     '''
@@ -57,44 +158,6 @@ def _train_from_i_t_list(idces, times):
     for i in range(idces.max()+1):
         ret.append(times[idces == i])
     return ret
-
-
-
-def burstiness_index(times, bin_size=40):
-    '''
-    Compute the burstiness index [1], a number from 0 to 1 which
-    quantifies synchronization of activity in neural cultures.
-
-    Spikes are binned, and the fraction of spikes accounted for by
-    the top 15% will be 0.15 if activity is fully asynchronous, and
-    1.0 if activity is fully synchronized into just a few bins. This
-    is linearly rescaled to the range 0--1 for clearer interpretation.
-
-    [1] Wagenaar, Madhavan, Pine & Potter. Controlling bursting
-        in cortical cultures with closed-loop multi-electrode
-        stimulation. J Neurosci 25:3, 680–688 (2005).
-    '''
-    binned = np.array(list(temporal_binning(times, bin_size)))
-    binned.sort()
-    N85 = int(np.round(len(binned) * 0.85))
-
-    if N85 == len(binned):
-        return 1.0
-    else:
-        f15 = binned[N85:].sum() / binned.sum()
-        return (f15 - 0.15) / 0.85
-
-
-def interspike_intervals(times, idces):
-    '''
-    Given arrays of firing times and the units which produced them,
-    return a list of arrays of interspike intervals per unit.
-    '''
-    ISIs = []
-    for i in range(idces.max()+1):
-        ti = times[idces == i]
-        ISIs.append(ti[1:] - ti[:-1])
-    return ISIs
 
 
 def fano_factors(raster):
@@ -127,33 +190,6 @@ def fano_factors(raster):
         var = np.asarray(raster).var(1)
         mean[mean == 0] = var[mean == 0] = 1.0
         return var / mean
-
-
-def sparse_raster(times, idces, bin_size=20, cells=None):
-    '''
-    Given a list of spike times and the corresponding cells which
-    produced them, bin the spike times and create a sparse matrix
-    where entry (i,j) is the number of times cell i fired in bin j.
-
-    You can specify which cells should and should not be included in
-    the resulting sparse matrix by providing an interable of cell
-    indices in the parameter cells. Alternately, you can provide a
-    number of cells, in which case it is replaced by a range.
-    '''
-    # These need to be numpy arrays.
-    times, idces = np.asarray(times), np.asarray(idces)
-
-    # We're going to need to iterate over the cells more than once, so
-    # convert them to a list; if they're not a list yet, assume
-    # they're just a single integer, and replace them with a range.
-    try:
-        cells = list(cells)
-    except TypeError:
-        cells = np.arange(cells if cells is not None else idces.max()+1)
-
-    indices = np.hstack([times[idces == i] // bin_size for i in cells])
-    indptr = np.cumsum([0] + [(idces == i).sum() for i in cells])
-    return sparse.csr_matrix((np.ones_like(indices), indices, indptr))
 
 
 def _sttc_ta(tA, delt, tmax):
@@ -196,30 +232,6 @@ def _sttc_na(tA, tB, delt):
     return count
 
 
-def spike_time_tiling(tA, tB, delt=20, tmax=None):
-    '''
-    Given sorted lists of spike times for two neurons, compute the
-    spike time tiling coefficient [1], a metric for causal
-    relationships between spike trains with some improved intuitive
-    properties compared to the Pearson correlation coefficient.
-
-    [1] Cutts & Eglen. Detecting pairwise correlations in spike trains:
-        An objective comparison of methods and application to the
-        study of retinal waves. J Neurosci 34:43, 14288–14303 (2014).
-    '''
-    if tmax is None:
-        tmax = max(max(tA), max(tB))
-
-    TA = _sttc_ta(tA, delt, tmax) / tmax
-    TB = _sttc_ta(tB, delt, tmax) / tmax
-
-    PA = _sttc_na(tA, tB, delt) / len(tA)
-    PB = _sttc_na(tB, tA, delt) / len(tB)
-
-    aa = (PA-TB)/(1-PA*TB) if PA*TB != 1 else 0
-    bb = (PB-TA)/(1-PB*TA) if PB*TA != 1 else 0
-    return (aa + bb) / 2
-
 def pearson(spikes):
     '''
     Compute a Pearson correlation coefficient matrix for a spike
@@ -250,38 +262,6 @@ def pearson(spikes):
     corr = np.array(Exy - Ex*Ex.T) / (σx*σx.T)
     np.fill_diagonal(corr, 1)
     return corr
-
-
-def temporal_binning(spike_times, bin_size=40):
-    """
-    Given an in-order iterable of spike times (with no channel or
-    neuron number information), quantizes time into intervals of
-    bin_size and counts the number of events in each bin.
-    """
-    bin, count = 1, 0
-    for time in spike_times:
-        while time >= bin*bin_size:
-            yield count
-            bin, count = bin+1, 0
-        count += 1
-    yield count
-
-
-def get_avalanches(counts, thresh):
-    """
-    Given a list of spikes per bucket and a threshold number of spike
-    events above which a bucket is considered "active", generate the
-    spike counts in each bucket.
-    """
-    this_av = []
-    for count in counts:
-        if count > thresh:
-            this_av.append(count)
-        elif this_av:
-            yield this_av
-            this_av = []
-    if this_av:
-        yield this_av
 
 
 def small_world(XY, plocal, beta):
