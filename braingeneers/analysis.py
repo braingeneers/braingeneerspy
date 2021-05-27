@@ -1,5 +1,63 @@
+import heapq
 import numpy as np
 from scipy import stats, sparse, optimize
+
+
+class SpikeData():
+    '''
+    Generic representation for spiking data from spike sorters and
+    simulations.
+    '''
+    def __init__(self, arg1, arg2=None):
+        '''
+        Parses different argument list possibilities into the desired
+        format: a list indexed by unit ID, where each element is
+        a list of spike times. The three possibilities accepted are:
+        (1) a pair of lists corresponding to unit indices and times,
+        (2) a list of lists of spike times, and (3) a list of Neuron
+        objects whose parameter spike_time is a list of spike times.
+
+        Spike times should be in units of milliseconds, unless a list
+        of Neurons is given; these have spike times in units of
+        samples, which are converted to milliseconds using the sample
+        rate saved in the Neuron object.
+        '''
+        if arg2 is not None:
+            self.train = _train_from_i_t_list(arg1, arg2)
+        else:
+            try:
+                self.train = [np.asarray(n.spike_time)/n.fs*1e3
+                              for n in arg1]
+            except AttributeError:
+                if all([len(arg)==2 for arg in arg1]):
+                    idces = [i for i,_ in arg1]
+                    times = [t for i,t in arg1]
+                    self.train = _train_from_i_t_list(idces, times)
+                else:
+                    self.train = arg1
+
+        # Make sure each individual spike train is sorted, because
+        # none of the formats guarantee this but all the algorithms
+        # expect it.
+        self.train = [np.sort(times) for times in self.train]
+
+    @property
+    def times(self):
+        'Iterate over spike times for all units in order.'
+        return heapq.merge(*self.train)
+
+
+def _train_from_i_t_list(idces, times):
+    '''
+    Given lists of spike times and indices, produce a list whose
+    ith entry is a list of the spike times of the ith unit.
+    '''
+    idces, times = np.asarray(idces), np.asarray(times)
+    ret = []
+    for i in range(idces.max()+1):
+        ret.append(times[idces == i])
+    return ret
+
 
 
 def burstiness_index(times, bin_size=40):
@@ -157,8 +215,6 @@ def spike_time_tiling(tA, tB, delt=20, tmax=None):
 
     PA = _sttc_na(tA, tB, delt) / len(tA)
     PB = _sttc_na(tB, tA, delt) / len(tB)
-
-    print(TA, TB, PA, PB)
 
     aa = (PA-TB)/(1-PA*TB) if PA*TB != 1 else 0
     bb = (PB-TA)/(1-PB*TA) if PB*TA != 1 else 0

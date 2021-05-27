@@ -2,9 +2,36 @@ import unittest
 from scipy import stats, sparse
 import numpy as np
 import braingeneers.analysis as ba
+from collections import namedtuple
 
+DerpNeuron = namedtuple('Neuron', 'spike_time fs')
 
 class AnalysisTest(unittest.TestCase):
+
+    def test_spike_data(self):
+        # Make sure it doesn't choke on simple cases.
+
+        # Generate a bunch of random spike times and indices.
+        times = np.random.rand(100) * 100
+        idces = np.random.randint(5, size=100)
+
+        sd = ba.SpikeData(idces, times)
+        self.assertTrue(np.all(np.sort(times) == list(sd.times)))
+
+        sd1 = ba.SpikeData(list(zip(idces, times)))
+        for ta,tb in zip(sd.train, sd1.train):
+            self.assertTrue(np.all(ta == tb))
+
+        sd2 = ba.SpikeData(sd.train)
+        for ta,tb in zip(sd.train, sd2.train):
+            self.assertTrue(np.all(ta == tb))
+
+        fs = 10
+        ns = [DerpNeuron(spike_time=ts*fs, fs=fs*1e3) for ts in sd.train]
+        sd3 = ba.SpikeData(ns)
+        for ta,tb in zip(sd.train, sd3.train):
+            self.assertTrue(np.isclose(ta, tb).all())
+
     def test_sparse_raster(self):
         # Generate Poisson spike trains and make sure no spikes are
         # lost in translation.
