@@ -10,6 +10,13 @@ Usage example:
     with smart_open.open('s3://braingeneersdev/test_file.txt', 'r') as f:
         print(f.read())
     ```
+
+You may also replace python's default open with smart_open.open:
+    ```
+    from braingeneers.utils import smart_open
+
+    open = smart_open.open
+    ```
 """
 from smart_open import *
 import functools
