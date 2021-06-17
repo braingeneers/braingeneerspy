@@ -1,7 +1,8 @@
 """ A simplified MQTT client for Braingeneers specific connections """
 import boto3
 import awsiot
-import awsiot.mqtt_connection_builder
+# import awsiot.mqtt_connection_builder
+from awsiot import mqtt_connection_builder
 import awscrt
 import awscrt.auth
 import redis
@@ -414,7 +415,7 @@ class MessageBroker:
                 client_bootstrap = awscrt.io.ClientBootstrap(event_loop_group, host_resolver)
                 credentials_provider = awscrt.auth.AwsCredentialsProvider.new_default_chain(client_bootstrap)
 
-                self._mqtt_connection = awsiot.mqtt_connection_builder.websockets_with_default_aws_signing(
+                self._mqtt_connection = mqtt_connection_builder.websockets_with_default_aws_signing(
                     endpoint=MQTT_ENDPOINT,
                     client_bootstrap=client_bootstrap,
                     region=AWS_REGION,
@@ -495,6 +496,11 @@ class MessageBroker:
         self._redis_client = None
 
         self._subscribed_data_streams = set()  # keep track of subscribed data streams
+
+    def shutdown(self):
+        """ Release resources and shutdown connections as needed. """
+        if self.certs_temp_dir is not None:
+            self.certs_temp_dir.cleanup()
 
 
 class TemporaryEnvironment:

@@ -4,15 +4,22 @@ import unittest.mock
 import braingeneers.utils.messaging as messaging
 import threading
 import awscrt.io
+import uuid
+import warnings
 
 
 class TestBraingeneersMessageBroker(unittest.TestCase):
     def setUp(self) -> None:
-        self.mb = messaging.MessageBroker('test')
+        warnings.filterwarnings("ignore", category=ResourceWarning, message="unclosed.*<ssl.SSLSocket.*>")
+        self.mb = messaging.MessageBroker(f'test-{uuid.uuid4()}')
+        awscrt.io.init_logging(6, 'stderr')
+
+    def tearDown(self) -> None:
+        self.mb.shutdown()
 
     def test_publish_subscribe_message(self):
         """ Uses a custom callback to test publish subscribe messages """
-        message_received_barrier = threading.Barrier(2, timeout=7)
+        message_received_barrier = threading.Barrier(2, timeout=30)
 
         def unittest_subscriber(topic, message):
             self.assertEqual(topic, 'test/unittest')
@@ -29,7 +36,7 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         q = messaging.CallableQueue(1)
         self.mb.subscribe_data_stream(stream_name='unittest', callback=q)
         self.mb.publish_data_stream(stream_name='unittest', data={b'x': b'42'}, stream_size=1)
-        result_stream_name, result_data = q.get(timeout=7)
+        result_stream_name, result_data = q.get(timeout=15)
         self.assertEqual(result_stream_name, 'unittest')
         self.assertDictEqual(result_data, {b'x': b'42'})
 
@@ -41,15 +48,15 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         self.mb.publish_data_stream(stream_name='unittest2', data={b'x': b'43'}, stream_size=1)
         self.mb.publish_data_stream(stream_name='unittest2', data={b'x': b'44'}, stream_size=1)
 
-        result_stream_name, result_data = q.get(timeout=7)
+        result_stream_name, result_data = q.get(timeout=15)
         self.assertEqual(result_stream_name, 'unittest1')
         self.assertDictEqual(result_data, {b'x': b'42'})
 
-        result_stream_name, result_data = q.get(timeout=7)
+        result_stream_name, result_data = q.get(timeout=15)
         self.assertEqual(result_stream_name, 'unittest2')
         self.assertDictEqual(result_data, {b'x': b'43'})
 
-        result_stream_name, result_data = q.get(timeout=7)
+        result_stream_name, result_data = q.get(timeout=15)
         self.assertEqual(result_stream_name, 'unittest2')
         self.assertDictEqual(result_data, {b'x': b'44'})
 
@@ -99,7 +106,7 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         self.mb.delete_device_state('test')
 
     def test_list_devices_basic(self):
-        awscrt.io.init_logging(awscrt.io.LogLevel.Warn, 'stderr')
+        # awscrt.io.init_logging(awscrt.io.LogLevel.Warn, 'stderr')
         self.mb.subscribe_message('devices/test', callback=unittest.mock.Mock())
         devices_online = self.mb.list_devices()
         assert len(devices_online) > 0
