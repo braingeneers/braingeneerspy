@@ -12,5 +12,5 @@ import awswrangler
 from awswrangler.s3 import *
 
 
-prp_s3_endpoint = 'https://s3.nautilus.optiputer.net'
+prp_s3_endpoint = 'https://s3-west.nrp-nautilus.io'
 awswrangler.config.s3_endpoint_url = os.environ.get('ENDPOINT_URL', prp_s3_endpoint)

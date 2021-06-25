@@ -11,7 +11,7 @@ Basic usage example (copy/paste this to test your setup), if it works you will s
         print(f.read())
     ```
 
-You may also replace python's default open with smart_open.open:
+You may also replace python's default open with smart_open.open, it's a drop in replacement:
     ```
     from braingeneers.utils import smart_open
 
@@ -45,6 +45,6 @@ import functools
 from smart_open import *
 
 
-endpoint_url = os.environ.get('ENDPOINT_URL', 'https://s3.nautilus.optiputer.net')
+endpoint_url = os.environ.get('ENDPOINT_URL', 'https://s3-west.nrp-nautilus.io')
 transport_params = {'client': boto3.Session().client('s3', endpoint_url=endpoint_url)}
 open = functools.partial(open, transport_params=transport_params)
