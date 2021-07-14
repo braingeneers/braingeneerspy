@@ -438,7 +438,7 @@ class MessageBroker:
         """ Lazy initialization of boto3 client """
         if self._boto_iot_data_client is None:
             boto_session = boto3.Session(profile_name=AWS_PROFILE)
-            self._boto_iot_data_client = boto_session.client('iot-data', region_name=AWS_REGION)
+            self._boto_iot_data_client = boto_session.client('iot-data', region_name=AWS_REGION, verify=False)
         return self._boto_iot_data_client
 
     @property
