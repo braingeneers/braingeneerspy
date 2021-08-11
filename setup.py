@@ -21,5 +21,17 @@ setup(
         'License :: MIT'
     ],
     packages=find_packages(exclude=()),
-    install_requires=['numpy', 'scipy', 'requests'],
+    install_requires=[
+    	'matplotlib',
+	'requests',
+	'numpy',
+	'scipy',
+	'boto3==1.17.96',   # depends on awscrt==0.11.22
+	'awsiotsdk==1.6.0',
+	'redis',
+	'smart_open>=5.1.0',
+	'tenacity',
+	'awswrangler',
+    ],
     include_package_data=True)
+
