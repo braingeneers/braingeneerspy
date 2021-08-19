@@ -40,6 +40,19 @@ class AnalysisTest(unittest.TestCase):
         for i,j in enumerate(idces):
             self.assertTrue(np.all(sdsub.train[i] == sd.train[j]))
 
+        # Test subtime() constructor idempotence.
+        sdtimefull = sd.subtime(0, 100)
+        for a,b in zip(sd.train, sdtimefull.train):
+            self.assertTrue(np.all(a == b))
+
+        # Test subtime() constructor actually grabs subsets.
+        sdtime = sd.subtime(20, 50)
+        for i in range(len(sd.train)):
+            self.assertTrue(np.all(sdtime.train[i] >= 20))
+            self.assertTrue(np.all(sdtime.train[i] < 50))
+            n_in_range = np.sum((sd.train[i] >= 20) & (sd.train[i] < 50))
+            self.assertTrue(len(sdtime.train[i]) == n_in_range)
+
     def test_sparse_raster(self):
         # Generate Poisson spike trains and make sure no spikes are
         # lost in translation.

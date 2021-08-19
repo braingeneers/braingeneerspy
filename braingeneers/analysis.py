@@ -50,7 +50,7 @@ class SpikeData():
     def binned(self, bin_size=40, unit=None):
         '''
         Quantizes time into intervals of bin_size and counts the
-        number of events in each bin. 
+        number of events in each bin.
         '''
         bin, count = 1, 0
         for time in self.times:
@@ -63,6 +63,11 @@ class SpikeData():
     def subset(self, units):
         'Return a new SpikeData with spike times for only some units.'
         train = [ts for i,ts in enumerate(self.train) if i in units]
+        return self.__class__(train)
+
+    def subtime(self, start, end):
+        'Return a new SpikeData with only spikes in a time range.'
+        train = [t[(t >= start) & (t < end)] for t in self.train]
         return self.__class__(train)
 
     def sparse_raster(self, bin_size=20):
