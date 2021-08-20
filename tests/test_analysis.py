@@ -23,6 +23,9 @@ class AnalysisTest(unittest.TestCase):
         sd = ba.SpikeData(idces, times)
         self.assertTrue(np.all(np.sort(times) == list(sd.times)))
 
+        # Make sure the length is being autodetected correctly.
+        self.assertEqual(sd.length, times.max())
+
         # Test event-list constructor.
         sd1 = ba.SpikeData(list(zip(idces, times)))
         self.assertSpikeDataEqual(sd, sd1)
@@ -54,8 +57,8 @@ class AnalysisTest(unittest.TestCase):
         # Test subtime() constructor actually grabs subsets.
         sdtime = sd.subtime(20, 50)
         for i in range(len(sd.train)):
-            self.assertTrue(np.all(sdtime.train[i] >= 20))
-            self.assertTrue(np.all(sdtime.train[i] < 50))
+            self.assertTrue(np.all(sdtime.train[i] >= 0))
+            self.assertTrue(np.all(sdtime.train[i] < 30))
             n_in_range = np.sum((sd.train[i] >= 20) & (sd.train[i] < 50))
             self.assertTrue(len(sdtime.train[i]) == n_in_range)
 

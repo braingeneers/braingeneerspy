@@ -10,7 +10,7 @@ class SpikeData():
     simulations.
     '''
 
-    def __init__(self, arg1, arg2=None):
+    def __init__(self, arg1, arg2=None, *, length=None):
         '''
         Parses different argument list possibilities into the desired
         format: a list indexed by unit ID, where each element is
@@ -43,6 +43,12 @@ class SpikeData():
         # expect it.
         self.train = [np.sort(times) for times in self.train]
 
+        # The length of the spike train defaults to the last spike
+        # time it contains.
+        if length is None:
+            length = max((t[-1] for t in self.train))
+        self.length = length
+
     @property
     def times(self):
         'Iterate spike times for all units in time order.'
@@ -64,10 +70,10 @@ class SpikeData():
         window, events = 1, []
         for (index,time) in self.index_time:
             while time >= window*interval:
-                yield SpikeData(events)
+                yield SpikeData(events, length=interval)
                 window, events = window+1, []
-            events.append((index,time))
-        yield SpikeData(events)
+            events.append((index, time - (window-1)*interval))
+        yield SpikeData(events, length=interval)
 
     def binned(self, bin_size=40, unit=None):
         '''
@@ -85,12 +91,13 @@ class SpikeData():
     def subset(self, units):
         'Return a new SpikeData with spike times for only some units.'
         train = [ts for i,ts in enumerate(self.train) if i in units]
-        return self.__class__(train)
+        return self.__class__(train, length=self.length)
 
     def subtime(self, start, end):
         'Return a new SpikeData with only spikes in a time range.'
-        train = [t[(t >= start) & (t < end)] for t in self.train]
-        return self.__class__(train)
+        train = [t[(t >= start) & (t < end)] - start
+                 for t in self.train]
+        return self.__class__(train, length=end)
 
     def sparse_raster(self, bin_size=20):
         '''
@@ -153,7 +160,7 @@ class SpikeData():
         tA, tB = self.train[i], self.train[j]
 
         if tmax is None:
-            tmax = max(max(tA), max(tB))
+            tmax = self.length
 
         TA = _sttc_ta(tA, delt, tmax) / tmax
         TB = _sttc_ta(tB, delt, tmax) / tmax
