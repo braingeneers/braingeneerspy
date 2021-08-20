@@ -8,6 +8,12 @@ DerpNeuron = namedtuple('Neuron', 'spike_time fs')
 
 class AnalysisTest(unittest.TestCase):
 
+    def assertSpikeDataEqual(self, sda, sdb, msg=None):
+        for a,b in zip(sda.train, sdb.train):
+            self.assertTrue(len(a) == len(b)
+                            and np.isclose(a, b).all(),
+                            msg=msg)
+
     def test_spike_data(self):
         # Generate a bunch of random spike times and indices.
         times = np.random.rand(100) * 100
@@ -19,20 +25,21 @@ class AnalysisTest(unittest.TestCase):
 
         # Test event-list constructor.
         sd1 = ba.SpikeData(list(zip(idces, times)))
-        for ta,tb in zip(sd.train, sd1.train):
-            self.assertTrue(np.all(ta == tb))
+        self.assertSpikeDataEqual(sd, sd1)
 
         # Test 'list of lists' constructor.
         sd2 = ba.SpikeData(sd.train)
-        for ta,tb in zip(sd.train, sd2.train):
-            self.assertTrue(np.all(ta == tb))
+        self.assertSpikeDataEqual(sd, sd2)
 
         # Test 'list of Neuron()s' constructor.
         fs = 10
         ns = [DerpNeuron(spike_time=ts*fs, fs=fs*1e3) for ts in sd.train]
         sd3 = ba.SpikeData(ns)
-        for ta,tb in zip(sd.train, sd3.train):
-            self.assertTrue(np.isclose(ta, tb).all())
+        self.assertSpikeDataEqual(sd, sd3)
+
+        # Test index_time.
+        sd4 = ba.SpikeData(list(sd.index_time))
+        self.assertSpikeDataEqual(sd, sd4)
 
         # Test subset() constructor.
         idces = [1, 2, 3]
@@ -42,8 +49,7 @@ class AnalysisTest(unittest.TestCase):
 
         # Test subtime() constructor idempotence.
         sdtimefull = sd.subtime(0, 100)
-        for a,b in zip(sd.train, sdtimefull.train):
-            self.assertTrue(np.all(a == b))
+        self.assertSpikeDataEqual(sd, sdtimefull)
 
         # Test subtime() constructor actually grabs subsets.
         sdtime = sd.subtime(20, 50)
@@ -52,6 +58,11 @@ class AnalysisTest(unittest.TestCase):
             self.assertTrue(np.all(sdtime.train[i] < 50))
             n_in_range = np.sum((sd.train[i] >= 20) & (sd.train[i] < 50))
             self.assertTrue(len(sdtime.train[i]) == n_in_range)
+
+        # Test consistency between subtime() and frames().
+        for i,frame in enumerate(sd.frames(20)):
+            self.assertSpikeDataEqual(frame,
+                                      sd.subtime(i*20, (i+1)*20))
 
     def test_sparse_raster(self):
         # Generate Poisson spike trains and make sure no spikes are

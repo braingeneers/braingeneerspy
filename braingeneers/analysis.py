@@ -1,6 +1,7 @@
 import heapq
 import numpy as np
 from scipy import stats, sparse, optimize
+import itertools
 
 
 class SpikeData():
@@ -44,8 +45,29 @@ class SpikeData():
 
     @property
     def times(self):
-        'Iterate over spike times for all units in order.'
+        'Iterate spike times for all units in time order.'
         return heapq.merge(*self.train)
+
+    @property
+    def index_time(self):
+        'Iterate (index,time) pairs for all units in time order.'
+        return heapq.merge(*[zip(itertools.repeat(i), t)
+                             for (i,t) in enumerate(self.train)],
+                           key=lambda x: x[1])
+
+    def frames(self, length, overlap=0):
+        '''
+        Iterate new SpikeData objects corresponding to subwindows of
+        a given `length` with a fixed `overlap`.
+        '''
+        interval = length - overlap
+        window, events = 1, []
+        for (index,time) in self.index_time():
+            while time >= window*interval:
+                yield SpikeData(events)
+                window, events = window+1, []
+            events.append((index,time))
+        yield SpikeData(events)
 
     def binned(self, bin_size=40, unit=None):
         '''
