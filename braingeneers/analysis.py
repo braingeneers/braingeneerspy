@@ -62,7 +62,7 @@ class SpikeData():
         '''
         interval = length - overlap
         window, events = 1, []
-        for (index,time) in self.index_time():
+        for (index,time) in self.index_time:
             while time >= window*interval:
                 yield SpikeData(events)
                 window, events = window+1, []
@@ -102,6 +102,13 @@ class SpikeData():
         indptr = np.cumsum(units)
         values = np.ones_like(indices)
         return sparse.csr_matrix((values, indices, indptr))
+
+    def raster(self, bin_size=20):
+        '''
+        Bin all spike times and create a dense matrix where entry
+        (i,j) is the number of times cell i fired in bin j.
+        '''
+        return self.sparse_raster(bin_size).toarray()
 
     def interspike_intervals(self):
         'Produce a list of arrays of interspike intervals per unit.'

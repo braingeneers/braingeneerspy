@@ -64,14 +64,18 @@ class AnalysisTest(unittest.TestCase):
             self.assertSpikeDataEqual(frame,
                                       sd.subtime(i*20, (i+1)*20))
 
-    def test_sparse_raster(self):
+    def test_raster(self):
         # Generate Poisson spike trains and make sure no spikes are
         # lost in translation.
         N = 10000
         times = np.random.rand(N) * 1e4
         idces = np.random.randint(10, size=N)
-        raster = ba.SpikeData(idces, times).sparse_raster()
-        self.assertEqual(raster.sum(), N)
+        sd = ba.SpikeData(idces, times)
+
+        # Try both a sparse and a dense raster.
+        self.assertEqual(sd.raster().sum(), N)
+        self.assertTrue(np.all(sd.sparse_raster() == sd.raster()))
+
 
     def test_pearson(self):
         # These four cells are constructed so that A is perfectly
