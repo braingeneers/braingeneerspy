@@ -48,6 +48,7 @@ class SpikeData():
         if length is None:
             length = max((t[-1] for t in self.train))
         self.length = length
+        self.N = len(self.train)
 
     @property
     def times(self):
@@ -55,11 +56,23 @@ class SpikeData():
         return heapq.merge(*self.train)
 
     @property
-    def index_time(self):
+    def events(self):
         'Iterate (index,time) pairs for all units in time order.'
         return heapq.merge(*[zip(itertools.repeat(i), t)
                              for (i,t) in enumerate(self.train)],
                            key=lambda x: x[1])
+
+    def idces_times(self):
+        '''
+        Return separate lists of times and indices, e.g. for raster
+        plots. This is not a property because the lists must actually
+        be constructed in memory.
+        '''
+        idces, times = [], []
+        for i,t in self.events:
+            idces.append(i)
+            times.append(t)
+        return idces, times
 
     def frames(self, length, overlap=0):
         '''
@@ -68,7 +81,7 @@ class SpikeData():
         '''
         interval = length - overlap
         window, events = 1, []
-        for (index,time) in self.index_time:
+        for (index,time) in self.events:
             while time >= window*interval:
                 yield SpikeData(events, length=interval)
                 window, events = window+1, []
@@ -145,7 +158,7 @@ class SpikeData():
             f15 = binned[N85:].sum() / binned.sum()
             return (f15 - 0.15) / 0.85
 
-    def spike_time_tiling(self, i, j, delt=20, tmax=None):
+    def spike_time_tiling(self, i, j, delt=20):
         '''
         Given the indices of two units of interest, compute the spike
         time tiling coefficient [1], a metric for causal relationships
@@ -159,14 +172,11 @@ class SpikeData():
         '''
         tA, tB = self.train[i], self.train[j]
 
-        if tmax is None:
-            tmax = self.length
+        TA = _sttc_ta(tA, delt, self.length) / self.length
+        TB = _sttc_ta(tB, delt, self.length) / self.length
 
-        TA = _sttc_ta(tA, delt, tmax) / tmax
-        TB = _sttc_ta(tB, delt, tmax) / tmax
-
-        PA = _sttc_na(tA, tB, delt) / len(tA)
-        PB = _sttc_na(tB, tA, delt) / len(tB)
+        PA = _sttc_na(tA, tB, delt) / self.N
+        PB = _sttc_na(tB, tA, delt) / self.N
 
         aa = (PA-TB)/(1-PA*TB) if PA*TB != 1 else 0
         bb = (PB-TA)/(1-PB*TA) if PB*TA != 1 else 0

@@ -40,9 +40,13 @@ class AnalysisTest(unittest.TestCase):
         sd3 = ba.SpikeData(ns)
         self.assertSpikeDataEqual(sd, sd3)
 
-        # Test index_time.
-        sd4 = ba.SpikeData(list(sd.index_time))
+        # Test events.
+        sd4 = ba.SpikeData(list(sd.events))
         self.assertSpikeDataEqual(sd, sd4)
+
+        # Test idces_times().
+        sd5 = ba.SpikeData(*sd.idces_times())
+        self.assertSpikeDataEqual(sd, sd5)
 
         # Test subset() constructor.
         idces = [1, 2, 3]
