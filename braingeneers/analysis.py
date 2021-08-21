@@ -65,14 +65,14 @@ class SpikeData():
     def idces_times(self):
         '''
         Return separate lists of times and indices, e.g. for raster
-        plots. This is not a property because the lists must actually
-        be constructed in memory.
+        plots. This is not a property unlike `times` and `events`
+        because the lists must actually be constructed in memory.
         '''
         idces, times = [], []
         for i,t in self.events:
             idces.append(i)
             times.append(t)
-        return idces, times
+        return np.array(idces), np.array(times)
 
     def frames(self, length, overlap=0):
         '''
@@ -110,7 +110,7 @@ class SpikeData():
         'Return a new SpikeData with only spikes in a time range.'
         train = [t[(t >= start) & (t < end)] - start
                  for t in self.train]
-        return self.__class__(train, length=end)
+        return self.__class__(train, length=end-start)
 
     def sparse_raster(self, bin_size=20):
         '''
