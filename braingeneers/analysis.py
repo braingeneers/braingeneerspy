@@ -46,7 +46,7 @@ class SpikeData():
         # The length of the spike train defaults to the last spike
         # time it contains.
         if length is None:
-            length = max((t[-1] for t in self.train))
+            length = max((t[-1] for t in self.train if len(t) > 0))
         self.length = length
         self.N = len(self.train)
 
