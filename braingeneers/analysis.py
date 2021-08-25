@@ -175,8 +175,8 @@ class SpikeData():
         TA = _sttc_ta(tA, delt, self.length) / self.length
         TB = _sttc_ta(tB, delt, self.length) / self.length
 
-        PA = _sttc_na(tA, tB, delt) / self.N
-        PB = _sttc_na(tB, tA, delt) / self.N
+        PA = _sttc_na(tA, tB, delt) / len(tA)
+        PB = _sttc_na(tB, tA, delt) / len(tB)
 
         aa = (PA-TB)/(1-PA*TB) if PA*TB != 1 else 0
         bb = (PB-TA)/(1-PB*TA) if PB*TA != 1 else 0
@@ -259,28 +259,24 @@ def _sttc_ta(tA, delt, tmax):
 def _sttc_na(tA, tB, delt):
     '''
     Helper function for spike time tiling coefficients: given two
-    sorted lists of spike times, calculate the fraction of spikes in
-    spike train A within delt of any spike in spike train B. This
-    algorithm is my own, modified to use the closed interval instead
-    of open after reading the original code.
+    sorted lists of spike times, calculate the number of spikes in
+    spike train A within delt of any spike in spike train B.
     '''
-    count = 0
-    ia, ib = 0, 0
+    if len(tB) == 0:
+        return 0
+    tA, tB = np.asarray(tA), np.asarray(tB)
 
-    # Microoptimizations because Python won't do it for me: don't
-    # recompute len during each iteration, and subtract once.
-    LA, LB = len(tA), len(tB)
+    # Find the closest spike in B after spikes in A.
+    iB = np.searchsorted(tB, tA)
 
-    while ia < LA and ib < LB:
-        cg = tB[ib] - tA[ia]
-        if cg < -delt:
-            ib += 1
-        elif cg > delt:
-            ia += 1
-        else:
-            ia += 1
-            count += 1
-    return count
+    # Clip to ensure legal indexing, then check the spike at that
+    # index and its predecessor to see which is closer.
+    np.clip(iB, 1, len(tB)-1, out=iB)
+    dt_left = np.abs(tB[iB] - tA)
+    dt_right = np.abs(tB[iB-1] - tA)
+
+    # Return how many of those spikes are actually within delt.
+    return (np.minimum(dt_left, dt_right) <= delt).sum()
 
 
 def pearson(spikes):
