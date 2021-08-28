@@ -183,11 +183,11 @@ class SpikeData():
         return (aa + bb) / 2
 
     def avalanches(self, thresh, bin_size=40):
-        """
-        Given a list of spikes per bucket and a threshold number of spike
-        events above which a bucket is considered "active", generate the
-        spike counts in each bucket.
-        """
+        '''
+        Bin the spikes in this data, and group the result into lists
+        corresponding to avalanches, defined as deviations above
+        a given threshold spike count.
+        '''
         this_av = []
         for count in self.binned(bin_size):
             if count > thresh:
@@ -197,6 +197,49 @@ class SpikeData():
                 this_av = []
         if this_av:
             yield this_av
+
+    def duration_size(self, thresh, bin_size=40):
+        '''
+        Collect the avalanches in this data and regroup them into
+        a pair of lists: durations and sizes.
+        '''
+        durations, sizes = [], []
+        for avalanche in self.avalanches(thresh, bin_size):
+            durations.append(len(avalanche))
+            sizes.append(sum(avalanche))
+        return np.array(durations), np.array(sizes)
+
+    def deviation_from_criticality(self, thresh, bin_size=40,
+                                   significance=True, p_value=0.05):
+        '''
+        Calculates the deviation from criticality according to the
+        method of Ma et al. (2019), who used the relationship of the
+        dynamical critical exponent to the exponents of the separate
+        power laws corresponding to the avalanche size and duration
+        distributions as a metric for suboptimal cortical function
+        following monocular deprivation.
+
+        [1] Ma, Z., Turrigiano, G. G., Wessel, R. & Hengen, K. B.
+            Cortical circuit dynamics are homeostatically tuned to
+            criticality in vivo. Neuron 104, 655-664.e4 (2019).
+        '''
+        # Gather durations and sizes, and fit power laws.
+        durations, sizes = self.duration_size(thresh, bin_size)
+        fit_duration = power_law_fit(durations)
+        fit_size = power_law_fit(sizes)
+
+        p_duration = power_law_significance(durations, *fit_duration)
+        if p_duration < p_value:
+            return np.inf
+        p_size = power_law_significance(sizes, *fit_size)
+        if p_size < p_value:
+            return np.inf
+
+        # Fit and predict the dynamical critical exponent, and return
+        # the absolute difference between them.
+        τ_fit, a = np.polyfit(np.log(durations), np.log(sizes), 1)
+        τ_pred = (fit_duration[0] - 1) / (fit_size[0] - 1)
+        return abs(τ_pred - τ_fit)
 
 
 def _train_from_i_t_list(idces, times):
