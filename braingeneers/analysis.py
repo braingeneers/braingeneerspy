@@ -1,6 +1,6 @@
 import heapq
 import numpy as np
-from scipy import stats, sparse, optimize
+from scipy import sparse
 import itertools
 
 
@@ -309,3 +309,105 @@ def pearson(spikes):
     corr = np.array(Exy - Ex*Ex.T) / (σx*σx.T)
     np.fill_diagonal(corr, 1)
     return corr
+
+def _power_law_pmf(X, τ, x0, xM):
+    '''
+    Evaluate the probability mass function for a discrete power law at
+    point(s) X, with exponent τ, minimum value x0, and maximum xM.
+    '''
+    X = np.atleast_1d(X)
+    ret = np.zeros(len(X))
+    mask = (X >= x0) & (X <= xM)
+    ret[mask] = X[mask]**-τ
+    return ret / np.sum(np.arange(x0, xM+1)**-τ)
+
+def _power_law_sample(M, τ, x0, xM):
+    '''
+    Sample random variables from a discrete power law using the
+    inverse method, with rejection sampling to enforce the maximum.
+    '''
+    X = np.zeros(M, int)
+    M_replace, to_replace = M, np.ones(M, bool)
+    while M_replace > 0:
+        r = np.random.rand(to_replace.sum())
+        X[to_replace] = np.round(x0 * r**(-1/(τ-1)))
+        to_replace = X > xM
+        M_replace = to_replace.sum()
+    return X
+
+def _power_law_log_likelihood(X, τ, x0, xM):
+    '''
+    Calculate log likelihood for a dataset X of avalanche sizes with power
+    law exponent τ and minimum and maximum values x0 and xM.
+    '''
+    return -τ*np.log(X).mean() - np.log(np.sum(np.arange(x0, xM+1)**-τ))
+
+def _power_law_ks_1samp(X, τ, x0, xM):
+    '''
+    Calculate the one-sample Kolmogorov-Smirnoff test statistic for
+    a given dataset X under a provided discrete power law fit with
+    exponent τ and minimum and maximum values x0 and xM.
+    '''
+    cmf = _power_law_pmf(np.arange(0, max(X)+1), τ, x0, xM).cumsum()
+
+    emp_cmf = np.zeros(max(X)+1)
+    for s in X:
+        emp_cmf[s:] += 1/len(X)
+
+    return np.abs(cmf - emp_cmf).max()
+
+def power_law_fit(X):
+    '''
+    Fit a truncated discrete power law to a collection of integers `X`
+    using the method described by Shew et al (2015). Finds the largest
+    possible maximum avalanche size for which the best fit satisfies
+    a Kolmogorov-Smirnoff statistic condition for some reasonable
+    value of the minimum. Returns the exponent, minimum and maximum
+    vaules for the fit, and the calculated Kolmogorov-Smirnoff statistic.
+
+    [1] Shew, W. L. et al. Adaptation to sensory input tunes visual cortex
+        to criticality. Nature Physics 11, 659–663 (2015).
+    '''
+    Xfull = X
+    for xM in itertools.count(X.max(), -1):
+        best = -np.inf, 1.0
+        for x0 in range(1,10):
+            X = Xfull[(Xfull >= x0) & (Xfull <= xM)]
+
+            # For a given xM and x0, choose τ by MLE
+            τ, ll = max(((τ, _power_law_log_likelihood(X,τ,x0,xM))
+                         for τ in np.linspace(1,4)),
+                        key=lambda a: a[1])
+
+            # Choose the best of these fits by KS statistic.
+            ks = _power_law_ks_1samp(X, τ, x0, xM)
+
+            if ks < best[1]:
+                best = ll, ks, τ, x0, xM
+            if ks < np.sqrt(1/len(X)):
+                break
+
+        # Stop reducing xM as soon as the fit is good enough.
+        if ks < np.sqrt(1/len(X)):
+            break
+
+    return τ, x0, xM, ks
+
+def power_law_significance(X, τ, x0, xM, ks=None, N=1000):
+    '''
+    Determine whether an estimated power law fit is likely to have
+    arisen by chance by drawing power laws from its distribution and
+    comparing Kolmogorov-Smirnoff statistics. The significance level
+    is the fraction of sampled surrogate datasets which fit worse.
+    '''
+    X = X[(X >= x0) & (X <= xM)]
+    M = len(X)
+
+    if ks is None:
+        ks = _power_law_ks_1samp(X, τ, x0, xM)
+
+    ksvals = [_power_law_ks_1samp(_power_law_sample(M, τ, x0, xM),
+                                  τ, x0, xM)
+              for _ in range(N)]
+
+    return np.mean(ksvals > ks)
