@@ -228,6 +228,10 @@ class SpikeData():
         fit_duration = power_law_fit(durations)
         fit_size = power_law_fit(sizes)
 
+        # If either of them wasn't a power law, obviously we can't
+        # have criticality here either, so just return failure.
+        if fit_size[-1] == 1.0 or fit_duration[-1] == 1.0:
+            return np.inf
         p_duration = power_law_significance(durations, *fit_duration)
         if p_duration < p_value:
             return np.inf
@@ -413,28 +417,30 @@ def power_law_fit(X):
     '''
     Xfull = X
     for xM in itertools.count(X.max(), -1):
-        best = -np.inf, 1.0
-        for x0 in range(1,10):
+        best = 2.0, X.min(), X.max(), 1.0
+        for x0 in itertools.count(X.min()):
             X = Xfull[(Xfull >= x0) & (Xfull <= xM)]
+            if len(X) < 0.9*len(Xfull):
+                break
 
             # For a given xM and x0, choose τ by MLE
             τ, ll = max(((τ, _power_law_log_likelihood(X,τ,x0,xM))
-                         for τ in np.linspace(1,4)),
+                         for τ in np.linspace(1,4)[1:]),
                         key=lambda a: a[1])
 
             # Choose the best of these fits by KS statistic.
             ks = _power_law_ks_1samp(X, τ, x0, xM)
 
-            if ks < best[1]:
-                best = ll, ks, τ, x0, xM
-            if ks < np.sqrt(1/len(X)):
-                break
+            if ks < best[-1]:
+                best = τ, x0, xM, ks
 
-        # Stop reducing xM as soon as the fit is good enough.
-        if ks < np.sqrt(1/len(X)):
-            break
+        # Stop reducing xM as soon as the fit is good enough, or give
+        # up when too much data is thrown away.
+        N = np.sum((X >= best[1]) & (X <= best[2]))
+        Nm = np.sum(Xfull <= xM)
+        if ks < np.sqrt(1/N) or Nm < 0.9*len(Xfull):
+            return best
 
-    return τ, x0, xM, ks
 
 def power_law_significance(X, τ, x0, xM, ks=None, N=1000):
     '''
@@ -449,8 +455,8 @@ def power_law_significance(X, τ, x0, xM, ks=None, N=1000):
     if ks is None:
         ks = _power_law_ks_1samp(X, τ, x0, xM)
 
-    ksvals = [_power_law_ks_1samp(_power_law_sample(M, τ, x0, xM),
-                                  τ, x0, xM)
-              for _ in range(N)]
-
-    return np.mean(ksvals > ks)
+    return np.mean([
+        _power_law_ks_1samp(_power_law_sample(M, τ, x0, xM),
+                            τ, x0, xM) > ks
+        for _ in range(N)
+    ])
