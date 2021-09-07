@@ -370,19 +370,46 @@ def _power_law_pmf(X, τ, x0, xM):
     sum_from_x0 = special.zeta(τ, x0)
     return ret / (sum_from_x0 - sum_from_xM)
 
+def _power_law_one_sample(τ, x0, xM):
+    '''
+    Sample from a discrete power law using the method of inverses by
+    directly searching for a numerical solution [1], plus rejection
+    sampling to implement the maximum. Shockingly, this is
+    significantly faster than scipy.stats.zipfian.
+
+    [1] Clauset, A., Shalizi, C. R. & Newman, M. E. J. Power-law
+        distributions in empirical data. SIAM Rev. 51, 661–703 (2009).
+    '''
+    z0 = special.zeta(τ, x0)
+    while True:
+        r = np.random.rand()
+        x1, x2 = x0, 2*x0
+
+        def P(x):
+            return special.zeta(τ, x) / z0
+
+        while P(x2) >= 1-r:
+            x1 = x2
+            x2 = 2*x1
+        while x2 - x1 > 1:
+            xmid = int((x1 + x2)//2)
+            if P(xmid) < 1-r:
+                x2 = xmid
+            else:
+                x1 = xmid
+        ret = int((x1 + x2)//2)
+        if ret > xM:
+            continue
+        else:
+            return ret
+
 def _power_law_sample(M, τ, x0, xM):
     '''
     Sample random variables from a discrete power law using the
-    inverse method, with rejection sampling to enforce the maximum.
+    inverse method of _powser_law_one_sample().
     '''
-    X = np.zeros(M, int)
-    M_replace, to_replace = M, np.ones(M, bool)
-    while M_replace > 0:
-        r = np.random.rand(M_replace)
-        X[to_replace] = np.round(x0 * r**(-1/(τ-1)))
-        to_replace = X > xM
-        M_replace = to_replace.sum()
-    return X
+    return np.array([_power_law_one_sample(τ, x0, xM)
+                     for _ in range(M)])
 
 def _power_law_log_likelihood(X, τ, x0, xM):
     '''
@@ -427,10 +454,11 @@ def power_law_fit(X, approximate=False):
     Xvals = np.unique(Xfull)
     best = 2.0, X.min(), X.max(), 1.0
     for xM in Xvals[::-1]:
+        Xbelow = Xfull[Xfull <= xM]
         for x0 in Xvals:
-            X = Xfull[(Xfull >= x0) & (Xfull <= xM)]
+            X = Xbelow[Xbelow >= x0]
             if len(X) < 0.9*len(Xfull):
-                return best
+                break
 
             if approximate:
                 τ = 1 + len(X)/np.log(X / (x0 - 0.5)).sum()
@@ -459,14 +487,14 @@ def power_law_significance(M, τ, x0, xM, ks=None, N=1000):
     statistic.
     '''
     try:
-        X, M = M, len(M)
-        ks = _power_law_ks_1samp(X, τ, x0, xM)
+        X = M[(M >= x0) & (M <= xM)]
+        M = len(X)
+        ks = _power_law_ks_1samp(X, τ, x0, xM) if ks is None else ks
     except TypeError:
         if ks is None:
             raise ValueError('Must provide ks statistic or full sample.')
 
     return np.mean([
-        _power_law_ks_1samp(_power_law_sample(M, τ, x0, xM),
-                            τ, x0, xM) > ks
+        power_law_fit(_power_law_sample(M, τ, x0, xM))[-1] > ks
         for _ in range(N)
     ])
