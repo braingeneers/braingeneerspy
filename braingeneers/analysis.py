@@ -1,6 +1,6 @@
 import heapq
 import numpy as np
-from scipy import sparse
+from scipy import sparse, special, optimize
 import itertools
 
 
@@ -366,7 +366,9 @@ def _power_law_pmf(X, τ, x0, xM):
     ret = np.zeros(len(X))
     mask = (X >= x0) & (X <= xM)
     ret[mask] = X[mask]**-τ
-    return ret / np.sum(np.arange(x0, xM+1)**-τ)
+    sum_from_xM = special.zeta(τ, xM+1)
+    sum_from_x0 = special.zeta(τ, x0)
+    return ret / (sum_from_x0 - sum_from_xM)
 
 def _power_law_sample(M, τ, x0, xM):
     '''
@@ -376,7 +378,7 @@ def _power_law_sample(M, τ, x0, xM):
     X = np.zeros(M, int)
     M_replace, to_replace = M, np.ones(M, bool)
     while M_replace > 0:
-        r = np.random.rand(to_replace.sum())
+        r = np.random.rand(M_replace)
         X[to_replace] = np.round(x0 * r**(-1/(τ-1)))
         to_replace = X > xM
         M_replace = to_replace.sum()
@@ -384,10 +386,12 @@ def _power_law_sample(M, τ, x0, xM):
 
 def _power_law_log_likelihood(X, τ, x0, xM):
     '''
-    Calculate log likelihood for a dataset X of avalanche sizes with power
-    law exponent τ and minimum and maximum values x0 and xM.
+    Calculate log likelihood for a dataset X of avalanche sizes with
+    power law exponent τ and minimum and maximum values x0 and xM.
     '''
-    return -τ*np.log(X).mean() - np.log(np.sum(np.arange(x0, xM+1)**-τ))
+    sum_from_xM = special.zeta(τ, xM+1)
+    sum_from_x0 = special.zeta(τ, x0)
+    return -τ*np.log(X).mean() - np.log(sum_from_x0 - sum_from_xM)
 
 def _power_law_ks_1samp(X, τ, x0, xM):
     '''
@@ -395,65 +399,71 @@ def _power_law_ks_1samp(X, τ, x0, xM):
     a given dataset X under a provided discrete power law fit with
     exponent τ and minimum and maximum values x0 and xM.
     '''
-    cmf = _power_law_pmf(np.arange(0, max(X)+1), τ, x0, xM).cumsum()
+    pmf = _power_law_pmf(np.arange(0, max(X)+1), τ, x0, xM)
 
-    emp_cmf = np.zeros(max(X)+1)
-    for s in X:
-        emp_cmf[s:] += 1/len(X)
+    emp_pmf = np.zeros(max(X)+1)
+    vals, cnts = np.unique(X, return_counts=True)
+    emp_pmf[vals] = cnts / len(X)
 
-    return np.abs(cmf - emp_cmf).max()
+    return np.abs(pmf.cumsum() - emp_pmf.cumsum()).max()
 
-def power_law_fit(X):
+def power_law_fit(X, approximate=False):
     '''
     Fit a truncated discrete power law to a collection of integers `X`
-    using the method described by Shew et al (2015). Finds the largest
+    as is common in neuroscience literature [1]. Finds the largest
     possible maximum avalanche size for which the best fit satisfies
     a Kolmogorov-Smirnoff statistic condition for some reasonable
     value of the minimum. Returns the exponent, minimum and maximum
-    vaules for the fit, and the calculated Kolmogorov-Smirnoff statistic.
+    vaules for the fit, and the calculated Kolmogorov-Smirnoff
+    statistic. Optionally, use an approximate closed form of the
+    maximum likelihood calculation [2], which may be faster sometimes.
 
-    [1] Shew, W. L. et al. Adaptation to sensory input tunes visual cortex
-        to criticality. Nature Physics 11, 659–663 (2015).
+    [1] Shew, W. L. et al. Adaptation to sensory input tunes visual
+        cortex to criticality. Nature Physics 11, 659–663 (2015).
+    [2] Clauset, A., Shalizi, C. R. & Newman, M. E. J. Power-law
+        distributions in empirical data. SIAM Rev. 51, 661–703 (2009).
     '''
     Xfull = X
-    for xM in itertools.count(X.max(), -1):
-        best = 2.0, X.min(), X.max(), 1.0
-        for x0 in itertools.count(X.min()):
+    Xvals = np.unique(Xfull)
+    best = 2.0, X.min(), X.max(), 1.0
+    for xM in Xvals[::-1]:
+        for x0 in Xvals:
             X = Xfull[(Xfull >= x0) & (Xfull <= xM)]
             if len(X) < 0.9*len(Xfull):
-                break
+                return best
 
-            # For a given xM and x0, choose τ by MLE
-            τ, ll = max(((τ, _power_law_log_likelihood(X,τ,x0,xM))
-                         for τ in np.linspace(1,4)[1:]),
-                        key=lambda a: a[1])
+            if approximate:
+                τ = 1 + len(X)/np.log(X / (x0 - 0.5)).sum()
+            else:
+                τ = optimize.minimize_scalar(
+                    lambda τ: -_power_law_log_likelihood(X,τ,x0,xM),
+                    bounds=(1,4), method='bounded').x
 
-            # Choose the best of these fits by KS statistic.
+            # Choose the first fit with sufficiently low KS statistic,
+            # but if none attains the mark, return the best.
             ks = _power_law_ks_1samp(X, τ, x0, xM)
-
             if ks < best[-1]:
                 best = τ, x0, xM, ks
+            if ks < np.sqrt(1/len(X)):
+                return best
 
-        # Stop reducing xM as soon as the fit is good enough, or give
-        # up when too much data is thrown away.
-        N = np.sum((X >= best[1]) & (X <= best[2]))
-        Nm = np.sum(Xfull <= xM)
-        if ks < np.sqrt(1/N) or Nm < 0.9*len(Xfull):
-            return best
+    return best
 
-
-def power_law_significance(X, τ, x0, xM, ks=None, N=1000):
+def power_law_significance(M, τ, x0, xM, ks=None, N=1000):
     '''
-    Determine whether an estimated power law fit is likely to have
-    arisen by chance by drawing power laws from its distribution and
-    comparing Kolmogorov-Smirnoff statistics. The significance level
-    is the fraction of sampled surrogate datasets which fit worse.
+    Estimate the significance level of the hypothesis that the
+    provided dataset `X` is drawn from a different distribution than
+    a power law with the given parameters, by sampling `N` surrogate
+    datasets from that distribution with the same size as `X` and
+    returning what fraction of them have worse Kolmogorov-Smirnoff
+    statistic.
     '''
-    X = X[(X >= x0) & (X <= xM)]
-    M = len(X)
-
-    if ks is None:
+    try:
+        X, M = M, len(M)
         ks = _power_law_ks_1samp(X, τ, x0, xM)
+    except TypeError:
+        if ks is None:
+            raise ValueError('Must provide ks statistic or full sample.')
 
     return np.mean([
         _power_law_ks_1samp(_power_law_sample(M, τ, x0, xM),
