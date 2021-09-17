@@ -387,6 +387,21 @@ def _power_law_pmf(X, τ, x0, xM):
     sum_from_x0 = special.zeta(τ, x0)
     return ret / (sum_from_x0 - sum_from_xM)
 
+def _power_law_cdf(X, τ, x0, xM):
+    '''
+    Evaluate the cumulative distribution function for a discrete power
+    law at point(s) X with exponent τ, minimum x0, and maximum xM.
+    '''
+    X = np.int32(np.atleast_1d(X))
+    ret = np.zeros(len(X))
+    ret[X >= xM] = 1
+    sum_from_xM = special.zeta(τ, xM+1)
+    sum_from_x0 = special.zeta(τ, x0)
+    renorm = sum_from_x0 - sum_from_xM
+    mask = (X >= x0) & (X < xM)
+    ret[mask] = (sum_from_x0 - special.zeta(τ, X[mask]+1)) / renorm
+    return ret
+
 def _power_law_one_sample(τ, x0, xM):
     '''
     Sample from a discrete power law using the method of inverses by
@@ -443,13 +458,11 @@ def _power_law_ks_1samp(X, τ, x0, xM):
     a given dataset X under a provided discrete power law fit with
     exponent τ and minimum and maximum values x0 and xM.
     '''
-    pmf = _power_law_pmf(np.arange(0, max(X)+1), τ, x0, xM)
-
-    emp_pmf = np.zeros(max(X)+1)
+    X = X[(X >= x0) & (X <= xM)]
     vals, cnts = np.unique(X, return_counts=True)
-    emp_pmf[vals] = cnts / len(X)
-
-    return np.abs(pmf.cumsum() - emp_pmf.cumsum()).max()
+    emp_cdf = np.cumsum(cnts / len(X))
+    cdf = _power_law_cdf(vals, τ, x0, xM)
+    return np.abs(cdf - emp_cdf).max()
 
 def power_law_fit(X, approximate=False):
     '''
@@ -489,10 +502,8 @@ def power_law_fit(X, approximate=False):
             ks = _power_law_ks_1samp(X, τ, x0, xM)
             if ks < best[-1]:
                 best = τ, x0, xM, ks
-            if ks < np.sqrt(1/len(X)):
+            if ks*ks < 1/len(X):
                 return best
-
-    return best
 
 def power_law_significance(M, τ, x0, xM, ks=None, N=1000):
     '''
@@ -512,6 +523,7 @@ def power_law_significance(M, τ, x0, xM, ks=None, N=1000):
             raise ValueError('Must provide ks statistic or full sample.')
 
     return np.mean([
-        power_law_fit(_power_law_sample(M, τ, x0, xM))[-1] > ks
+        _power_law_ks_1samp(
+            _power_law_sample(M, τ, x0, xM), τ, x0, xM) > ks
         for _ in range(N)
     ])
