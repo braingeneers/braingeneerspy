@@ -413,27 +413,16 @@ def _power_law_one_sample(τ, x0, xM):
         distributions in empirical data. SIAM Rev. 51, 661–703 (2009).
     '''
     z0 = special.zeta(τ, x0)
-    while True:
-        r = np.random.rand()
-        x1, x2 = x0, 2*x0
-
-        def P(x):
-            return special.zeta(τ, x) / z0
-
-        while P(x2) >= 1-r:
-            x1 = x2
-            x2 = 2*x1
-        while x2 - x1 > 1:
-            xmid = int((x1 + x2)//2)
-            if P(xmid) < 1-r:
-                x2 = xmid
-            else:
-                x1 = xmid
-        ret = int((x1 + x2)//2)
-        if ret > xM:
-            continue
+    zM = special.zeta(τ, xM)
+    zT = zM + (z0-zM) * np.random.rand()
+    x1, x2 = x0, xM
+    while x2 - x1 > 1:
+        xmid = int((x1 + x2)//2)
+        if special.zeta(τ, xmid) < zT:
+            x2 = xmid
         else:
-            return ret
+            x1 = xmid
+    return x1
 
 def _power_law_sample(M, τ, x0, xM):
     '''
