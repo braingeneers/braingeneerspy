@@ -56,7 +56,8 @@ class SpikeData():
         # If a number of units was provided, make the list of spike
         # trains consistent with that number.
         if N is not None and len(self.train) < N:
-            self.train += [[]]*(N - len(self.train))
+            self.train += [np.array([]) for _ in
+                           range(N-len(self.train))]
         self.N = len(self.train)
 
     @property
@@ -115,13 +116,13 @@ class SpikeData():
     def subset(self, units):
         'Return a new SpikeData with spike times for only some units.'
         train = [ts for i,ts in enumerate(self.train) if i in units]
-        return self.__class__(train, length=self.length)
+        return self.__class__(train, length=self.length, N=len(units))
 
     def subtime(self, start, end):
         'Return a new SpikeData with only spikes in a time range.'
         train = [t[(t >= start) & (t < end)] - start
                  for t in self.train]
-        return self.__class__(train, length=end-start)
+        return self.__class__(train, length=end-start, N=self.N)
 
     def sparse_raster(self, bin_size=20):
         '''
