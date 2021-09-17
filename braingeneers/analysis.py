@@ -10,7 +10,7 @@ class SpikeData():
     simulations.
     '''
 
-    def __init__(self, arg1, arg2=None, *, length=None):
+    def __init__(self, arg1, arg2=None, *, N=None, length=None):
         '''
         Parses different argument list possibilities into the desired
         format: a list indexed by unit ID, where each element is
@@ -48,6 +48,11 @@ class SpikeData():
         if length is None:
             length = max((t[-1] for t in self.train if len(t) > 0))
         self.length = length
+
+        # If a number of units was provided, make the list of spike
+        # trains consistent with that number.
+        if N is not None and len(self.train) < N:
+            self.train += [[]]*(N - len(self.train))
         self.N = len(self.train)
 
     @property
