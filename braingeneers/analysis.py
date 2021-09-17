@@ -100,11 +100,13 @@ class SpikeData():
     def binned(self, bin_size=40, unit=None):
         '''
         Quantizes time into intervals of bin_size and counts the
-        number of events in each bin.
+        number of events in each bin, considered as a lower half-open
+        interval of times, with the exception that events at time
+        precisely zero will be included in the first bin.
         '''
         bin, count = 1, 0
         for time in self.times:
-            while time >= bin*bin_size:
+            while time > bin*bin_size:
                 yield count
                 bin, count = bin+1, 0
             count += 1
@@ -166,6 +168,17 @@ class SpikeData():
         else:
             f15 = binned[N85:].sum() / binned.sum()
             return (f15 - 0.15) / 0.85
+
+
+    def spike_time_tilings(self, delt=20):
+        '''
+        Compute the full spike time tiling coefficient matrix.
+        '''
+        ret = np.diag(np.ones(self.N))
+        for i in range(self.N):
+            for j in range(i+1, self.N):
+                ret[i,j] = ret[j,i] = self.spike_time_tiling(i,j,delt)
+        return ret
 
     def spike_time_tiling(self, i, j, delt=20):
         '''
