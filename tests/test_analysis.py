@@ -121,8 +121,9 @@ class AnalysisTest(unittest.TestCase):
         self.assertTrue(np.isclose(dense_pearson, sparse_pearson).all())
 
     def test_burstiness_index(self):
-        # Something completely uniform should have zero burstiness.
-        uniform = ba.SpikeData([np.arange(1000)])
+        # Something completely uniform should have zero burstiness,
+        # but ensure there's no spike at time zero.
+        uniform = ba.SpikeData([0.5+np.arange(1000)])
         self.assertEqual(uniform.burstiness_index(10), 0)
 
         # All spikes at the same time is technically super bursty,
@@ -291,14 +292,14 @@ class AvalancheTest(unittest.TestCase):
         # Here's a totally arbitrary list of spike times to bin.
         spikes = ba.SpikeData([[1, 2, 5, 15, 16, 20, 22, 25]])
         self.assertListEqual(list(spikes.binned(4)),
-                             [2, 1, 0, 1, 1, 2, 1])
+                             [2, 1, 0, 2, 1, 1, 1])
 
     def test_avalanches(self):
         # Here's a potential list of binned spike counts; ensure that
         # the final avalanche doesn't get dropped like it used to.
         counts = [2,5,3, 0,1,0,0, 2,2, 0, 42]
         times = np.hstack([i*np.ones(c) for i,c in enumerate(counts)])
-        spikes = ba.SpikeData([times])
+        spikes = ba.SpikeData([times + 0.5])
         self.assertListEqual(list(spikes.binned(1)), counts)
         self.assertListEqual(
             [len(av) for av in spikes.avalanches(1, bin_size=1)],
