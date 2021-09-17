@@ -471,13 +471,18 @@ def power_law_fit(X, approximate=False):
     '''
     Xfull = X
     Xvals = np.unique(Xfull)
-    best = 2.0, X.min(), X.max(), 1.0
-    for xM in Xvals[::-1]:
+    best = 2.0, Xvals[0], Xvals[-1], 1.0
+    xMAX = int(Xvals[-1] * Xvals[-1]/Xvals[-2])
+    xMIN = max(Xvals[0] - 1, 1)
+    for xM in itertools.count(xMAX, -1):
         Xbelow = Xfull[Xfull <= xM]
-        for x0 in Xvals:
+        for x0 in itertools.count(xMIN):
             X = Xbelow[Xbelow >= x0]
             if len(X) < 0.9*len(Xfull):
-                break
+                if x0 == xMIN:
+                    return best
+                else:
+                    break
 
             if approximate:
                 τ = 1 + len(X)/np.log(X / (x0 - 0.5)).sum()
