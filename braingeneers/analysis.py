@@ -2,6 +2,10 @@ import heapq
 import numpy as np
 from scipy import sparse, special, optimize
 import itertools
+from collections import namedtuple
+
+
+DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
 
 
 class SpikeData():
@@ -214,8 +218,7 @@ class SpikeData():
             sizes.append(sum(avalanche))
         return np.array(durations), np.array(sizes)
 
-    def deviation_from_criticality(self, thresh, bin_size=40,
-                                   significance=True, p_value=0.05):
+    def deviation_from_criticality(self, thresh, bin_size=40, N=1000):
         '''
         Calculates the deviation from criticality according to the
         method of Ma et al. (2019), who used the relationship of the
@@ -233,22 +236,18 @@ class SpikeData():
         fit_duration = power_law_fit(durations)
         fit_size = power_law_fit(sizes)
 
-        # If either of them wasn't a power law, obviously we can't
-        # have criticality here either, so just return failure.
-        if fit_size[-1] == 1.0 or fit_duration[-1] == 1.0:
-            return np.inf
-        p_duration = power_law_significance(durations, *fit_duration)
-        if p_duration < p_value:
-            return np.inf
-        p_size = power_law_significance(sizes, *fit_size)
-        if p_size < p_value:
-            return np.inf
+        # Calculate significance using N data points.
+        M = len(durations)
+        p_duration = power_law_significance(M, *fit_duration, N)
+        p_size = power_law_significance(M, *fit_size, N)
 
-        # Fit and predict the dynamical critical exponent, and return
-        # the absolute difference between them.
-        τ_fit, a = np.polyfit(np.log(durations), np.log(sizes), 1)
+        # Fit and predict the dynamical critical exponent.
+        τ_fit = np.polyfit(np.log(durations), np.log(sizes), 1)[0]
         τ_pred = (fit_duration[0] - 1) / (fit_size[0] - 1)
-        return abs(τ_pred - τ_fit)
+        dcc = abs(τ_pred - τ_fit)
+
+        # Return the DCC value and significance.
+        return DCCResult(dcc=dcc, p_size=p_size, p_duration=p_duration)
 
 
 def _train_from_i_t_list(idces, times):
