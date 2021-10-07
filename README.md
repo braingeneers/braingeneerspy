@@ -17,7 +17,7 @@ part of the Braingeneers project. There are five subpackages:
 
 ## How to Upgrade Package
 
-To udpate the the braingeneerspy package on your personal computer run the following command:
+To publish changes made to the **braingeneerspy** package on github, please follow these steps. Update the `version` variable in `setup.py`. To then receive the udpated **braingeneerspy** package on your personal computer, run the following command locally:
 ```
 pip install --upgrade git+https://github.com/braingeneers/braingeneerspy.git # install braingeneers python package
 ```
