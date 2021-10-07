@@ -15,6 +15,13 @@ part of the Braingeneers project. There are five subpackages:
 
 [github]: https://www.github.com/braingeneers/braingeneerspy
 
+## How to Upgrade Package
+
+To udpate the the braingeneerspy package on your personal computer run the following command:
+```
+pip install --upgrade git+https://github.com/braingeneers/braingeneerspy.git # install braingeneers python package
+```
+
 ## braingeneers.utils.s3wrangler
 Extends the `awswrangler.s3 package` for Braingeneers/PRP access.
 See API documentation: https://aws-data-wrangler.readthedocs.io/en/2.4.0-docs/api.html#amazon-s3
