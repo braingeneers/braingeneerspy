@@ -89,14 +89,8 @@ class SpikeData():
         Iterate new SpikeData objects corresponding to subwindows of
         a given `length` with a fixed `overlap`.
         '''
-        interval = length - overlap
-        window, events = 1, []
-        for (index,time) in self.events:
-            while time >= window*interval:
-                yield SpikeData(events, length=interval)
-                window, events = window+1, []
-            events.append((index, time - (window-1)*interval))
-        yield SpikeData(events, length=interval)
+        for start in np.arange(0, self.length, length - overlap):
+            yield self.subtime(start, start + length)
 
     def binned(self, bin_size=40, unit=None):
         '''

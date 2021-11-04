@@ -70,6 +70,11 @@ class AnalysisTest(unittest.TestCase):
             self.assertSpikeDataEqual(frame,
                                       sd.subtime(i*20, (i+1)*20))
 
+        # Regression test for overlap parameter of frames().
+        for i,frame in enumerate(sd.frames(20, overlap=10)):
+            self.assertSpikeDataEqual(frame,
+                                      sd.subtime(i*10, i*10+20))
+
     def test_raster(self):
         # Generate Poisson spike trains and make sure no spikes are
         # lost in translation.
