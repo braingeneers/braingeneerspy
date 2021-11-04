@@ -10,8 +10,7 @@ class AnalysisTest(unittest.TestCase):
 
     def assertSpikeDataEqual(self, sda, sdb, msg=None):
         for a,b in zip(sda.train, sdb.train):
-            self.assertTrue(len(a) == len(b)
-                            and np.isclose(a, b).all(),
+            self.assertTrue(len(a) == len(b) and np.allclose(a, b),
                             msg=msg)
 
     def test_spike_data(self):
@@ -83,6 +82,24 @@ class AnalysisTest(unittest.TestCase):
         self.assertEqual(sd.raster().sum(), N)
         self.assertTrue(np.all(sd.sparse_raster() == sd.raster()))
 
+        # Make sure the length of the raster is going to be consistent
+        # no matter how many spikes there are.
+        N = 10
+        length = 1e4
+        sdA = ba.SpikeData(np.zeros(N, int),
+                           np.random.rand(N) * length,
+                           length=length)
+        sdB = ba.SpikeData(np.zeros(N, int),
+                           np.random.rand(N) * length,
+                           length=length)
+        self.assertEqual(sdA.raster().shape, sdB.raster().shape)
+
+        # Make sure a spike exactly at t = length still works.
+        sd = ba.SpikeData([0], [20])
+        self.assertEqual(sd.length, 20)
+        self.assertTrue(np.all(sd.sparse_raster().todense() == [[0, 1]]))
+
+
 
     def test_pearson(self):
         # These four cells are constructed so that A is perfectly
@@ -109,16 +126,16 @@ class AnalysisTest(unittest.TestCase):
             [-1, -1, 1, 0],
             [0, 0, 0, 1]]
         sparse_pearson = ba.pearson(raster)
-        self.assertTrue(np.isclose(sparse_pearson, true_pearson).all())
+        self.assertTrue(np.allclose(sparse_pearson, true_pearson))
 
         # Test on dense matrices (fallback to np.pearson).
         dense_pearson = ba.pearson(raster.todense())
         np_pearson = np.corrcoef(raster.todense())
-        self.assertTrue(np.isclose(dense_pearson, np_pearson).all())
+        self.assertTrue(np.allclose(dense_pearson, np_pearson))
 
         # Also check the calculations.
         self.assertEqual(dense_pearson.shape, sparse_pearson.shape)
-        self.assertTrue(np.isclose(dense_pearson, sparse_pearson).all())
+        self.assertTrue(np.allclose(dense_pearson, sparse_pearson))
 
     def test_burstiness_index(self):
         # Something completely uniform should have zero burstiness,
@@ -158,7 +175,7 @@ class AnalysisTest(unittest.TestCase):
         truth = np.random.rand(N)
         spikes = ba.SpikeData(np.zeros(N,int), truth.cumsum())
         ii = spikes.interspike_intervals()
-        self.assertTrue(np.isclose(ii[0], truth[1:]).all())
+        self.assertTrue(np.allclose(ii[0], truth[1:]))
 
     def test_fano_factors(self):
         N = 10000
@@ -194,7 +211,7 @@ class AnalysisTest(unittest.TestCase):
         foo = spikes(10).sparse_raster(10)
         f_sparse = ba.fano_factors(foo)
         f_dense = ba.fano_factors(foo.toarray())
-        self.assertTrue(np.isclose(f_sparse, f_dense).all())
+        self.assertTrue(np.allclose(f_sparse, f_dense))
 
     def test_spike_time_tiling_ta(self):
         # Trivial base cases.

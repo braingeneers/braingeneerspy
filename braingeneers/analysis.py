@@ -129,11 +129,15 @@ class SpikeData():
         Bin all spike times and create a sparse matrix where entry
         (i,j) is the number of times cell i fired in bin j.
         '''
-        indices = np.hstack([ts // bin_size for ts in self.train])
+        indices = np.hstack([np.int32(ts // bin_size)
+                             for ts in self.train])
         units = np.hstack([0] + [len(ts) for ts in self.train])
         indptr = np.cumsum(units)
         values = np.ones_like(indices)
-        return sparse.csr_matrix((values, indices, indptr))
+        length = int(np.ceil(self.length / bin_size))
+        ret = sparse.csr_matrix((values, indices, indptr),
+                                shape=(self.N, length+1))
+        return ret
 
     def raster(self, bin_size=20):
         '''
