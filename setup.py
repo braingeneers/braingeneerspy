@@ -8,7 +8,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='braingeneerspy',
-    version='0.0.9',
+    version='0.0.10',
     python_requires='>=3.6.0',
     description='Braingeneers Python utilities',
     long_description=long_description,
@@ -23,16 +23,15 @@ setup(
     ],
     packages=find_packages(exclude=()),
     install_requires=[
-    	'matplotlib',
-	'requests',
-	'numpy',
-	'scipy',
-	'boto3==1.17.96',   # depends on awscrt==0.11.22
-	'awsiotsdk==1.6.0',
-	'redis',
-	'smart_open>=5.1.0',
-	'tenacity',
-	'awswrangler',
+        'matplotlib',
+        'requests',
+        'numpy',
+        'scipy',
+        'boto3==1.17.96',   # depends on awscrt==0.11.22
+        'awsiotsdk==1.6.0',
+        'redis',
+        'smart_open>=5.1.0',
+        'tenacity',
+        'awswrangler',
     ],
     include_package_data=True)
-
