@@ -121,16 +121,19 @@ class SpikeData():
     def sparse_raster(self, bin_size=20):
         '''
         Bin all spike times and create a sparse matrix where entry
-        (i,j) is the number of times cell i fired in bin j.
+        (i,j) is the number of times cell i fired in bin j. Bins are
+        left-open and right-closed intervals except the first, which
+        will capture any spikes occurring exactly at t=0.
         '''
-        indices = np.hstack([np.int32(ts // bin_size)
-                             for ts in self.train])
+        indices = np.hstack([np.ceil(ts / bin_size) - 1
+                             for ts in self.train]).astype(int)
         units = np.hstack([0] + [len(ts) for ts in self.train])
         indptr = np.cumsum(units)
         values = np.ones_like(indices)
         length = int(np.ceil(self.length / bin_size))
+        np.clip(indices, 0, length-1, out=indices)
         ret = sparse.csr_matrix((values, indices, indptr),
-                                shape=(self.N, length+1))
+                                shape=(self.N, length))
         return ret
 
     def raster(self, bin_size=20):

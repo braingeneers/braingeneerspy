@@ -99,11 +99,18 @@ class AnalysisTest(unittest.TestCase):
                            length=length)
         self.assertEqual(sdA.raster().shape, sdB.raster().shape)
 
-        # Make sure a spike exactly at t = length still works.
-        sd = ba.SpikeData([0], [20])
-        self.assertEqual(sd.length, 20)
-        self.assertTrue(np.all(sd.sparse_raster().todense() == [[0, 1]]))
+        # Corner cases of raster binning rules: spikes exactly at
+        # 0 end up in the first bin, but other bins should be
+        # lower-open and upper-closed.
+        ground_truth = [[1, 1, 0, 1]]
+        sd = ba.SpikeData([0,0,0], [0,20,40])
+        self.assertEqual(sd.length, 40)
+        self.assertTrue(np.all(sd.raster(10) == ground_truth))
 
+        # Also verify that binning rules are consistent between the
+        # raster and other binning methods.
+        binned = np.array([list(sd.binned(10))])
+        self.assertTrue(np.all(sd.raster(10) == binned))
 
 
     def test_pearson(self):
@@ -120,7 +127,9 @@ class AnalysisTest(unittest.TestCase):
         # matrix generated is correct.
         ground_truth = np.stack((cellA, cellB, cellC, cellD))
         times, idces = np.where(ground_truth.T)
-        raster = ba.SpikeData(idces, times).sparse_raster(bin_size=1)
+        raster = ba.SpikeData(idces, times + 0.5).sparse_raster(bin_size=1)
+        print(raster.todense())
+        print(ground_truth)
         self.assertTrue(np.all(raster == ground_truth))
 
         # Finally, check the calculated Pearson coefficients to ensure
