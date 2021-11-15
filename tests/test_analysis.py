@@ -69,9 +69,33 @@ class AnalysisTest(unittest.TestCase):
         # Test subtime() constructor actually grabs subsets.
         sdtime = sd.subtime(20, 50)
         for i in range(len(sd.train)):
-            self.assertAll(sdtime.train[i] >= 0)
-            self.assertAll(sdtime.train[i] < 30)
-            n_in_range = np.sum((sd.train[i] >= 20) & (sd.train[i] < 50))
+            self.assertAll(sdtime.train[i] > 0)
+            self.assertAll(sdtime.train[i] <= 30)
+            n_in_range = np.sum((sd.train[i] > 20) & (sd.train[i] <= 50))
+            self.assertTrue(len(sdtime.train[i]) == n_in_range)
+
+        # Test subtime() with negative arguments.
+        sdtime = sd.subtime(-80, -50)
+        for i in range(len(sd.train)):
+            self.assertAll(sdtime.train[i] > 0)
+            self.assertAll(sdtime.train[i] <= 30)
+            n_in_range = np.sum((sd.train[i] > 20) & (sd.train[i] <= 50))
+            self.assertTrue(len(sdtime.train[i]) == n_in_range)
+
+        # Check subtime() with ... first argument.
+        sdtime = sd.subtime(..., 50)
+        for i in range(len(sd.train)):
+            self.assertAll(sdtime.train[i] > 0)
+            self.assertAll(sdtime.train[i] <= 50)
+            n_in_range = np.sum(sd.train[i] <= 50)
+            self.assertTrue(len(sdtime.train[i]) == n_in_range)
+
+        # Check subtime() with ... second argument.
+        sdtime = sd.subtime(20, ...)
+        for i in range(len(sd.train)):
+            self.assertAll(sdtime.train[i] > 0)
+            self.assertAll(sdtime.train[i] <= 80)
+            n_in_range = np.sum(sd.train[i] > 20)
             self.assertTrue(len(sdtime.train[i]) == n_in_range)
 
         # Test consistency between subtime() and frames().

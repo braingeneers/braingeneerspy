@@ -113,10 +113,30 @@ class SpikeData():
         return self.__class__(train, length=self.length, N=len(units))
 
     def subtime(self, start, end):
-        'Return a new SpikeData with only spikes in a time range.'
-        train = [t[(t >= start) & (t < end)] - start
+        '''
+        Return a new SpikeData with only spikes in a time range,
+        closed on top but open on the bottom unless the lower bound is
+        zero, consistent with the binning methods.
+
+        Start and end can be negative, in which case they are counted
+        backwards from the end. They can also be None or Ellipsis,
+        which results in only paying attention to the other bound.
+        '''
+        if start is None or start is Ellipsis:
+            start = 0
+        elif start < 0:
+            start += self.length
+
+        if end is None or end is Ellipsis:
+            end = self.length
+        elif end < 0:
+            end += self.length
+
+        # Special case out the start=0 case by nopping the comparison.
+        lower = start if start > 0 else -np.inf
+        train = [t[(t > lower) & (t <= end)] - start
                  for t in self.train]
-        return self.__class__(train, length=end-start, N=self.N)
+        return self.__class__(train, length=end - start, N=self.N)
 
     def sparse_raster(self, bin_size=20):
         '''
