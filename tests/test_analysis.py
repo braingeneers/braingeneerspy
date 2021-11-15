@@ -9,9 +9,18 @@ DerpNeuron = namedtuple('Neuron', 'spike_time fs')
 class AnalysisTest(unittest.TestCase):
 
     def assertSpikeDataEqual(self, sda, sdb, msg=None):
+        'Assert that two SpikeData objects contain the same data.'
         for a,b in zip(sda.train, sdb.train):
             self.assertTrue(len(a) == len(b) and np.allclose(a, b),
                             msg=msg)
+
+    def assertAll(self, bools, msg=None):
+        'Assert that two arrays are equal elementwise.'
+        self.assertTrue(np.all(bools), msg=msg)
+
+    def assertClose(self, a, b, msg=None, **kw):
+        'Assert that two arrays are equal within tolerance.'
+        self.assertTrue(np.allclose(a, b, **kw), msg=msg)
 
     def test_spike_data(self):
         # Generate a bunch of random spike times and indices.
@@ -20,7 +29,7 @@ class AnalysisTest(unittest.TestCase):
 
         # Test two-argument constructor and spike time list.
         sd = ba.SpikeData(idces, times)
-        self.assertTrue(np.all(np.sort(times) == list(sd.times)))
+        self.assertAll(np.sort(times) == list(sd.times))
 
         # Make sure the length is being autodetected correctly.
         self.assertEqual(sd.length, times.max())
@@ -51,7 +60,7 @@ class AnalysisTest(unittest.TestCase):
         idces = [1, 2, 3]
         sdsub = sd.subset(idces)
         for i,j in enumerate(idces):
-            self.assertTrue(np.all(sdsub.train[i] == sd.train[j]))
+            self.assertAll(sdsub.train[i] == sd.train[j])
 
         # Test subtime() constructor idempotence.
         sdtimefull = sd.subtime(0, 100)
@@ -60,8 +69,8 @@ class AnalysisTest(unittest.TestCase):
         # Test subtime() constructor actually grabs subsets.
         sdtime = sd.subtime(20, 50)
         for i in range(len(sd.train)):
-            self.assertTrue(np.all(sdtime.train[i] >= 0))
-            self.assertTrue(np.all(sdtime.train[i] < 30))
+            self.assertAll(sdtime.train[i] >= 0)
+            self.assertAll(sdtime.train[i] < 30)
             n_in_range = np.sum((sd.train[i] >= 20) & (sd.train[i] < 50))
             self.assertTrue(len(sdtime.train[i]) == n_in_range)
 
@@ -85,7 +94,7 @@ class AnalysisTest(unittest.TestCase):
 
         # Try both a sparse and a dense raster.
         self.assertEqual(sd.raster().sum(), N)
-        self.assertTrue(np.all(sd.sparse_raster() == sd.raster()))
+        self.assertAll(sd.sparse_raster() == sd.raster())
 
         # Make sure the length of the raster is going to be consistent
         # no matter how many spikes there are.
@@ -105,12 +114,12 @@ class AnalysisTest(unittest.TestCase):
         ground_truth = [[1, 1, 0, 1]]
         sd = ba.SpikeData([0,0,0], [0,20,40])
         self.assertEqual(sd.length, 40)
-        self.assertTrue(np.all(sd.raster(10) == ground_truth))
+        self.assertAll(sd.raster(10) == ground_truth)
 
         # Also verify that binning rules are consistent between the
         # raster and other binning methods.
         binned = np.array([list(sd.binned(10))])
-        self.assertTrue(np.all(sd.raster(10) == binned))
+        self.assertAll(sd.raster(10) == binned)
 
 
     def test_pearson(self):
@@ -130,7 +139,7 @@ class AnalysisTest(unittest.TestCase):
         raster = ba.SpikeData(idces, times + 0.5).sparse_raster(bin_size=1)
         print(raster.todense())
         print(ground_truth)
-        self.assertTrue(np.all(raster == ground_truth))
+        self.assertAll(raster == ground_truth)
 
         # Finally, check the calculated Pearson coefficients to ensure
         # they're numerically close enough to the intended values.
@@ -140,16 +149,16 @@ class AnalysisTest(unittest.TestCase):
             [-1, -1, 1, 0],
             [0, 0, 0, 1]]
         sparse_pearson = ba.pearson(raster)
-        self.assertTrue(np.allclose(sparse_pearson, true_pearson))
+        self.assertClose(sparse_pearson, true_pearson)
 
         # Test on dense matrices (fallback to np.pearson).
         dense_pearson = ba.pearson(raster.todense())
         np_pearson = np.corrcoef(raster.todense())
-        self.assertTrue(np.allclose(dense_pearson, np_pearson))
+        self.assertClose(dense_pearson, np_pearson)
 
         # Also check the calculations.
         self.assertEqual(dense_pearson.shape, sparse_pearson.shape)
-        self.assertTrue(np.allclose(dense_pearson, sparse_pearson))
+        self.assertClose(dense_pearson, sparse_pearson)
 
     def test_burstiness_index(self):
         # Something completely uniform should have zero burstiness,
@@ -179,7 +188,7 @@ class AnalysisTest(unittest.TestCase):
         self.assertEqual(len(ii), 1)
 
         # Also make sure multiple spike trains do the same thing.
-        ii = ba.SpikeData(ar%10, ar).interspike_intervals()
+        ii = ba.SpikeData(ar % 10, ar).interspike_intervals()
         self.assertEqual(len(ii), 10)
         for i in ii:
             self.assertTrue((i==10).all())
@@ -189,7 +198,7 @@ class AnalysisTest(unittest.TestCase):
         truth = np.random.rand(N)
         spikes = ba.SpikeData(np.zeros(N,int), truth.cumsum())
         ii = spikes.interspike_intervals()
-        self.assertTrue(np.allclose(ii[0], truth[1:]))
+        self.assertClose(ii[0], truth[1:])
 
     def test_fano_factors(self):
         N = 10000
@@ -225,7 +234,7 @@ class AnalysisTest(unittest.TestCase):
         foo = spikes(10).sparse_raster(10)
         f_sparse = ba.fano_factors(foo)
         f_dense = ba.fano_factors(foo.toarray())
-        self.assertTrue(np.allclose(f_sparse, f_dense))
+        self.assertClose(f_sparse, f_dense)
 
     def test_spike_time_tiling_ta(self):
         # Trivial base cases.
@@ -309,8 +318,6 @@ class AnalysisTest(unittest.TestCase):
             self.assertLessEqual(sttc, 1)
             self.assertGreaterEqual(sttc, -1)
 
-
-class AvalancheTest(unittest.TestCase):
     def test_binning_doesnt_lose_spikes(self):
         # Generate the times of a Poisson spike train, and ensure that
         # no spikes are lost in translation.
