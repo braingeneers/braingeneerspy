@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import shutil
 import scipy.io
+import braingeneers.utils.smart_open as smart_open
+from os import walk
+import braingeneers.utils.s3wrangler as wr
 
 
 def get_archive_path():
