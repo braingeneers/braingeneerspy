@@ -386,6 +386,31 @@ def create_overview(batch_uuid, experiment_num, with_spikes = True):
 
 
     plt.show()
-
     #path = "archive/features/overviews/{}/{}.npy".format(batch["uuid"], experiment["name"])
     #print(path)
+
+#Next 3 fcns are for loading data quickly from the maxwell,
+#assigning a path to a local kach dir "./ephys" if batch is synced
+#generate and return metadata, h5file, exp_jsons from UUID and possible recording locations
+#if theres a dir for the specified uuid, assign local experiment path, otherwise assign s3 experiment path
+def fast_batch_path(uuid):
+    if os.path.exists("/home/jovyan/Projects/maxwell_analysis/ephys/"+uuid):
+        uuid = "/home/jovyan/Projects/maxwell_analysis/ephys/"+uuid 
+        metadata = json.load(smart_open.open(uuid + 'metadata.json','r')) 
+    else:
+        uuid = "s3://braingeneers/ephys/"+uuid
+    print(uuid)
+    return uuid
+#get actual path to recording, not the name of the json from metadata
+def paths_2_each_exp():
+    try: 
+        objs = wr.list_objects(data_dir) #if on s3
+    except:
+        objs = next(walk(data_dir), (None, None, []))[2]   #if on local dir
+    return objs
+def connect_kach_dir():
+    global maxone_wetai_kach_dir
+    maxone_wetai_kach_dir = "/home/jovyan/Projects/maxwell_analysis/ephys/"
+    if not os.path.exists(maxone_wetai_kach_dir):
+        os.makedirs(maxone_wetai_kach_dir)
+    return maxone_wetai_kach_dir
