@@ -392,7 +392,7 @@ def create_overview(batch_uuid, experiment_num, with_spikes = True):
     #path = "archive/features/overviews/{}/{}.npy".format(batch["uuid"], experiment["name"])
     #print(path)
 
-#Next 3 fcns are for loading data quickly from the maxwell,
+#Next 4 fcns are for loading data quickly from the maxwell,
 #assigning a path to a local kach dir "./ephys" if batch is synced
 #generate and return metadata, h5file, exp_jsons from UUID and possible recording locations
 #if theres a dir for the specified uuid, assign local experiment path, otherwise assign s3 experiment path
@@ -404,6 +404,7 @@ def fast_batch_path(uuid):
         uuid = "s3://braingeneers/ephys/"+uuid
     print(uuid)
     return uuid
+
 #get actual path to recording, not the name of the json from metadata
 def paths_2_each_exp(data_dir):
     try: 
@@ -411,9 +412,17 @@ def paths_2_each_exp(data_dir):
     except:
         objs = next(walk(data_dir), (None, None, []))[2]   #if on local dir
     return objs
+
 def connect_kach_dir():
     global maxone_wetai_kach_dir
     maxone_wetai_kach_dir = "/home/jovyan/Projects/maxwell_analysis/ephys/"
     if not os.path.exists(maxone_wetai_kach_dir):
         os.makedirs(maxone_wetai_kach_dir)
     return maxone_wetai_kach_dir
+
+#will download nonexistant batches into the ./ephys dir on the wetAI ephys maxwell analyzer
+#Usage. Supply the batch_name for the batch you would like to download. 
+#If not downloaded into the local kach dir, it will be downloaded to improve loading time
+def sync_s3_to_kach(batch_name):
+    sync_command = f"aws --endpoint $ENDPOINT_URL s3 sync s3://braingeneers/ephys/"+batch_name+ f" /home/jovyan/Projects/maxwell_analysis/ephys/"+batch_name
+    os.system(sync_command)
