@@ -405,7 +405,7 @@ def fast_batch_path(uuid):
     print(uuid)
     return uuid
 #get actual path to recording, not the name of the json from metadata
-def paths_2_each_exp():
+def paths_2_each_exp(data_dir):
     try: 
         objs = wr.list_objects(data_dir) #if on s3
     except:
