@@ -258,6 +258,37 @@ class MessageBroker:
         result = self.redis_client.xread(streams=streams_exclusive, count=count if count >= 1 else None)
         return result
 
+
+    def list_devices_by_type(self, **filters) -> List[str]:
+        """
+        Lists devices, filtered by one or more keyword arguments. Returns
+        a list of device names in string format.
+        
+        request keyword list syntax:
+        
+        response = client.list_things(
+            nextToken='string',
+            maxResults=123,
+            attributeName='string',
+            attributeValue='string',
+            thingTypeName='string',
+            usePrefixAttributeValue=True|False
+        )
+
+        Example usage:
+        list_devices_by_type() 
+        list_devices_by_type(thingTypeName="picroscope")
+        list_devices_by_type(maxResults=10, thingTypeName="picroscope")
+
+        :param filters:
+        :return: a list of device names that match the filtering criteria.
+        """
+        
+        response = self.boto_iot_client.list_things(**filters)
+        ret_val = [thing['thingName'] for thing in response['things']]
+        return ret_val
+    
+    
     def list_devices(self, **filters) -> List[str]:
         """
         Lists active/connected devices, filtered by one or more state variables. Returns
