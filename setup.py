@@ -8,7 +8,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='braingeneerspy',
-    version='0.0.10',
+    version='0.0.11',
     python_requires='>=3.6.0',
     description='Braingeneers Python utilities',
     long_description=long_description,
