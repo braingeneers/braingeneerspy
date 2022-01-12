@@ -5,3 +5,5 @@ __pycache__
 .idea
 tmp/
 *.pyc
+build/
+.DS_Store
