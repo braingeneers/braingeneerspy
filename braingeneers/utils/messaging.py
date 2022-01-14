@@ -226,17 +226,6 @@ class MessageBroker:
         t.start()
         return callback
 
-    @staticmethod
-    def _update_timestamp_exclusive(timestamp: (str, bytes)):
-        # based on SO article this hacky method of incrementing the timestamp is necessary until Redis 6.2:
-        # https://stackoverflow.com/questions/66035607/redis-xrange-err-invalid-stream-id-specified-as-stream-command-argument
-        if timestamp not in ['-', b'-', '0-0']:
-            last_update_str = timestamp.decode('utf-8') if isinstance(timestamp, bytes) else timestamp
-            last_update_exclusive = last_update_str[:-1] + str(int(last_update_str[-1]) + 1)
-        else:
-            last_update_exclusive = '0-0'
-        return last_update_exclusive
-
     def poll_data_streams(self, stream_names_to_timestamps_dict: dict, count: int = -1) \
             -> List[List[Union[bytes, List[Tuple[bytes, Dict[bytes, bytes]]]]]]:
         """
@@ -417,6 +406,17 @@ class MessageBroker:
                     callback(stream_name, data_dict)
 
     @staticmethod
+    def _update_timestamp_exclusive(timestamp: (str, bytes)):
+        # based on SO article this hacky method of incrementing the timestamp is necessary until Redis 6.2:
+        # https://stackoverflow.com/questions/66035607/redis-xrange-err-invalid-stream-id-specified-as-stream-command-argument
+        if timestamp not in ['-', b'-', '0-0']:
+            last_update_str = timestamp.decode('utf-8') if isinstance(timestamp, bytes) else timestamp
+            last_update_exclusive = last_update_str[:-1] + str(int(last_update_str[-1]) + 1)
+        else:
+            last_update_exclusive = '0-0'
+        return last_update_exclusive
+
+    @staticmethod
     def _callback_handler(topic, payload, callback):
         """ Dispatches callbacks after performing json deserialization """
         message = json.loads(payload)
@@ -507,7 +507,7 @@ class MessageBroker:
             defaults to looking in `~/.aws/credentials` if left as None. This file expects to find profiles named
             'aws-braingeneers-iot' and 'redis' in it.
         """
-        self.name = name if name is not None else uuid.uuid4()
+        self.name = name if name is not None else str(uuid.uuid4())
         self.endpoint = endpoint
 
         if credentials is None:
@@ -555,6 +555,17 @@ class TemporaryEnvironment:
 class CallableQueue(queue.Queue):
     def __call__(self, *args):
         self.put(args)
+
+
+def start_local_redis_server(host: str = None, port: int = None) -> Tuple[str, int]:
+    """
+    Start a local redis service, if no parameters are provided a best guess at the local public IP interface
+    is used and non standard 6380 redis port is used to avoid confusion with the open loop redis port.
+    """
+    assert 'password' in config['redis'], 'Your AWS credentials file is malformed, ' \
+                                          'password was not found under the [redis] section.'
+    _redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=config['redis']['password'])
+    # todo working here
 
 
 # The AWS root certificate. Embedded here to avoid requiring installing it as a dependency.
