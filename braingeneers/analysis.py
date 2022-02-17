@@ -30,7 +30,7 @@ class SpikeData():
         rate saved in the Neuron object.
         '''
         if arg2 is not None:
-            self.train = _train_from_i_t_list(arg1, arg2)
+            self.train = _train_from_i_t_list(arg1, arg2, N)
         else:
             try:
                 self.train = [np.asarray(n.spike_time)/n.fs*1e3
@@ -340,14 +340,17 @@ class SpikeData():
         return DCCResult(dcc=dcc, p_size=p_size, p_duration=p_duration)
 
 
-def _train_from_i_t_list(idces, times):
+def _train_from_i_t_list(idces, times, N):
     '''
     Given lists of spike times and indices, produce a list whose
     ith entry is a list of the spike times of the ith unit.
     '''
     idces, times = np.asarray(idces), np.asarray(times)
+    if N is None:
+        N = idces.max() + 1
+
     ret = []
-    for i in range(idces.max()+1):
+    for i in range(N):
         ret.append(times[idces == i])
     return ret
 
