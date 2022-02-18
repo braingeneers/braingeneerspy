@@ -47,7 +47,7 @@ class MessageBroker:
         #
         # Publish/subscribe short messages
         #
-        publish_message(topic: str, message:dict)  # publish a message to a topic
+        publish_message(topic: str, message: (dict, list, str)))  # publish a message to a topic
         subscribe_message(topic: str, callback: Callable)  # subscribe to a topic, callable is a function with signature (topic: str, message: str)
 
         #
@@ -70,9 +70,6 @@ class MessageBroker:
         update_device_state(device: str, device_state: dict)  # updates one or more state variables for a registered device.
         set_device_state(device_name: str, state: dict)  # saves the shadow file, a dict that is JSON serializable.
         subscribe_device_state_change(device: str, device_state_keys: List[str], callback: Callable)  # subscribe to notifications when a device state changes.
-
-    Example usage:
-        TODO
 
     Useful documentation references:
         https://github.com/braingeneers/wiki/blob/main/shared/mqtt.md
@@ -247,7 +244,6 @@ class MessageBroker:
         result = self.redis_client.xread(streams=streams_exclusive, count=count if count >= 1 else None)
         return result
 
-
     def list_devices_by_type(self, **filters) -> List[str]:
         """
         Lists devices, filtered by one or more keyword arguments. Returns
@@ -276,7 +272,6 @@ class MessageBroker:
         response = self.boto_iot_client.list_things(**filters)
         ret_val = [thing['thingName'] for thing in response['things']]
         return ret_val
-    
     
     def list_devices(self, **filters) -> List[str]:
         """
@@ -555,17 +550,6 @@ class TemporaryEnvironment:
 class CallableQueue(queue.Queue):
     def __call__(self, *args):
         self.put(args)
-
-
-def start_local_redis_server(host: str = None, port: int = None) -> Tuple[str, int]:
-    """
-    Start a local redis service, if no parameters are provided a best guess at the local public IP interface
-    is used and non standard 6380 redis port is used to avoid confusion with the open loop redis port.
-    """
-    assert 'password' in config['redis'], 'Your AWS credentials file is malformed, ' \
-                                          'password was not found under the [redis] section.'
-    _redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=config['redis']['password'])
-    # todo working here
 
 
 # The AWS root certificate. Embedded here to avoid requiring installing it as a dependency.
