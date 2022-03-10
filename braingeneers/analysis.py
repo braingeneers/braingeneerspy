@@ -166,6 +166,19 @@ class SpikeData():
     def interspike_intervals(self):
         'Produce a list of arrays of interspike intervals per unit.'
         return [ts[1:] - ts[:-1] for ts in self.train]
+        
+    def log_histogram(self, bin_num=300):
+        '''
+        Logarithmic (log base 10) interspike interval histogram.
+        '''
+        intervals = self.interspike_intervals()
+        ret = []
+        for ts in intervals:
+            log_bins = np.logspace(np.log10(min(ts)), np.log10(max(ts)), bin_num+1)
+            hist, _ = np.histogram(ts, log_bins)
+            ret.append(hist)
+        
+        return ret
 
     def burstiness_index(self, bin_size=40):
         '''
