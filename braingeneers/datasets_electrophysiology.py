@@ -5,11 +5,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import shutil
 import h5py
-import scipy.io
 import braingeneers.utils.smart_open as smart_open
 from os import walk
 import braingeneers.utils.s3wrangler as wr
 from deprecated import deprecated
+from collections import namedtuple
+import datetime
+import time
+from braingeneers.utils import s3wrangler
+from concurrent.futures import ThreadPoolExecutor
+from typing import List
+import io
 
 
 def get_archive_path():
@@ -69,6 +75,7 @@ def load_experiment(batch_uuid, experiment_num):
         raise OSError('Are you sure experiment number ' + str(experiment_num) + ' exists?')
 
 
+@deprecated('Deprecating all load_files_* functions, use load_data instead.')
 def load_files_axion(metadata, batch_uuid, experiment_num, start, stop):
     """
     Load signal blocks of data from a single experiment
@@ -400,12 +407,11 @@ def load_data(batch_uuid, experiment_num, offset=0, length=-1, channels=None):
         if "Raspi" in metadata["hardware"]:
             dataset = load_data_raspi(metadata, batch_uuid, experiment_num, offset, length)
         elif "Axion" in metadata["hardware"]:
-            dataset = load_data_axion(metadata, batch_uuid, experiment_num, offset, length)
+            dataset = load_data_axion(metadata, batch_uuid, experiment_num, channels, offset, length)
         elif "Intan" in metadata["hardware"]:
             dataset = load_data_intan(metadata, batch_uuid, experiment_num, offset, length)
         elif "Maxwell" in metadata["hardware"]:
-            dataset = load_data_maxwell(metadata, batch_uuid, experiment_num, channels, offset,
-                                                        length)
+            dataset = load_data_maxwell(metadata, batch_uuid, experiment_num, channels, offset, length)
         else:
             raise Exception('hardware field in metadata.json must contain keyword Axion, Raspi, Intan, or Maxwell')
     else:  # assume intan
@@ -427,17 +433,63 @@ def load_data_raspi(metadata, batch_uuid, experiment_num, offset, length):
     raise NotImplementedError
 
 
-def load_data_axion(metadata, batch_uuid, experiment_num, offset, length):
+def load_data_axion(metadata: dict, batch_uuid: str, experiment_num: int,
+                    channels: List[int], offset: int, length: int):
     """
+    Reads from Axion raw data format using Python directly (not going through matlab scripts first).
+    Reader originally written by Dylan Yong, updated by David Parks.
 
-    :param metadata:
-    :param batch_uuid:
-    :param experiment_num:
-    :param offset:
-    :param length:
-    :return:
+    Limitations:
+     - Axion reader must read all channels, it then filters those to selected channels after reading all channel data.
+
+    :param metadata: result of load_experiment
+    :param batch_uuid: uuid, example: 2020-07-06-e-MGK-76-2614-Wash
+    :param experiment_num: currently unused, could be used to select well 0-5 in future updates
+    :param channels: a list of channels
+    :param offset: data offset (spans full experiment, across files)
+    :param length: data read length in frames (e.g. data points, agnostic of channel count)
+    :return: ndarray in (channels, frames) format where channels 0:64 are well A1, 64:128 are well A2, etc.
     """
-    raise NotImplementedError
+    data_multi_file = []
+
+    # get subset of files to read from metadata.blocks
+    metadata_offsets_cumsum = np.cumsum([block['num_frames'] for block in metadata['blocks']])
+    block_ixs_range = np.minimum(
+        len(metadata_offsets_cumsum),
+        np.searchsorted(metadata_offsets_cumsum, [offset, offset + length], side='right')
+    )
+    block_ixs = list(range(block_ixs_range[0], block_ixs_range[1] + 1))
+    assert len(block_ixs) > 0, \
+        f'No data file found starting from offset {offset}, is this past the end of the data file?'
+
+    # perform N read operations accumulating results in data_multi_file
+    frame_read_count = 0  # counter to track number of frames read across multiple files
+    for block_ix in block_ixs:
+        block = metadata['blocks'][block_ix]
+        file_name = block['path']
+        full_file_path = f's3://braingeneers/ephys/{batch_uuid}/original/data/{file_name}'
+        sample_start = max(0, offset - metadata_offsets_cumsum[block_ix] + block['num_frames'])
+        data_length = min(block['num_frames'], length - frame_read_count)
+        data_ndarray = _axion_get_data(
+            file_name=full_file_path,
+            file_data_start_position=block['axion_data_start_position'],
+            sample_offset=sample_start,
+            sample_length=data_length,
+            num_channels=metadata['num_channels'],
+            corrected_map=metadata['per_well_channel_map'],
+        )
+
+        # select channels
+        data_ndarray_select_channels = data_ndarray[channels, :] if channels is not None else data_ndarray
+
+        # append data from this block/file to list
+        data_multi_file.append(data_ndarray_select_channels)
+        frame_read_count += data_ndarray_select_channels.shape[1]
+
+    # concatenate the results and return
+    data_concat = np.concatenate(data_multi_file, axis=1)
+
+    return data_concat
 
 
 def load_data_intan(metadata, batch_uuid, experiment_num, offset, length):
@@ -680,9 +732,324 @@ def connect_kach_dir():
     return maxone_wetai_kach_dir
 
 
-# will download nonexistant batches into the ./ephys dir on the wetAI ephys maxwell analyzer
+# will download nonexistent batches into the ./ephys dir on the wetAI ephys maxwell analyzer
 # Usage. Supply the batch_name for the batch you would like to download.
 # If not downloaded into the local kach dir, it will be downloaded to improve loading time
 def sync_s3_to_kach(batch_name):
     sync_command = f"aws --endpoint $ENDPOINT_URL s3 sync s3://braingeneers/ephys/" + batch_name + f" /home/jovyan/Projects/maxwell_analysis/ephys/" + batch_name
     os.system(sync_command)
+
+
+# --- AXION READER -----------------------------
+def from_uint64(all_values):
+    """
+    FromUint64: Deserializes an entry record from its native 64
+    bit format in AxIS files.
+    ----------------64 Bits--------------
+    | ID (1 Byte) |   Length (7 Bytes)  |
+    -------------------------------------
+    Note that only the last entry in a file amy have length ==
+    (0x00ff ffff ffff  ffff) which denotes an entry that reads to
+    the end of the file. These entries have a length field == inf
+    when deserialized
+
+    :param all_values:
+    :return:
+    """
+
+    class EntryRecord:
+        def __init__(self, type, length):
+            self.type = type
+            self.length = length
+
+        LENGTH_MASK_HIGH = np.uint64(int('ffffff', 16))
+        LENGTH_MASK_LOW = np.uint64(int('ffffffff', 16))
+
+    return_list = []
+
+    # verify allValues is uint64
+    if type(all_values[0]) is not np.uint64:
+        print("allValues must be of type uint64")
+
+    # for every record in the list
+    for obj in all_values:
+
+        # this is missing a check to make sure the entry record is valid
+        # read the upper word (with ID field)
+        # have to cast the shift value to uint64 as well
+        fid = obj >> np.uint64(64-8)
+        # shift right 4 bytes and mask with LENGTH_MASK_HIGH
+        f_length = (obj >> np.uint64(64-32)) & EntryRecord.LENGTH_MASK_HIGH  # right 4 bytes
+
+        # start the check to see if this may be a 'read to the end'
+        f_is_inf = f_length == EntryRecord.LENGTH_MASK_HIGH
+        # shift left 4 bytes to be ANDed with lower word
+        f_length = f_length << np.uint64(32)
+        f_low_word = obj & EntryRecord.LENGTH_MASK_LOW        # read the lower word
+        # finish the check to see if this may be a 'read to the end'
+        f_is_inf = f_is_inf & (f_low_word == EntryRecord.LENGTH_MASK_LOW)
+        # recombine the upper and lower length portions
+        f_length = f_length | f_low_word
+
+        # create record fid and add to list of records
+        record = EntryRecord(fid, f_length)
+        return_list.append(record)
+
+    return return_list
+
+
+def axion_generate_metadata(batch_uuid: str, n_threads: int = 16):
+    """
+    Generates two JSON-ready dictionaries: metadata.json and experiment1.json from raw Axion data files
+    on S3 from a standard UUID. Assumes raw data files are stored in:
+
+        s3://braingeneers/ephys/YYYY-MM-DD-e-[descriptor]/original/data/*.raw
+
+    Raises an exception if no data files were found at the expected location.
+
+    All Axion recordings are assumed to be a single experiment.
+
+    Limitations:
+     - timestamps are not taken from the original data files, the current time is used.
+
+    :param batch_uuid: standard ephys UUID
+    :param n_threads: number of concurrent file reads (useful for parsing many network based files)
+    :return: (metadata_json: dict, experiment1_json: dict) a tuple of two dictionaries which are
+        json serializable to metadata.json and experiment1.json.
+    """
+    metadata_json = {}
+    experiment1_json = {}
+    current_timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%dT%H:%M:%S')
+
+    # construct metadata_json
+    metadata_json['experiments'] = ['experiment1.json']
+    metadata_json['issue'] = ''
+    metadata_json['notes'] = ''
+    metadata_json['timestamp'] = current_timestamp
+    metadata_json['uuid'] = batch_uuid
+
+    # construct experiment1_json
+    experiment1_json['blocks'] = []
+
+    # list raw data files at batch_uuid
+    list_of_raw_data_files = sorted(s3wrangler.list_objects(
+        path=f's3://braingeneers/ephys/{batch_uuid}/original/data/',
+        suffix='.raw',
+    ))
+    if len(list_of_raw_data_files) == 0:
+        raise FileNotFoundError(f'No raw data files found at s3://braingeneers/ephys/{batch_uuid}/original/data/*.raw')
+
+    with ThreadPoolExecutor(n_threads) as pool:
+        metadata_tuples_per_data_file = list(pool.map(_axion_generate_per_block_metadata, list_of_raw_data_files))
+
+    for metadata_tuple, raw_data_file in zip(metadata_tuples_per_data_file, list_of_raw_data_files):
+        data_start, data_length, num_channels, corrected_map, sampling_frequency, voltage_scale = metadata_tuple
+
+        assert data_length % num_channels % 2 == 0, f'Encountered an unexpected data_length of {data_length} ' \
+                                                    f'which is not evenly divisible by {num_channels} channels'
+
+        data_length = data_length // num_channels // 2
+
+        experiment1_json['blocks'].append({
+            'num_frames': data_length,
+            'path': os.path.basename(raw_data_file),
+            'timestamp': current_timestamp,
+            'axion_data_start_position': data_start,
+        })
+
+    # These values are only needed once and are the same for every file therefore taken from the first data file
+    data_start, data_length, num_channels, corrected_map, sampling_frequency, voltage_scale \
+        = metadata_tuples_per_data_file[0]
+    experiment1_json['per_well_channel_map'] = corrected_map
+    experiment1_json['hardware'] = 'Axion BioSystems'
+    experiment1_json['name'] = batch_uuid[13:]
+    experiment1_json['notes'] = ''
+    experiment1_json['num_channels'] = num_channels
+    experiment1_json['num_current_input_channels'] = 0
+    experiment1_json['num_voltage_channels'] = num_channels
+    experiment1_json['offset'] = 0
+    experiment1_json['sample_rate'] = int(sampling_frequency)
+    experiment1_json['voltage_scaling_factor'] = float(voltage_scale)
+    experiment1_json['timestamp'] = current_timestamp
+    experiment1_json['units'] = '\u00b5V'
+    experiment1_json['version'] = '1.0.0'
+
+    return metadata_json, experiment1_json
+
+
+def _axion_generate_per_block_metadata(filename: str):
+    """
+    Internal function
+
+    Generates the information necessary to create a metadata file for an Axion dataset.
+    This function should only be called when uploading the dataset to Axion, under normal
+    circumstances the metadata file is generated once at upload time and stored on S3.
+
+    :param filename: S3 or local axion raw data file, example:
+        "s3://braingeneers/ephys/2020-07-06-e-MGK-76-2614-Wash/raw/H28126_WK27_010320_Cohort_202000706_Wash(214).raw"
+    :return: start of data position in file, length of data section, number of channels,
+        mapping to correctly rearrange columns, sampling frequency, voltage scaling factor
+    """
+    ChannelData = namedtuple('ChannelData', 'wCol wRow eCol eRow')
+
+    with smart_open.open(filename, 'rb') as fid:
+
+        # replace frombuffer with 1 seek
+        fid.seek(26, 0)
+
+        # mark start for entries and get record list
+        buff = fid.read(8 * 124)  # replace two read calls below with this one
+        # buff = fid.read(8)
+        entries_start = np.frombuffer(buff[:8], dtype=np.uint64, count=1)
+        # buff = fid.read(8 * 123)
+        entry_slots = np.frombuffer(buff[8:], dtype=np.uint64, count=123)
+        record_list = from_uint64(entry_slots)
+
+        # % Start Reading Entries
+        fid.seek(entries_start[0], 0)
+        channel_map = []
+        corrected_map = []
+
+        # retrieve metadata from records
+        for obj in record_list:  # order is 1, 2, 7, 4, 6 - 6
+            if obj.type == 1:
+                start = fid.tell()
+                fid.seek(start + int(obj.length.item()), 0)
+
+            # map column correction
+            elif obj.type == 2:
+                start = fid.tell()
+                fid.seek(4, 1)
+
+                buff = fid.read(4)
+                num_channels = int(np.frombuffer(buff, dtype=np.uint32, count=1))
+                channel_map_node = ChannelData(None, None, None, None)
+
+                # determine the column ordering characteristics
+                buff = fid.read(8 * num_channels)  # single read for all channels, replaces read+seek calls commented below
+                for i in range(0, num_channels):
+                    buff_ix = i * 8
+                    # buff = fid.read(1)
+                    tw_col = np.frombuffer(buff[buff_ix + 0:buff_ix + 1], dtype=np.uint8, count=1)
+                    # buff = fid.read(1)
+                    tw_row = np.frombuffer(buff[buff_ix + 1:buff_ix + 2], dtype=np.uint8, count=1)
+                    # buff = fid.read(1)
+                    te_col = np.frombuffer(buff[buff_ix + 2:buff_ix + 3], dtype=np.uint8, count=1)
+                    # buff = fid.read(1)
+                    te_row = np.frombuffer(buff[buff_ix + 3:buff_ix + 4], dtype=np.uint8, count=1)
+                    # fid.seek(4, 1)
+
+                    channel_map_node = ChannelData(int(tw_col), int(
+                        tw_row), int(te_col), int(te_row))
+                    channel_map.append(channel_map_node)
+
+                for i in range(6):
+                    mini_map = [None] * int((num_channels / 6))
+                    corrected_map.append(mini_map)
+                # well = (row, col)
+                # A1 = (1,1) 1
+                # A2 = (1,2) 2
+                # A3 = (1,3) 3
+                # B1 = (2,1) 4
+                # B2 = (2,2) 5
+                # B3 = (2,3) 6
+                # determine what well the data is corresponding to
+                for idx, item in enumerate(channel_map):
+                    well = None
+                    if item.wRow == 1 and item.wCol == 1:
+                        well = 0
+                    elif item.wRow == 1 and item.wCol == 2:
+                        well = 1
+                    elif item.wRow == 1 and item.wCol == 3:
+                        well = 2
+                    elif item.wRow == 2 and item.wCol == 1:
+                        well = 3
+                    elif item.wRow == 2 and item.wCol == 2:
+                        well = 4
+                    elif item.wRow == 2 and item.wCol == 3:
+                        well = 5
+
+                    corrected_idx = ((item.eRow - 1) * 8) + (item.eCol - 1)
+                    assert corrected_idx is not None and well is not None and isinstance(corrected_idx, int)
+                    corrected_map[well][corrected_idx] = idx
+
+                fid.seek(start + int(obj.length.item()), 0)
+                if fid.tell() != start + obj.length:
+                    print('Unexpected Channel array length')
+
+            elif obj.type == 3:
+                continue
+
+            elif obj.type == 4:
+                start = fid.tell()
+                data_start = fid.tell()
+                fid.seek(start + int(obj.length.item()), 0)
+                data_length = int(obj.length.item())
+
+            elif obj.type == 5:
+                continue
+
+            elif obj.type == 6:
+                continue
+
+            elif obj.type == 7:
+                start = fid.tell()
+                fid.seek(8, 1)
+
+                # sampling frequency
+                buff = fid.read(8)
+                sampling_frequency = np.frombuffer(buff, dtype=np.double, count=1)
+                # print(f'sampling_frequency: {sampling_frequency}')
+                # voltage scale
+                buff = fid.read(8)
+                voltage_scale = np.frombuffer(buff, dtype=np.double, count=1)
+                # print(f'voltage_scale: {voltage_scale}')
+
+                fid.seek(start + int(obj.length.item()), 0)
+
+    return data_start, data_length, num_channels, corrected_map, sampling_frequency, voltage_scale
+
+
+def _axion_get_data(file_name, file_data_start_position,
+                    sample_offset, sample_length,
+                    num_channels, corrected_map):
+    """
+    :param file_name: file name
+    :param file_data_start_position: data start position in file as returned by metadata
+    :param sample_offset: number of frames to skip from beginning of file
+    :param sample_length: length of data section in frames (agnostic of channel count)
+    :param num_channels:
+    :param corrected_map: mapping to correctly rearrange columns
+    :return:
+    """
+    with smart_open.open(file_name, 'rb') as fid:
+        # --- GET DATA ---
+        total_num_samples = sample_length * num_channels
+
+        fid.seek(file_data_start_position, io.SEEK_SET)
+        fid.seek(2 * num_channels * sample_offset, io.SEEK_CUR)
+        buff = fid.read(2 * int(total_num_samples))
+        temp_raw_data = np.frombuffer(buff, dtype=np.int16, count=int(total_num_samples))
+
+        f_remainder_count = len(temp_raw_data) % num_channels
+        if f_remainder_count > 0:
+            raise AttributeError(f'Wrong number of samples for {num_channels} channels')
+
+        temp_raw_data_reshaped = np.reshape(temp_raw_data, (num_channels, -1), order='F')
+        # print(temp_raw_data_reshaped.shape)
+        final_raw_data_reshaped = temp_raw_data_reshaped.copy()
+
+        # reformatting the data to match the data map
+        # variable is called correctedMap
+        for wellIdx, well in enumerate(corrected_map):
+            for colIdx, column in enumerate(well):
+                final_idx = wellIdx * 64 + colIdx
+                final_raw_data_reshaped[final_idx] = temp_raw_data_reshaped[column]
+
+        # A1 = (1,1) 0-63
+        # A2 = (1,2) 64-127
+        # A3 = (1,3) 128-191
+        # B1 = (2,1) 192-255
+        # B2 = (2,2) 256-319
+        # B3 = (2,3) 320-383
+        return final_raw_data_reshaped

@@ -28,8 +28,6 @@ setup(
         'numpy',
         'scipy',
         'boto3==1.17.96',  # depends on awscrt==0.11.22
-        'awsiotsdk==1.6.0',
-        'redis',
         'smart_open>=5.1.0',
         'tenacity',
         'awswrangler',
@@ -37,6 +35,7 @@ setup(
     ],
     extras_require={
         'torch': ['torch'],
-        'all': ['torch', 'awscrt']
+        'iot': ['awsiotsdk==1.6.0', 'redis'],
+        'all': ['torch', 'awscrt'],
     },
     include_package_data=True)
