@@ -1,5 +1,6 @@
 import heapq
 import numpy as np
+import scipy
 from scipy import sparse, special, optimize
 import itertools
 from collections import namedtuple
@@ -166,19 +167,59 @@ class SpikeData():
     def interspike_intervals(self):
         'Produce a list of arrays of interspike intervals per unit.'
         return [ts[1:] - ts[:-1] for ts in self.train]
-        
+
+    def skewness(self):
+        'Skewness of interspike interval distribution.'
+        intervals = self.interspike_intervals()
+        return [scipy.stats.skew(intl) for intl in intervals]
+
     def log_histogram(self, bin_num=300):
         '''
         Logarithmic (log base 10) interspike interval histogram.
+        Return histogram and bins in log10 scale.
         '''
         intervals = self.interspike_intervals()
         ret = []
+        ret_logbins = []
         for ts in intervals:
             log_bins = np.logspace(np.log10(min(ts)), np.log10(max(ts)), bin_num+1)
             hist, _ = np.histogram(ts, log_bins)
             ret.append(hist)
-        
+            ret_logbins.append(logbins)
+        return ret, ret_logbins
+
+    def cumulative_moving_average(self, hist):
+        'The culmulative moving average for a histogram. Return a list of CMA.'
+        ret = []
+        for h in hist:
+            cma = 0
+            cma_list = []
+            for i in range(len(h)):
+                cma = (cma * i + h[i]) / (i+1)
+                cma_list.append(cma)
+            ret.append(cma_list)
         return ret
+
+    def isi_threshold_cma(self, hist, bins, coef=1):
+        '''
+        Calculate interspike interval threshold from cumulative moving average[1]. Return threshold.
+        The threshold is the corresponding bin that has the max CMA on the interspike interval histogram.
+        Histogram and bins are default to logarithm. 'coef' is an input variable for threshold.
+        [1] Kapucu, Fikret Emre, et al. Frontiers in computational neuroscience 6 (2012): 38.
+        '''
+        isi_thr = []
+        for n in range(len(hist)):
+            h = hist[n]
+            max_idx = 0
+            cma = 0
+            cma_list = []
+            for i in range(len(h)):
+                cma = (cma * i + h[i]) / (i+1)
+                cma_list.append(cma)
+            max_idx = np.argmax(cma_list)
+            thr = (bins[n][max_idx+1]) * coef
+            isi_thr.append(thr)
+        return isi_thr
 
     def burstiness_index(self, bin_size=40):
         '''
@@ -556,3 +597,27 @@ def power_law_significance(M, τ, x0, xM, ks=None, N=1000):
             _power_law_sample(M, τ, x0, xM), τ, x0, xM) > ks
         for _ in range(N)
     ])
+
+def burst_detection(spike_times, burst_threshold, spike_num_thr=3):
+    '''
+    Detect burst from spike times with a interspike interval threshold (burst_threshold) and a spike number threshold (spike_num_thr).
+    Returns:
+        spike_num_list -- a list of burst features [index of burst start point, number of spikes in this burst]
+        burst_set -- a list of spike times of all the bursts.
+    '''
+    spike_num_burst = 1
+    spike_num_list = []
+    for i in range(len(spike_times)-1):
+        if spike_times[i+1] - spike_times[i] <= burst_threshold:
+            spike_num_burst += 1
+        else:
+            if spike_num_burst >= spike_num_thr:
+                spike_num_list.append([i-spike_num_burst+1, spike_num_burst])
+                spike_num_burst = 1
+            else:
+                spike_num_burst = 1
+    burst_set = []
+    for loc in spike_num_list:
+        for i in range(loc[1]):
+            burst_set.append(spike_times[loc[0]+i])
+    return spike_num_list, burst_set
