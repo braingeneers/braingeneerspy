@@ -1,3 +1,5 @@
+from warnings import warn
+warn(f'The module is deprecated. Use the specific derived \'datasets\' modules instead.', DeprecationWarning, stacklevel=2 )
 import os
 import json
 import requests
@@ -5,6 +7,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import numpy as np
 import shutil
+from utils import smart_open
+
 
 def get_archive_path():
     """/public/groups/braingeneers/ephys  Return path to archive on the GI public server """
@@ -12,8 +16,7 @@ def get_archive_path():
 
 def get_archive_url():
     """  https://s3.nautilus.optiputer.net/braingeneers/ephys     Return URL to archive on PRP """
-    return "{}/braingeneers/ephys".format(
-        os.getenv("AWS_S3_ENDPOINT", "https://s3.nautilus.optiputer.net"))
+    return "{}/ephys".format(os.getenv("BRAINGENEERS_ARCHIVE_URL", "s3://braingeneers"))
     
 def load_batch(batch_uuid):
     """
@@ -24,17 +27,17 @@ def load_batch(batch_uuid):
         UUID of batch of experiments within the Braingeneer's archive'
         Example: 2019-02-15, or d820d4a6-f59a-4565-bcd1-6469228e8e64
     """
-    full_path = "{}/{}/derived/metadata.json".format(get_archive_path(), batch_uuid)
-    if os.path.exists(full_path):
-        with open(full_path, "r") as f:
-            return json.load(f)
 
-    full_path_for_prp = "{}/{}/derived/metadata.json".format(get_archive_url(), batch_uuid)
-    r = requests.get(full_path_for_prp)
-    if r.ok:
-        return r.json()
-    else:
-        raise Exception('Are you sure '+ batch_uuid+ ' is the right uuid?')
+    try:
+        full_path = "{}/{}/metadata.json".format(get_archive_path(), batch_uuid)
+        if not os.path.exists(full_path):
+            full_path = "{}/{}/metadata.json".format(get_archive_url(), batch_uuid)
+
+        with smart_open.open(full_path, "r") as f:
+            return json.load(f)
+    except OSError:
+        raise OSError('Are you sure ' + batch_uuid + ' is the right uuid?')
+
     
 def load_experiment(batch_uuid, experiment_num):
     """
@@ -51,22 +54,15 @@ def load_experiment(batch_uuid, experiment_num):
         All of the metadata associated with this experiment
     """
     batch = load_batch(batch_uuid)
-    full_path = "{}/{}/derived/{}".format(
-        get_archive_path(), batch_uuid,batch["experiments"][experiment_num])
+    try:
+        exp_full_path = "{}/{}/original/{}".format(get_archive_path(), batch_uuid, batch['experiments'][experiment_num])
+        if not os.path.exists(exp_full_path):
+            exp_full_path = "{}/{}/original/{}".format(get_archive_url(), batch_uuid, batch['experiments'][experiment_num])
 
-    if os.path.exists(full_path):
-        with open(full_path, "r") as f:
+        with smart_open.open(exp_full_path, "r") as f:
             return json.load(f)
-
-    # Each experiment has a metadata file with all *.rhd headers and other sample info
-    
-    full_path_for_prp = str(get_archive_url()) + '/' + batch_uuid +'/derived/' +  batch["experiments"][experiment_num]
-    r = requests.get(full_path_for_prp)
-    if r.ok:
-        return r.json()
-    else:
-        raise Exception('Are you sure '+ str(experiment_num)+ ' an experiment number?')
-        
+    except OSError:
+        raise OSError('Are you sure ' + batch_uuid + ' is the right uuid?')
         
 def load_blocks(batch_uuid, experiment_num, start=0, stop=None):
     """

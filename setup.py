@@ -27,11 +27,16 @@ setup(
         'requests',
         'numpy',
         'scipy',
-        'boto3==1.17.96',   # depends on awscrt==0.11.22
+        'boto3==1.17.96',  # depends on awscrt==0.11.22
         'awsiotsdk==1.6.0',
         'redis',
         'smart_open>=5.1.0',
         'tenacity',
         'awswrangler',
+
     ],
+    extras_require={
+        'torch': ['torch'],
+        'all': ['torch', 'awscrt']
+    },
     include_package_data=True)
