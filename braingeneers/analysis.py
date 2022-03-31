@@ -202,10 +202,11 @@ class SpikeData():
 
     def isi_threshold_cma(self, hist, bins, coef=1):
         '''
-        Calculate interspike interval threshold from cumulative moving average[1]. Return threshold.
-        The threshold is the corresponding bin that has the max CMA on the interspike interval histogram.
-        Histogram and bins are default to logarithm. 'coef' is an input variable for threshold.
-        [1] Kapucu, Fikret Emre, et al. Frontiers in computational neuroscience 6 (2012): 38.
+        Calculate interspike interval threshold from cumulative moving average[1]. 
+        Return threshold.The threshold is the bin that has the max CMA 
+        on the interspike interval histogram. Histogram and bins are default 
+        to logarithm. 'coef' is an input variable for threshold.
+        [1] Kapucu, et al. Frontiers in computational neuroscience 6 (2012): 38.
         '''
         isi_thr = []
         for n in range(len(hist)):
@@ -600,9 +601,11 @@ def power_law_significance(M, τ, x0, xM, ks=None, N=1000):
 
 def burst_detection(spike_times, burst_threshold, spike_num_thr=3):
     '''
-    Detect burst from spike times with a interspike interval threshold (burst_threshold) and a spike number threshold (spike_num_thr).
+    Detect burst from spike times with a interspike interval 
+    threshold (burst_threshold) and a spike number threshold (spike_num_thr).
     Returns:
-        spike_num_list -- a list of burst features [index of burst start point, number of spikes in this burst]
+        spike_num_list -- a list of burst features 
+          [index of burst start point, number of spikes in this burst]
         burst_set -- a list of spike times of all the bursts.
     '''
     spike_num_burst = 1
