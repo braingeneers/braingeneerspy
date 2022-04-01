@@ -28,11 +28,8 @@ class AnalysisTest(unittest.TestCase):
         idces = np.random.randint(5, size=100)
 
         # Test two-argument constructor and spike time list.
-        sd = ba.SpikeData(idces, times)
+        sd = ba.SpikeData(idces, times, length=100.0)
         self.assertAll(np.sort(times) == list(sd.times))
-
-        # Make sure the length is being autodetected correctly.
-        self.assertEqual(sd.length, times.max())
 
         # Test event-list constructor.
         sd1 = ba.SpikeData(list(zip(idces, times)))
@@ -80,6 +77,11 @@ class AnalysisTest(unittest.TestCase):
             self.assertAll(sdtime.train[i] > 0)
             self.assertAll(sdtime.train[i] <= 30)
             n_in_range = np.sum((sd.train[i] > 20) & (sd.train[i] <= 50))
+            print(sd.length)
+            print(sdtime.length)
+            print(n_in_range, len(sdtime.train[i]))
+            print(sdtime.train[i])
+            print(sd.train[i])
             self.assertTrue(len(sdtime.train[i]) == n_in_range)
 
         # Check subtime() with ... first argument.

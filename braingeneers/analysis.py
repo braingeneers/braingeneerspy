@@ -1,9 +1,11 @@
 import heapq
 import numpy as np
-import scipy
-from scipy import sparse, special, optimize
+from scipy import sparse, stats
 import itertools
 from collections import namedtuple
+import powerlaw
+import os
+import contextlib
 
 
 DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
@@ -39,13 +41,13 @@ class SpikeData():
                 if all([len(arg)==2 for arg in arg1]):
                     idces = [i for i,_ in arg1]
                     times = [t for i,t in arg1]
-                    self.train = _train_from_i_t_list(idces, times)
+                    self.train = _train_from_i_t_list(idces, times, N)
                 else:
                     self.train = arg1
 
         # Make sure each individual spike train is sorted, because
         # none of the formats guarantee this but all the algorithms
-        # expect it.
+        # expect it. This also copies each array to avoid aliasing.
         self.train = [np.sort(times) for times in self.train]
 
         # The length of the spike train defaults to the last spike
@@ -171,7 +173,7 @@ class SpikeData():
     def skewness(self):
         'Skewness of interspike interval distribution.'
         intervals = self.interspike_intervals()
-        return [scipy.stats.skew(intl) for intl in intervals]
+        return [stats.skew(intl) for intl in intervals]
 
     def log_histogram(self, bin_num=300):
         '''
@@ -182,10 +184,10 @@ class SpikeData():
         ret = []
         ret_logbins = []
         for ts in intervals:
-            log_bins = np.logspace(np.log10(min(ts)), np.log10(max(ts)), bin_num+1)
+            log_bins = np.geomspace(min(ts), max(ts), bin_num+1)
             hist, _ = np.histogram(ts, log_bins)
             ret.append(hist)
-            ret_logbins.append(logbins)
+            ret_logbins.append(log_bins)
         return ret, ret_logbins
 
     def cumulative_moving_average(self, hist):
@@ -202,11 +204,13 @@ class SpikeData():
 
     def isi_threshold_cma(self, hist, bins, coef=1):
         '''
-        Calculate interspike interval threshold from cumulative moving average[1]. 
-        Return threshold.The threshold is the bin that has the max CMA 
-        on the interspike interval histogram. Histogram and bins are default 
-        to logarithm. 'coef' is an input variable for threshold.
-        [1] Kapucu, et al. Frontiers in computational neuroscience 6 (2012): 38.
+        Calculate interspike interval threshold from cumulative moving
+        average [1]. The threshold is the bin that has the max CMA on
+        the interspike interval histogram. Histogram and bins are
+        logarithmic by default. `coef` is an input variable for
+        threshold.
+
+        [1] Kapucu, et al. Frontiers in computational neuroscience 6 (2012): 38
         '''
         isi_thr = []
         for n in range(len(hist)):
@@ -308,7 +312,8 @@ class SpikeData():
             sizes.append(sum(avalanche))
         return np.array(durations), np.array(sizes)
 
-    def deviation_from_criticality(self, thresh, bin_size=40, N=1000):
+    def deviation_from_criticality(self, quantile=0.35, bin_size=40,
+                                   N=1000, pval_truncated=0.05):
         '''
         Calculates the deviation from criticality according to the
         method of Ma et al. (2019), who used the relationship of the
@@ -321,19 +326,40 @@ class SpikeData():
             Cortical circuit dynamics are homeostatically tuned to
             criticality in vivo. Neuron 104, 655-664.e4 (2019).
         '''
-        # Gather durations and sizes, and fit power laws.
-        durations, sizes = self.duration_size(thresh, bin_size)
-        fit_duration = power_law_fit(durations)
-        fit_size = power_law_fit(sizes)
+        # Calculate the spike count threshold corresponding to
+        # the given quantile.
+        thresh = np.quantile(self.raster(bin_size).sum(0), quantile)
 
-        # Calculate significance using N data points.
-        M = len(durations)
-        p_duration = power_law_significance(M, *fit_duration, N)
-        p_size = power_law_significance(M, *fit_size, N)
+        def p_and_alpha(data, fit):
+            stat, p = fit.distribution_compare('power_law',
+                                               'truncated_power_law',
+                                               nested=True)
+            if stat < 0 and p < pval_truncated:
+                dist = fit.truncated_power_law
+            else:
+                dist = fit.power_law
+
+            ks = stats.ks_1samp(data, dist.cdf)
+            p = np.mean([stats.ks_1samp(dist.generate_random(len(data)),
+                                        dist.cdf) > ks
+                         for _ in range(N)])
+            return p, dist.alpha
+
+        with open(os.devnull, 'w') as f, \
+                contextlib.redirect_stdout(f), \
+                contextlib.redirect_stderr(f):
+            # Gather durations and sizes, and fit power laws.
+            durations, sizes = self.duration_size(thresh, bin_size)
+            fit_duration = powerlaw.Fit(durations)
+            fit_size = powerlaw.Fit(sizes)
+
+            # Calculate significance using N data points.
+            p_size, alpha_size = p_and_alpha(sizes, fit_size)
+            p_duration, alpha_duration = p_and_alpha(durations, fit_duration)
 
         # Fit and predict the dynamical critical exponent.
         τ_fit = np.polyfit(np.log(durations), np.log(sizes), 1)[0]
-        τ_pred = (fit_duration[0] - 1) / (fit_size[0] - 1)
+        τ_pred = (alpha_duration - 1) / (alpha_size - 1)
         dcc = abs(τ_pred - τ_fit)
 
         # Return the DCC value and significance.
@@ -454,160 +480,13 @@ def pearson(spikes):
     np.fill_diagonal(corr, 1)
     return corr
 
-def _power_law_pmf(X, τ, x0, xM):
-    '''
-    Evaluate the probability mass function for a discrete power law at
-    point(s) X, with exponent τ, minimum value x0, and maximum xM.
-    '''
-    X = np.atleast_1d(X)
-    ret = np.zeros(len(X))
-    mask = (X >= x0) & (X <= xM)
-    ret[mask] = X[mask]**-τ
-    sum_from_xM = special.zeta(τ, xM+1)
-    sum_from_x0 = special.zeta(τ, x0)
-    return ret / (sum_from_x0 - sum_from_xM)
-
-def _power_law_cdf(X, τ, x0, xM):
-    '''
-    Evaluate the cumulative distribution function for a discrete power
-    law at point(s) X with exponent τ, minimum x0, and maximum xM.
-    '''
-    X = np.int32(np.atleast_1d(X))
-    ret = np.zeros(len(X))
-    ret[X >= xM] = 1
-    sum_from_xM = special.zeta(τ, xM+1)
-    sum_from_x0 = special.zeta(τ, x0)
-    renorm = sum_from_x0 - sum_from_xM
-    mask = (X >= x0) & (X < xM)
-    ret[mask] = (sum_from_x0 - special.zeta(τ, X[mask]+1)) / renorm
-    return ret
-
-def _power_law_one_sample(τ, x0, xM):
-    '''
-    Sample from a discrete power law using the method of inverses by
-    directly searching for a numerical solution [1], plus rejection
-    sampling to implement the maximum. Shockingly, this is
-    significantly faster than scipy.stats.zipfian.
-
-    [1] Clauset, A., Shalizi, C. R. & Newman, M. E. J. Power-law
-        distributions in empirical data. SIAM Rev. 51, 661–703 (2009).
-    '''
-    z0 = special.zeta(τ, x0)
-    zM = special.zeta(τ, xM)
-    zT = zM + (z0-zM) * np.random.rand()
-    x1, x2 = x0, xM
-    while x2 - x1 > 1:
-        xmid = int((x1 + x2)//2)
-        if special.zeta(τ, xmid) < zT:
-            x2 = xmid
-        else:
-            x1 = xmid
-    return x1
-
-def _power_law_sample(M, τ, x0, xM):
-    '''
-    Sample random variables from a discrete power law using the
-    inverse method of _powser_law_one_sample().
-    '''
-    return np.array([_power_law_one_sample(τ, x0, xM)
-                     for _ in range(M)])
-
-def _power_law_log_likelihood(X, τ, x0, xM):
-    '''
-    Calculate log likelihood for a dataset X of avalanche sizes with
-    power law exponent τ and minimum and maximum values x0 and xM.
-    '''
-    sum_from_xM = special.zeta(τ, xM+1)
-    sum_from_x0 = special.zeta(τ, x0)
-    return -τ*np.log(X).mean() - np.log(sum_from_x0 - sum_from_xM)
-
-def _power_law_ks_1samp(X, τ, x0, xM):
-    '''
-    Calculate the one-sample Kolmogorov-Smirnoff test statistic for
-    a given dataset X under a provided discrete power law fit with
-    exponent τ and minimum and maximum values x0 and xM.
-    '''
-    X = X[(X >= x0) & (X <= xM)]
-    vals, cnts = np.unique(X, return_counts=True)
-    emp_cdf = np.cumsum(cnts / len(X))
-    cdf = _power_law_cdf(vals, τ, x0, xM)
-    return np.abs(cdf - emp_cdf).max()
-
-def power_law_fit(X, approximate=False):
-    '''
-    Fit a truncated discrete power law to a collection of integers `X`
-    as is common in neuroscience literature [1]. Finds the largest
-    possible maximum avalanche size for which the best fit satisfies
-    a Kolmogorov-Smirnoff statistic condition for some reasonable
-    value of the minimum. Returns the exponent, minimum and maximum
-    vaules for the fit, and the calculated Kolmogorov-Smirnoff
-    statistic. Optionally, use an approximate closed form of the
-    maximum likelihood calculation [2], which may be faster sometimes.
-
-    [1] Shew, W. L. et al. Adaptation to sensory input tunes visual
-        cortex to criticality. Nature Physics 11, 659–663 (2015).
-    [2] Clauset, A., Shalizi, C. R. & Newman, M. E. J. Power-law
-        distributions in empirical data. SIAM Rev. 51, 661–703 (2009).
-    '''
-    Xfull = X
-    Xvals = np.unique(Xfull)
-    best = 2.0, Xvals[0], Xvals[-1], 1.0
-    xMAX = int(Xvals[-1] * Xvals[-1]/Xvals[-2])
-    xMIN = max(Xvals[0] - 1, 1)
-    for xM in itertools.count(xMAX, -1):
-        Xbelow = Xfull[Xfull <= xM]
-        for x0 in itertools.count(xMIN):
-            X = Xbelow[Xbelow >= x0]
-            if len(X) < 0.9*len(Xfull):
-                if x0 == xMIN:
-                    return best
-                else:
-                    break
-
-            if approximate:
-                τ = 1 + len(X)/np.log(X / (x0 - 0.5)).sum()
-            else:
-                τ = optimize.minimize_scalar(
-                    lambda τ: -_power_law_log_likelihood(X,τ,x0,xM),
-                    bounds=(1,4), method='bounded').x
-
-            # Choose the first fit with sufficiently low KS statistic,
-            # but if none attains the mark, return the best.
-            ks = _power_law_ks_1samp(X, τ, x0, xM)
-            if ks < best[-1]:
-                best = τ, x0, xM, ks
-            if ks*ks < 1/len(X):
-                return best
-
-def power_law_significance(M, τ, x0, xM, ks=None, N=1000):
-    '''
-    Estimate the significance level of the hypothesis that the
-    provided dataset `X` is drawn from a different distribution than
-    a power law with the given parameters, by sampling `N` surrogate
-    datasets from that distribution with the same size as `X` and
-    returning what fraction of them have worse Kolmogorov-Smirnoff
-    statistic.
-    '''
-    try:
-        X = M[(M >= x0) & (M <= xM)]
-        M = len(X)
-        ks = _power_law_ks_1samp(X, τ, x0, xM) if ks is None else ks
-    except TypeError:
-        if ks is None:
-            raise ValueError('Must provide ks statistic or full sample.')
-
-    return np.mean([
-        _power_law_ks_1samp(
-            _power_law_sample(M, τ, x0, xM), τ, x0, xM) > ks
-        for _ in range(N)
-    ])
 
 def burst_detection(spike_times, burst_threshold, spike_num_thr=3):
     '''
-    Detect burst from spike times with a interspike interval 
+    Detect burst from spike times with a interspike interval
     threshold (burst_threshold) and a spike number threshold (spike_num_thr).
     Returns:
-        spike_num_list -- a list of burst features 
+        spike_num_list -- a list of burst features
           [index of burst start point, number of spikes in this burst]
         burst_set -- a list of spike times of all the bursts.
     '''
