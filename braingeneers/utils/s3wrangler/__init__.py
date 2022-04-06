@@ -7,10 +7,10 @@ Usage examples:
     uuids = wr.list_directories('s3://braingeneers/ephys/')
     print(uuids)
 """
-import os
 import awswrangler
+from awswrangler import config
 from awswrangler.s3 import *
+import braingeneers.configure
 
 
-prp_s3_endpoint = 'https://s3-west.nrp-nautilus.io'
-awswrangler.config.s3_endpoint_url = os.environ.get('ENDPOINT_URL', prp_s3_endpoint)
+braingeneers.configure.set_default_endpoint()

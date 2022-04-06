@@ -124,6 +124,11 @@ class DatasetsElectrophysiologyTestCase(unittest.TestCase):
         self.assertEqual(data[0][2], 10)
         self.assertEqual(data[0][3], 30)
 
+    def test_online_axion_generate_metadata_24well(self):
+        uuid_24well_data = '2021-09-23-e-MR-89-0526-spontaneous'
+        metadata_json, experiment1_json = ephys.axion_generate_metadata(uuid_24well_data)
+        self.assertTrue(len(metadata_json) > 0)  # Trivial validation
+
 
 if __name__ == '__main__':
     unittest.main()
