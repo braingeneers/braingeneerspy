@@ -7,7 +7,6 @@ import shutil
 import h5py
 import braingeneers.utils.smart_open_braingeneers as smart_open
 from os import walk
-import braingeneers.utils.s3wrangler as wr
 from deprecated import deprecated
 from collections import namedtuple
 import datetime
@@ -18,14 +17,15 @@ from typing import List
 import io
 
 
-# def get_archive_path():
-#     """/public/groups/braingeneers/ephys  Return path to archive on the GI public server """
-#     return os.getenv("BRAINGENEERS_ARCHIVE_PATH", "/public/groups/braingeneers/ephys")
-#
-#
-# def get_archive_url():
-#     """  https://s3.nautilus.optiputer.net/braingeneers/ephys     Return URL to archive on PRP """
-#     return "{}/ephys".format(os.getenv("BRAINGENEERS_ARCHIVE_URL", "s3://braingeneers"))
+def get_archive_path():
+    """/public/groups/braingeneers/ephys  Return path to archive on the GI public server """
+    return os.getenv("BRAINGENEERS_ARCHIVE_PATH", "/public/groups/braingeneers/ephys")
+
+
+def get_archive_url():
+    """  https://s3.nautilus.optiputer.net/braingeneers/ephys     Return URL to archive on PRP """
+    return "{}/ephys".format(os.getenv("BRAINGENEERS_ARCHIVE_URL", "s3://braingeneers"))
+
 
 def load_batch(batch_uuid):
     """
@@ -41,7 +41,7 @@ def load_batch(batch_uuid):
         if not os.path.exists(full_path):
             full_path = "{}/{}/metadata.json".format(get_archive_url(), batch_uuid)
 
-        with smart_open_prp.open(full_path, "r") as f:
+        with smart_open.open(full_path, "r") as f:
             return json.load(f)
     except OSError:
         raise OSError('Are you sure ' + batch_uuid + ' is the right uuid?')
@@ -68,7 +68,7 @@ def load_experiment(batch_uuid, experiment_num):
             exp_full_path = "{}/{}/original/{}".format(get_archive_url(), batch_uuid,
                                                        batch['experiments'][experiment_num])
 
-        with smart_open_prp.open(exp_full_path, "r") as f:
+        with smart_open.open(exp_full_path, "r") as f:
             return json.load(f)
     except OSError:
         raise OSError('Are you sure experiment number ' + str(experiment_num) + ' exists?')
@@ -299,7 +299,7 @@ def load_files_maxwell(metadata, batch_uuid, experiment_num, channels, start, st
     else:
         scale = metadata["voltage_scaling_factor"]
 
-    with smart_open_prp.open(datafile, 'rb') as file:
+    with smart_open.open(datafile, 'rb') as file:
         with h5py.File(file, 'r', libver='latest', rdcc_nbytes=2 ** 25) as h5file:
             print("Keys: %s" % h5file.keys())
             print(h5file['sig'].shape)
@@ -571,7 +571,7 @@ def load_data_maxwell(metadata, batch_uuid, experiment_num, channels, offset, le
     assert end_block < len(metadata['blocks'])
     # now, with the starting block, ending block, and frames to take, take those frames and put into nparray.
     # open file
-    with smart_open_prp.open(datafile, 'rb') as file:
+    with smart_open.open(datafile, 'rb') as file:
         with h5py.File(file, 'r', libver='latest', rdcc_nbytes=2 ** 25) as h5file:
             # know that there are 1028 channels which all record and make 'num_frames'
             sig = h5file['sig']
@@ -707,7 +707,7 @@ def create_overview(batch_uuid, experiment_num, with_spikes=True):
 def fast_batch_path(uuid):
     if os.path.exists("/home/jovyan/Projects/maxwell_analysis/ephys/" + uuid):
         uuid = "/home/jovyan/Projects/maxwell_analysis/ephys/" + uuid
-        metadata = json.load(smart_open_prp.open(uuid + 'metadata.json', 'r'))
+        metadata = json.load(smart_open.open(uuid + 'metadata.json', 'r'))
     else:
         uuid = "s3://braingeneers/ephys/" + uuid
     print(uuid)
@@ -717,7 +717,7 @@ def fast_batch_path(uuid):
 # get actual path to recording, not the name of the json from metadata
 def paths_2_each_exp(data_dir):
     try:
-        objs = wr.list_objects(data_dir)  # if on s3
+        objs = s3wrangler.list_objects(data_dir)  # if on s3
     except:
         objs = next(walk(data_dir), (None, None, []))[2]  # if on local dir
     return objs
@@ -891,7 +891,7 @@ def _axion_generate_per_block_metadata(filename: str):
     """
     ChannelData = namedtuple('ChannelData', 'wCol wRow eCol eRow')
 
-    with smart_open_prp.open(filename, 'rb') as fid:
+    with smart_open.open(filename, 'rb') as fid:
 
         # replace frombuffer with 1 seek
         fid.seek(26, 0)
@@ -1021,7 +1021,7 @@ def _axion_get_data(file_name, file_data_start_position,
     :param corrected_map: mapping to correctly rearrange columns
     :return:
     """
-    with smart_open_prp.open(file_name, 'rb') as fid:
+    with smart_open.open(file_name, 'rb') as fid:
         # --- GET DATA ---
         total_num_samples = sample_length * num_channels
 
