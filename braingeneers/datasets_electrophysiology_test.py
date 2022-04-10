@@ -1,9 +1,10 @@
 import unittest
 import datasets_electrophysiology as ephys
 import json
+import braingeneers.utils.smart_open_braingeneers as smart_open
 
 
-class DatasetsElectrophysiologyTestCase(unittest.TestCase):
+class AxionReaderTests(unittest.TestCase):
     """
     Online test cases require access to braingeneers/S3 including ~/.aws/credentials file
     """
@@ -11,6 +12,12 @@ class DatasetsElectrophysiologyTestCase(unittest.TestCase):
                "H28126_WK27_010320_Cohort_202000706_Wash(214).raw"
 
     batch_uuid = '2020-07-06-e-MGK-76-2614-Wash'
+
+    def setUp(self) -> None:
+        pass
+
+    def tearDown(self) -> None:
+        pass
 
     def test_online_axion_get_data(self):
         """
@@ -69,53 +76,48 @@ class DatasetsElectrophysiologyTestCase(unittest.TestCase):
         self.assertTrue(True)  # simple success if not exception before this occurred
 
     def test_online_axion_generate_metadata(self):
-        """
+        metadata = ephys.generate_metadata_axion(self.batch_uuid)
+        experiment0 = metadata['ephys-experiments'][0]
 
-        :return:
-        """
-        metadata_json, experiment1_json = ephys.axion_generate_metadata(self.batch_uuid)
+        self.assertEqual(len(metadata['ephys-experiments']), 6)
+        self.assertEqual(metadata['issue'], '')
+        self.assertEqual(metadata['notes'], '')
+        self.assertTrue('timestamp' in metadata)
+        self.assertEqual(metadata['uuid'], self.batch_uuid)
+        self.assertEqual(len(metadata), 6)
 
-        self.assertCountEqual(metadata_json['experiments'], ['experiment1.json'])
-        self.assertEqual(metadata_json['issue'], '')
-        self.assertEqual(metadata_json['notes'], '')
-        self.assertTrue('timestamp' in metadata_json)
-        self.assertEqual(metadata_json['uuid'], self.batch_uuid)
-        self.assertEqual(len(metadata_json), 5)
+        self.assertEqual(experiment0['hardware'], 'Axion BioSystems')
+        self.assertEqual(experiment0['name'], 'A1')
+        self.assertEqual(experiment0['notes'], '')
+        self.assertEqual(experiment0['num_channels'], 384)  # 6 well, 64 channel per well
+        self.assertEqual(experiment0['num_current_input_channels'], 0)
+        self.assertEqual(experiment0['num_voltage_channels'], 384)
+        self.assertEqual(experiment0['offset'], 0)
+        self.assertEqual(experiment0['sample_rate'], 12500)
+        self.assertTrue(isinstance(experiment0['sample_rate'], int))
+        self.assertAlmostEqual(experiment0['voltage_scaling_factor'], -5.484861781483107e-08)
+        self.assertTrue(isinstance(experiment0['voltage_scaling_factor'], float))
+        self.assertTrue('T' in experiment0['timestamp'])
+        self.assertEqual(experiment0['units'], '\u00b5V')
+        self.assertEqual(experiment0['version'], '1.0.0')
 
-        self.assertEqual(experiment1_json['hardware'], 'Axion BioSystems')
-        self.assertEqual(experiment1_json['name'], 'MGK-76-2614-Wash')
-        self.assertEqual(experiment1_json['notes'], '')
-        self.assertEqual(experiment1_json['num_channels'], 384)  # 6 well, 64 channel per well
-        self.assertEqual(experiment1_json['num_current_input_channels'], 0)
-        self.assertEqual(experiment1_json['num_voltage_channels'], 384)
-        self.assertEqual(experiment1_json['offset'], 0)
-        self.assertEqual(experiment1_json['sample_rate'], 12500)
-        self.assertTrue(isinstance(experiment1_json['sample_rate'], int))
-        self.assertAlmostEqual(experiment1_json['voltage_scaling_factor'], -5.484861781483107e-08)
-        self.assertTrue(isinstance(experiment1_json['voltage_scaling_factor'], float))
-        self.assertTrue('T' in experiment1_json['timestamp'])
-        self.assertEqual(experiment1_json['units'], '\u00b5V')
-        self.assertEqual(experiment1_json['version'], '1.0.0')
-
-        self.assertEqual(len(experiment1_json['blocks']), 267)
-        self.assertEqual(experiment1_json['blocks'][0]['num_frames'], 3750000)
-        self.assertEqual(experiment1_json['blocks'][0]['path'], 'H28126_WK27_010320_Cohort_202000706_Wash(000).raw')
-        self.assertTrue('T' in experiment1_json['blocks'][0]['timestamp'])
+        self.assertEqual(len(experiment0['blocks']), 267)
+        self.assertEqual(experiment0['blocks'][0]['num_frames'], 3750000)
+        self.assertEqual(experiment0['blocks'][0]['path'], 'H28126_WK27_010320_Cohort_202000706_Wash(000).raw')
+        self.assertTrue('T' in experiment0['blocks'][0]['timestamp'])
 
         # validate json serializability
-        json.dumps(metadata_json)
-        json.dumps(experiment1_json)
+        json.dumps(metadata)
 
         # save metadata files - used in development, kept here for quick reference
-        # with open('../tmp/metadata.json', 'w') as f_metadata:
-        #     json.dump(metadata_json, f_metadata, indent=2)
-        # with open('../tmp/experiment1.json', 'w') as f_experiment1:
-        #     json.dump(experiment1_json, f_experiment1, indent=2)
+        # with smart_open.open(f's3://braingeneers/ephys/{self.batch_uuid}/metadata.json', 'w') as f:
+        #     json.dump(metadata, f, indent=2)
 
     def test_online_load_data_axion(self):
         file_214_offset = 802446875
+        metadata = ephys.load_metadata(self.batch_uuid)
         data = ephys.load_data(
-            batch_uuid=self.batch_uuid, experiment_num=0, offset=file_214_offset, length=4, channels=[64]
+            metadata=metadata, experiment=1, offset=file_214_offset, length=4, channels=[0]
         )
 
         # Test a few manually selected values are returned correctly
@@ -126,8 +128,25 @@ class DatasetsElectrophysiologyTestCase(unittest.TestCase):
 
     def test_online_axion_generate_metadata_24well(self):
         uuid_24well_data = '2021-09-23-e-MR-89-0526-spontaneous'
-        metadata_json, experiment1_json = ephys.axion_generate_metadata(uuid_24well_data)
+        metadata_json = ephys.generate_metadata_axion(uuid_24well_data)
         self.assertTrue(len(metadata_json) > 0)  # Trivial validation
+        self.assertEquals(len(metadata_json['ephys-experiments']), 24)
+
+        # save metadata files - used in development, kept here for quick reference
+        with smart_open.open(f's3://braingeneers/ephys/{uuid_24well_data}/metadata.json', 'w') as f:
+            json.dump(metadata_json, f, indent=2)
+
+    def test_online_axion_load_data_24well(self):
+        uuid_24well_data = '2021-09-23-e-MR-89-0526-spontaneous'
+        metadata_json = ephys.load_metadata(uuid_24well_data)
+        data = ephys.load_data(metadata=metadata_json, experiment='B1', offset=0, length=10, channels=0)
+        self.assertEqual(data.shape, (1, 10))  # trivial validation, needs to be improved
+
+    def test_online_load_metadata(self):
+        metadata = ephys.load_metadata(self.batch_uuid)
+        self.assertTrue('uuid' in metadata)  # sanity check only
+        self.assertTrue(len(metadata['ephys-experiments']) == 6)  # sanity check only
+        self.assertTrue('voltage_scaling_factor' in metadata['ephys-experiments'])  # sanity check only
 
 
 if __name__ == '__main__':
