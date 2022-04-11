@@ -142,6 +142,12 @@ class AxionReaderTests(unittest.TestCase):
         data = ephys.load_data(metadata=metadata_json, experiment='B1', offset=0, length=10, channels=0)
         self.assertEqual(data.shape, (1, 10))  # trivial validation, needs to be improved
 
+    def test_online_axion_load_data_24well_int_index(self):
+        uuid_24well_data = '2021-09-23-e-MR-89-0526-spontaneous'
+        metadata_json = ephys.load_metadata(uuid_24well_data)
+        data = ephys.load_data(metadata=metadata_json, experiment=1, offset=0, length=10, channels=0)
+        self.assertEqual(data.shape, (1, 10))  # trivial validation, needs to be improved
+
     def test_online_load_metadata(self):
         metadata = ephys.load_metadata(self.batch_uuid)
         self.assertTrue('uuid' in metadata)  # sanity check only

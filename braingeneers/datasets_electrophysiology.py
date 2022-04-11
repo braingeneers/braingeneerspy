@@ -420,7 +420,7 @@ def load_data(metadata: dict, experiment: Union[str, int], offset: int = 0, leng
     assert isinstance(experiment, (str, int)), \
         f'Parameter experiment must be an int index or experiment name string. Got: {experiment}'
 
-    experiment_name = metadata['ephys-experiments'].keys()[experiment] if isinstance(experiment, int) else experiment
+    experiment_name = list(metadata['ephys-experiments'].keys())[experiment] if isinstance(experiment, int) else experiment
     batch_uuid = metadata['uuid']
     hardware = metadata['ephys-experiments'][experiment_name]['hardware']
 
