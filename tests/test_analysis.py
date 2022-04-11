@@ -6,6 +6,15 @@ from collections import namedtuple
 
 DerpNeuron = namedtuple('Neuron', 'spike_time fs')
 
+class DerpSpikeRecorder:
+    'Weird mockup of a NEST spike recorder.'
+    def __init__(self, idces, times):
+        self.events = dict(senders=idces, times=times)
+    def __getattr__(self, attr):
+        return self.__dict__[attr]
+    def __iter__(self):
+        yield self
+
 class AnalysisTest(unittest.TestCase):
 
     def assertSpikeDataEqual(self, sda, sdb, msg=None):
@@ -52,6 +61,11 @@ class AnalysisTest(unittest.TestCase):
         # Test idces_times().
         sd5 = ba.SpikeData(*sd.idces_times())
         self.assertSpikeDataEqual(sd, sd5)
+
+        # Test 'NEST SpikeRecorder' constructor.
+        recorder = DerpSpikeRecorder(idces, times)
+        sd6 = ba.SpikeData(recorder)
+        self.assertSpikeDataEqual(sd, sd6)
 
         # Test subset() constructor.
         idces = [1, 2, 3]

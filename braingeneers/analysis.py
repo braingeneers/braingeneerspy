@@ -22,9 +22,10 @@ class SpikeData():
         '''
         Parses different argument list possibilities into the desired
         format: a list indexed by unit ID, where each element is
-        a list of spike times. The three possibilities accepted are:
+        a list of spike times. The five possibilities accepted are:
         (1) a pair of lists corresponding to unit indices and times,
-        (2) a list of lists of spike times, and (3) a list of Neuron
+        (2) a list of lists of spike times, (3) a list of channel-time
+        pairs, (4) a NEST spike detector, and (5) a list of Neuron
         objects whose parameter spike_time is a list of spike times.
 
         Metadata can also be passed in to the constructor, on a global
@@ -36,17 +37,31 @@ class SpikeData():
         samples, which are converted to milliseconds using the sample
         rate saved in the Neuron object.
         '''
+        # If two arguments are provided, they're indices and times.
         if arg2 is not None:
             self.train = _train_from_i_t_list(arg1, arg2, N)
         else:
+            # The input could be a list [musclebeachtools.Neuron]
             try:
                 self.train = [np.asarray(n.spike_time)/n.fs*1e3
                               for n in arg1]
+
+            # If it's not iterable, it must be a NEST spike detector.
+            except KeyError:
+                times = arg1.events['times']
+                idces = arg1.events['senders']
+                self.train = _train_from_i_t_list(idces, times, N)
+
+            # Now it could be either (channel, time) pairs or
+            # a complete prebuilt spike train.
             except AttributeError:
+
+                # If all the elements are length 2, it must be pairs.
                 if all([len(arg)==2 for arg in arg1]):
                     idces = [i for i,_ in arg1]
                     times = [t for i,t in arg1]
                     self.train = _train_from_i_t_list(idces, times, N)
+                # Otherwise, it's just a plain spike train.
                 else:
                     self.train = arg1
 
@@ -64,7 +79,7 @@ class SpikeData():
         # If a number of units was provided, make the list of spike
         # trains consistent with that number.
         if N is not None and len(self.train) < N:
-            self.train += [np.array([]) for _ in
+            self.train += [np.array([], float) for _ in
                            range(N-len(self.train))]
         self.N = len(self.train)
 
