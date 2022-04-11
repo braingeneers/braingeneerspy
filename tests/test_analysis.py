@@ -410,3 +410,30 @@ class AnalysisTest(unittest.TestCase):
         self.assertIsNot(bar.metadata, baz.metadata)
         self.assertNotEqual(foo.metadata['name'], bar.metadata['name'])
         self.assertDictEqual(bar.neuron_data, baz.neuron_data)
+
+    def test_raw_data(self):
+        # Make sure there's an error if only one of raw_data and
+        # raw_time is provided to the constructor.
+        self.assertRaises(ValueError,
+                          lambda: ba.SpikeData([], N=5, length=100,
+                                               raw_data=[]))
+        self.assertRaises(ValueError,
+                          lambda: ba.SpikeData([], N=5, length=100,
+                                               raw_time=42))
+
+        # Make sure inconsistent lengths throw an error as well.
+        self.assertRaises(ValueError,
+                          lambda: ba.SpikeData([], N=5, length=100,
+                                               raw_data=np.zeros((5,100)),
+                                               raw_time=np.arange(42)))
+
+        # Check automatic generation of the time array.
+        sd = ba.SpikeData([], N=5, length=100,
+                          raw_data=np.random.rand(5,100),
+                          raw_time=1.0)
+        self.assertAll(sd.raw_time == np.arange(100))
+
+        # Make sure the raw data is sliced properly with time.
+        sd2 = sd.subtime(20, 30)
+        self.assertAll(sd2.raw_time == np.arange(11))
+        self.assertAll(sd2.raw_data == sd.raw_data[:,20:31])

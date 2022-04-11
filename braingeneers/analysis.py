@@ -18,7 +18,8 @@ class SpikeData():
     '''
 
     def __init__(self, arg1, arg2=None, *, N=None, length=None,
-                 neuron_data={}, metadata={}):
+                 neuron_data={}, metadata={},
+                 raw_data=None, raw_time=None):
         '''
         Parses different argument list possibilities into the desired
         format: a list indexed by unit ID, where each element is
@@ -31,6 +32,12 @@ class SpikeData():
         Metadata can also be passed in to the constructor, on a global
         basis in a dict called `metadata` or on a per-neuron basis in
         a dict of lists `neuron_data`.
+
+        Raw timeseries data can be passed in as `raw_data`. If this is
+        used, `raw_time` is also obligatory. This can be a series of
+        sample times or just a sample rate in kHz. In this case, it is
+        assumed that the start of the raw data corresponds with t=0,
+        and a raw time array is generated.
 
         Spike times should be in units of milliseconds, unless a list
         of Neurons is given; these have spike times in units of
@@ -82,6 +89,22 @@ class SpikeData():
             self.train += [np.array([], float) for _ in
                            range(N-len(self.train))]
         self.N = len(self.train)
+
+        # Add the raw data if present, including generating raw time.
+        if (raw_data is None) != (raw_time is None):
+            raise ValueError('Must provide both or neither of '
+                             '`raw_data` and `raw_time`.')
+        if raw_data is not None:
+            self.raw_data = np.asarray(raw_data)
+            self.raw_time = np.asarray(raw_time)
+            if self.raw_time.shape == ():
+                self.raw_time = np.arange(self.raw_data.shape[-1]) / raw_time
+            elif self.raw_data.shape[-1:] != self.raw_time.shape:
+                raise ValueError('Length of `raw_data` and '
+                                 '`raw_time` must match.')
+        else:
+            self.raw_data = np.zeros((0,0))
+            self.raw_time = np.zeros((0,))
 
         # Finally, install the metadata, making sure the neuron_data
         # has the right number of values.
@@ -141,23 +164,35 @@ class SpikeData():
         yield count
 
     def subset(self, units):
-        'Return a new SpikeData with spike times for only some units.'
+        '''
+        Return a new SpikeData with spike times for only some units.
+
+        Metadata and raw data are propagated exactly, while neuron
+        data is subsetted in the same way as the spike trains.
+        '''
         train = [ts for i,ts in enumerate(self.train) if i in units]
         neuron_data = {k: [v for i,v in enumerate(vs) if i in units]
                        for k,vs in self.neuron_data.items()}
         return self.__class__(train, length=self.length, N=len(units),
                               neuron_data=neuron_data,
-                              metadata=self.metadata)
+                              metadata=self.metadata,
+                              raw_time=self.raw_time,
+                              raw_data=self.raw_data)
 
     def subtime(self, start, end):
         '''
         Return a new SpikeData with only spikes in a time range,
         closed on top but open on the bottom unless the lower bound is
-        zero, consistent with the binning methods.
+        zero, consistent with the binning methods. This is to ensure
+        no overlap between adjacent slices.
 
         Start and end can be negative, in which case they are counted
         backwards from the end. They can also be None or Ellipsis,
         which results in only paying attention to the other bound.
+
+        All metadata and neuron data are propagated, while raw data is
+        sliced to the same range of times, but overlap is okay, so we
+        include all samples within the closed interval.
         '''
         if start is None or start is Ellipsis:
             start = 0
@@ -171,11 +206,18 @@ class SpikeData():
 
         # Special case out the start=0 case by nopping the comparison.
         lower = start if start > 0 else -np.inf
+
+        # Subset the spike train by time.
         train = [t[(t > lower) & (t <= end)] - start
                  for t in self.train]
+
+        # Subset and propagate the raw data.
+        rawmask = (self.raw_time >= lower) & (self.raw_time <= end)
         return self.__class__(train, length=end - start, N=self.N,
                               neuron_data=self.neuron_data,
-                              metadata=self.metadata)
+                              metadata=self.metadata,
+                              raw_time=self.raw_time[rawmask] - start,
+                              raw_data=self.raw_data[:, rawmask])
 
     def sparse_raster(self, bin_size=20):
         '''
