@@ -17,7 +17,8 @@ class SpikeData():
     simulations.
     '''
 
-    def __init__(self, arg1, arg2=None, *, N=None, length=None):
+    def __init__(self, arg1, arg2=None, *, N=None, length=None,
+                 neuron_data={}, metadata={}):
         '''
         Parses different argument list possibilities into the desired
         format: a list indexed by unit ID, where each element is
@@ -25,6 +26,10 @@ class SpikeData():
         (1) a pair of lists corresponding to unit indices and times,
         (2) a list of lists of spike times, and (3) a list of Neuron
         objects whose parameter spike_time is a list of spike times.
+
+        Metadata can also be passed in to the constructor, on a global
+        basis in a dict called `metadata` or on a per-neuron basis in
+        a dict of lists `neuron_data`.
 
         Spike times should be in units of milliseconds, unless a list
         of Neurons is given; these have spike times in units of
@@ -62,6 +67,16 @@ class SpikeData():
             self.train += [np.array([]) for _ in
                            range(N-len(self.train))]
         self.N = len(self.train)
+
+        # Finally, install the metadata, making sure the neuron_data
+        # has the right number of values.
+        self.metadata = metadata.copy()
+        self.neuron_data = neuron_data.copy()
+        for k,values in self.neuron_data.items():
+            if len(values) != self.N:
+                raise ValueError('Malformed metadata: '
+                                 f'neuron_data[{k}] should have'
+                                 f'{self.N} items.')
 
     @property
     def times(self):
@@ -113,7 +128,11 @@ class SpikeData():
     def subset(self, units):
         'Return a new SpikeData with spike times for only some units.'
         train = [ts for i,ts in enumerate(self.train) if i in units]
-        return self.__class__(train, length=self.length, N=len(units))
+        neuron_data = {k: [v for i,v in enumerate(vs) if i in units]
+                       for k,vs in self.neuron_data.items()}
+        return self.__class__(train, length=self.length, N=len(units),
+                              neuron_data=neuron_data,
+                              metadata=self.metadata)
 
     def subtime(self, start, end):
         '''
@@ -139,7 +158,9 @@ class SpikeData():
         lower = start if start > 0 else -np.inf
         train = [t[(t > lower) & (t <= end)] - start
                  for t in self.train]
-        return self.__class__(train, length=end - start, N=self.N)
+        return self.__class__(train, length=end - start, N=self.N,
+                              neuron_data=self.neuron_data,
+                              metadata=self.metadata)
 
     def sparse_raster(self, bin_size=20):
         '''

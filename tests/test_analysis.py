@@ -368,3 +368,31 @@ class AnalysisTest(unittest.TestCase):
         self.assertListEqual(
             [len(av) for av in spikes.avalanches(1, bin_size=1)],
             [3, 2, 1])
+
+    def test_metadata(self):
+        # Make sure there's an error if the metadata is gibberish.
+        self.assertRaises(ValueError,
+                          lambda: ba.SpikeData([], N=5, length=100,
+                                               neuron_data=dict(trash=[47])))
+
+        # Overall propagation testing...
+        foo = ba.SpikeData([], N=5, length=1000,
+                           metadata=dict(name='Marvin'),
+                           neuron_data=dict(size=np.random.rand(5)))
+
+        # Make sure subset propagates all metadata and correctly
+        # subsets the neuron_data.
+        subset = [1, 3]
+        truth = foo.neuron_data['size'][subset]
+        bar = foo.subset(subset)
+        self.assertDictEqual(foo.metadata, bar.metadata)
+        self.assertAll(bar.neuron_data['size'] == truth)
+
+        # Change the metadata of foo and see that it's copied, so the
+        # change doesn't propagate.
+        foo.metadata['name'] = 'Ford'
+        baz = bar.subtime(500, 1000)
+        self.assertDictEqual(bar.metadata, baz.metadata)
+        self.assertIsNot(bar.metadata, baz.metadata)
+        self.assertNotEqual(foo.metadata['name'], bar.metadata['name'])
+        self.assertDictEqual(bar.neuron_data, baz.neuron_data)
