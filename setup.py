@@ -33,6 +33,7 @@ setup(
         'tenacity',
         'awswrangler',
         'sortedcontainers',
+        'powerlaw',
     ],
     extras_require={
         'all': [
