@@ -21,6 +21,7 @@ import sortedcontainers
 import itertools
 
 
+# todo make all tests cases work
 # todo implement hengenlab metadata generator
 # todo implement load_data for hengenlab
 # todo name based or 0-based indexing for access to experimentN.json
@@ -39,7 +40,7 @@ def get_archive_url():
     return "{}/ephys".format(os.getenv("BRAINGENEERS_ARCHIVE_URL", "s3://braingeneers"))
 
 
-@deprecated('Use load_metadata(batch_uuid, experiement_nums) instead.')
+@deprecated('Use load_metadata(batch_uuid, experiment_nums) instead.')
 def load_batch(batch_uuid):
     """
     Load the metadata for a batch of experiments and return as a dict
@@ -60,7 +61,7 @@ def load_batch(batch_uuid):
         raise OSError('Are you sure ' + batch_uuid + ' is the right uuid?')
 
 
-@deprecated('Use load_metadata(batch_uuid, experiement_nums) instead.')
+@deprecated('Use load_metadata(batch_uuid, experiment_nums) instead.')
 def load_experiment(batch_uuid, experiment_num):
     """
     Load metadata from PRP S3 for a single experiment
@@ -516,7 +517,11 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_name: int,
     # concatenate the results and return
     data_concat = np.concatenate(data_multi_file, axis=1)
 
-    return data_concat
+    # apply scaling factor
+    voltage_scaling_factor = metadata['ephys-experiments'][experiment_name]['voltage_scaling_factor']
+    data_scaled = data_concat * voltage_scaling_factor
+
+    return data_scaled
 
 
 def load_data_intan(metadata, batch_uuid, experiment_num, offset, length):

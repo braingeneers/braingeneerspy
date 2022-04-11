@@ -154,6 +154,15 @@ class AxionReaderTests(unittest.TestCase):
         self.assertTrue(len(metadata['ephys-experiments']) == 6)  # sanity check only
         self.assertTrue('voltage_scaling_factor' in metadata['ephys-experiments'])  # sanity check only
 
+    def test_online_axion_load_data_none_for_all_channels(self):
+        """ axion should accept None for "all" channels """
+        self.fail()  # todo
+
+    def test_online_axion_multi_well_channel_reference(self):
+        """ Validate/fix axion reader 64|16 channels per well """
+        # probably 0:384 channels references are currently required
+        self.fail()
+
 
 if __name__ == '__main__':
     unittest.main()
