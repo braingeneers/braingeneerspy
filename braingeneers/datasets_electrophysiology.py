@@ -21,11 +21,8 @@ import sortedcontainers
 import itertools
 
 
-# todo braingeneerspy won't install because of setup.py
-# todo make all tests cases work
 # todo implement hengenlab metadata generator
 # todo implement load_data for hengenlab
-# todo name based or 0-based indexing for access to experimentN.json
 # todo update existing datasets metadata json files on S3
 
 
@@ -112,9 +109,9 @@ def load_metadata(batch_uuid: str) -> dict:
     with smart_open.open(metadata_full_path, 'r') as f:
         metadata = json.load(f)
 
-    # make 'ephys-experiments' a sorted dict indexable by experiment name if the key exists
-    if 'ephys-experiments' in metadata:
-        metadata['ephys-experiments'] = {e['name']: e for e in metadata['ephys-experiments']}
+    # make 'ephys_experiments' a sorted dict indexable by experiment name if the key exists
+    if 'ephys_experiments' in metadata:
+        metadata['ephys_experiments'] = {e['name']: e for e in metadata['ephys_experiments']}
 
     return metadata
 
@@ -417,14 +414,14 @@ def load_data(metadata: dict, experiment: Union[str, int], offset: int = 0, leng
     """
     assert 'uuid' in metadata, \
         'Metadata file is invalid, it does not contain required uuid field.'
-    assert 'ephys-experiments' in metadata, \
-        'Metadata file is invalid, it does not contain required ephys-experiments field.'
+    assert 'ephys_experiments' in metadata, \
+        'Metadata file is invalid, it does not contain required ephys_experiments field.'
     assert isinstance(experiment, (str, int)), \
         f'Parameter experiment must be an int index or experiment name string. Got: {experiment}'
 
-    experiment_name = list(metadata['ephys-experiments'].keys())[experiment] if isinstance(experiment, int) else experiment
+    experiment_name = list(metadata['ephys_experiments'].keys())[experiment] if isinstance(experiment, int) else experiment
     batch_uuid = metadata['uuid']
-    hardware = metadata['ephys-experiments'][experiment_name]['hardware']
+    hardware = metadata['ephys_experiments'][experiment_name]['hardware']
 
     # hand off to appropriate load_data function
     if 'Raspi' in hardware:
@@ -467,7 +464,7 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_name: int,
 
     :param metadata: result of load_experiment
     :param batch_uuid: uuid, example: 2020-07-06-e-MGK-76-2614-Wash
-    :param experiment_name: experiment name under 'ephys-experiments'
+    :param experiment_name: experiment name under 'ephys_experiments'
     :param channels: a list of channels
     :param offset: data offset (spans full experiment, across files)
     :param length: data read length in frames (e.g. data points, agnostic of channel count)
@@ -477,7 +474,7 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_name: int,
 
     # get subset of files to read from metadata.blocks
     metadata_offsets_cumsum = np.cumsum([
-        block['num_frames'] for block in metadata['ephys-experiments'][experiment_name]['blocks']
+        block['num_frames'] for block in metadata['ephys_experiments'][experiment_name]['blocks']
     ])
     block_ixs_range = np.minimum(
         len(metadata_offsets_cumsum),
@@ -488,12 +485,13 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_name: int,
         f'No data file found starting from offset {offset}, is this past the end of the data file?'
 
     # this is a back reference which was constructed this way to avoid duplicating the large channel map many times
-    channel_map_key = metadata['ephys-experiments'][experiment_name]['blocks'][0]['axion_channel_map_key']
+    channel_map_key = metadata['ephys_experiments'][experiment_name]['blocks'][0]['axion_channel_map_key']
 
     # perform N read operations accumulating results in data_multi_file
     frame_read_count = 0  # counter to track number of frames read across multiple files
     for block_ix in block_ixs:
-        block = metadata['ephys-experiments'][experiment_name]['blocks'][block_ix]
+        experiment = metadata['ephys_experiments'][experiment_name]
+        block = experiment['blocks'][block_ix]
         file_name = block['path']
         full_file_path = f's3://braingeneers/ephys/{batch_uuid}/original/data/{file_name}'
         sample_start = max(0, offset - metadata_offsets_cumsum[block_ix] + block['num_frames'])
@@ -503,12 +501,17 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_name: int,
             file_data_start_position=block['axion_data_start_position'],
             sample_offset=sample_start,
             sample_length=data_length,
-            num_channels=metadata['ephys-experiments'][experiment_name]['num_channels'],
+            num_channels=experiment['num_channels'],
             corrected_map=metadata[channel_map_key],
         )
 
-        # select channels
-        channels = list(channels) if isinstance(channels, Iterable) else [channels]
+        num_channels_per_well = np.prod(experiment['axion_electrode_layout_row_col'])
+
+        # select channels (None for all channels)
+        channels = np.array(channels) if isinstance(channels, (Iterable, np.ndarray)) \
+            else np.arange(num_channels_per_well) if isinstance(channels, type(None)) \
+            else np.array([channels])
+        channels += experiment['axion_channel_offset']
         data_ndarray_select_channels = data_ndarray[channels, :] if channels is not None else data_ndarray
 
         # append data from this block/file to list
@@ -519,7 +522,7 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_name: int,
     data_concat = np.concatenate(data_multi_file, axis=1)
 
     # apply scaling factor
-    voltage_scaling_factor = metadata['ephys-experiments'][experiment_name]['voltage_scaling_factor']
+    voltage_scaling_factor = metadata['ephys_experiments'][experiment_name]['voltage_scaling_factor']
     data_scaled = data_concat * voltage_scaling_factor
 
     return data_scaled
@@ -908,6 +911,8 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '', n_thre
             for well_col in range(plate_layout_row_col[1]):
                 # Produces: A1, A2, ..., B1, B2, ... etc. Prepends experiment_prefix
                 well_name = experiment_prefix + chr(well_row + ord('A')) + str(well_col + 1)
+                n_channels_per_well = int(np.prod(electrode_layout_row_col))
+                well_index = well_row * plate_layout_row_col[1] + well_col
 
                 metadata_json[f'{experiment_prefix}axion_per_well_channel_map'] = corrected_map
 
@@ -932,6 +937,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '', n_thre
                 experiment['version'] = '1.0.0'
                 experiment['axion_plate_layout_row_col'] = plate_layout_row_col
                 experiment['axion_electrode_layout_row_col'] = electrode_layout_row_col
+                experiment['axion_channel_offset'] = well_index * n_channels_per_well
 
                 block = dict()
                 block['num_frames'] = data_length
@@ -943,7 +949,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '', n_thre
                 experiment.setdefault('blocks', [])
                 experiment['blocks'].append(block)
 
-    metadata_json['ephys-experiments'] = list(ephys_experiments.values())
+    metadata_json['ephys_experiments'] = list(ephys_experiments.values())
 
     return metadata_json
 
@@ -1136,8 +1142,8 @@ def _axion_get_data(file_name, file_data_start_position,
 #     A variant of OrderedDict indexable by index (int) or name (str).
 #     This class forces ints to represent index by location, else index by name/object.
 #     Example usages:
-#         metadata['ephys-experiments']['experiment0']    # index by name (must use str type)
-#         metadata['ephys-experiments'][0]                # index by location (must use int type)
+#         metadata['ephys_experiments']['experiment0']    # index by name (must use str type)
+#         metadata['ephys_experiments'][0]                # index by location (must use int type)
 #     """
 #
 #     def __init__(self, original_list: list, key: callable):

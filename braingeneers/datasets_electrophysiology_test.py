@@ -19,67 +19,11 @@ class AxionReaderTests(unittest.TestCase):
     def tearDown(self) -> None:
         pass
 
-    def test_online_axion_get_data(self):
-        """
-        This test case assumes a local axion raw file.
-        It should be skipped for automated tests.
-        :return:
-        """
-        data_start, data_length, num_channels, corrected_map, sampling_frequency, voltage_scale = \
-            ephys._axion_generate_per_block_metadata(self.filename)
-
-        voltage_data = ephys._axion_get_data(
-            self.filename, data_start, 0, 20, num_channels, corrected_map
-        )
-
-        for i in range(10):
-            for j in range(0, 31):
-                print(voltage_data[j][i], end="\t")
-            print()
-        print()
-
-        # A2 = (1,2) 64-127
-        for i in range(10):
-            for j in range(64, 95):
-                print(voltage_data[j][i], end="\t")
-            print()
-        print()
-
-        # A3 = (1,3) 128-191
-        for i in range(10):
-            for j in range(128, 159):
-                print(voltage_data[j][i], end="\t")
-            print()
-        print()
-
-        # B1 = (2,1) 192-255
-        for i in range(10):
-            for j in range(192, 223):
-                print(voltage_data[j][i], end="\t")
-            print()
-        print()
-
-        # B2 = (2,2) 256-319
-        for i in range(10):
-            for j in range(256, 287):
-                print(voltage_data[j][i], end="\t")
-            print()
-        print()
-
-        # B3 = (2,3) 320-383
-        for i in range(10):
-            for j in range(320, 351):
-                print(voltage_data[j][i], end="\t")
-            print()
-        print()
-
-        self.assertTrue(True)  # simple success if not exception before this occurred
-
     def test_online_axion_generate_metadata(self):
         metadata = ephys.generate_metadata_axion(self.batch_uuid)
-        experiment0 = metadata['ephys-experiments'][0]
+        experiment0 = metadata['ephys_experiments'][0]
 
-        self.assertEqual(len(metadata['ephys-experiments']), 6)
+        self.assertEqual(len(metadata['ephys_experiments']), 6)
         self.assertEqual(metadata['issue'], '')
         self.assertEqual(metadata['notes'], '')
         self.assertTrue('timestamp' in metadata)
@@ -94,6 +38,7 @@ class AxionReaderTests(unittest.TestCase):
         self.assertEqual(experiment0['num_voltage_channels'], 384)
         self.assertEqual(experiment0['offset'], 0)
         self.assertEqual(experiment0['sample_rate'], 12500)
+        self.assertEqual(experiment0['axion_channel_offset'], 0)
         self.assertTrue(isinstance(experiment0['sample_rate'], int))
         self.assertAlmostEqual(experiment0['voltage_scaling_factor'], -5.484861781483107e-08)
         self.assertTrue(isinstance(experiment0['voltage_scaling_factor'], float))
@@ -105,6 +50,8 @@ class AxionReaderTests(unittest.TestCase):
         self.assertEqual(experiment0['blocks'][0]['num_frames'], 3750000)
         self.assertEqual(experiment0['blocks'][0]['path'], 'H28126_WK27_010320_Cohort_202000706_Wash(000).raw')
         self.assertTrue('T' in experiment0['blocks'][0]['timestamp'])
+
+        self.assertEqual(metadata['ephys_experiments'][1]['axion_channel_offset'], 64)
 
         # validate json serializability
         json.dumps(metadata)
@@ -123,16 +70,16 @@ class AxionReaderTests(unittest.TestCase):
         voltage_scaling_factor = -5.484861781483107e-08
 
         # Test a few manually selected values are returned correctly
-        self.assertEqual(data[0][0], -9 * voltage_scaling_factor)
-        self.assertEqual(data[0][1], -18 * voltage_scaling_factor)
-        self.assertEqual(data[0][2], 10 * voltage_scaling_factor)
-        self.assertEqual(data[0][3], 30 * voltage_scaling_factor)
+        self.assertAlmostEqual(data[0][0], -9 * voltage_scaling_factor)
+        self.assertAlmostEqual(data[0][1], -18 * voltage_scaling_factor)
+        self.assertAlmostEqual(data[0][2], 10 * voltage_scaling_factor)
+        self.assertAlmostEqual(data[0][3], 30 * voltage_scaling_factor)
 
     def test_online_axion_generate_metadata_24well(self):
         uuid_24well_data = '2021-09-23-e-MR-89-0526-spontaneous'
         metadata_json = ephys.generate_metadata_axion(uuid_24well_data)
         self.assertTrue(len(metadata_json) > 0)  # Trivial validation
-        self.assertEquals(len(metadata_json['ephys-experiments']), 24)
+        self.assertEqual(len(metadata_json['ephys_experiments']), 24)
 
         # save metadata files - used in development, kept here for quick reference
         with smart_open.open(f's3://braingeneers/ephys/{uuid_24well_data}/metadata.json', 'w') as f:
@@ -153,17 +100,25 @@ class AxionReaderTests(unittest.TestCase):
     def test_online_load_metadata(self):
         metadata = ephys.load_metadata(self.batch_uuid)
         self.assertTrue('uuid' in metadata)  # sanity check only
-        self.assertTrue(len(metadata['ephys-experiments']) == 6)  # sanity check only
-        self.assertTrue('voltage_scaling_factor' in metadata['ephys-experiments'])  # sanity check only
+        self.assertTrue(len(metadata['ephys_experiments']) == 6)  # sanity check only
+        self.assertTrue('voltage_scaling_factor' in metadata['ephys_experiments']['A1'])  # sanity check only
 
     def test_online_axion_load_data_none_for_all_channels(self):
         """ axion should accept None for "all" channels """
-        self.fail()  # todo
+        file_214_offset = 802446875
+        metadata = ephys.load_metadata(self.batch_uuid)
+        data = ephys.load_data(
+            metadata=metadata, experiment=1, offset=file_214_offset,
+            length=4, channels=None
+        )
 
-    def test_online_axion_multi_well_channel_reference(self):
-        """ Validate/fix axion reader 64|16 channels per well """
-        # probably 0:384 channels references are currently required
-        self.fail()
+        voltage_scaling_factor = -5.484861781483107e-08
+
+        # Test a few manually selected values are returned correctly
+        self.assertEqual(data[0][0], -9 * voltage_scaling_factor)
+        self.assertEqual(data[0][1], -18 * voltage_scaling_factor)
+        self.assertEqual(data[0][2], 10 * voltage_scaling_factor)
+        self.assertEqual(data[0][3], 30 * voltage_scaling_factor)
 
 
 if __name__ == '__main__':
