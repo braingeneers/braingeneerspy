@@ -120,11 +120,13 @@ class AxionReaderTests(unittest.TestCase):
             metadata=metadata, experiment=1, offset=file_214_offset, length=4, channels=[0]
         )
 
+        voltage_scaling_factor = -5.484861781483107e-08
+
         # Test a few manually selected values are returned correctly
-        self.assertEqual(data[0][0], -9)
-        self.assertEqual(data[0][1], -18)
-        self.assertEqual(data[0][2], 10)
-        self.assertEqual(data[0][3], 30)
+        self.assertEqual(data[0][0], -9 * voltage_scaling_factor)
+        self.assertEqual(data[0][1], -18 * voltage_scaling_factor)
+        self.assertEqual(data[0][2], 10 * voltage_scaling_factor)
+        self.assertEqual(data[0][3], 30 * voltage_scaling_factor)
 
     def test_online_axion_generate_metadata_24well(self):
         uuid_24well_data = '2021-09-23-e-MR-89-0526-spontaneous'

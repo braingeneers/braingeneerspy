@@ -42,10 +42,10 @@ setup(
             # ml
             'torch',
             # hengenlab
-            'git+git://github.com/hengenlab/neuraltoolkit',
+            'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git',
         ],
         'iot': ['awsiotsdk==1.6.0', 'redis'],
         'ml': ['torch'],
-        'hengenlab': ['git+git://github.com/hengenlab/neuraltoolkit'],
+        'hengenlab': ['neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git'],
     }
 )

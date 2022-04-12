@@ -21,6 +21,7 @@ import sortedcontainers
 import itertools
 
 
+# todo braingeneerspy won't install because of setup.py
 # todo make all tests cases work
 # todo implement hengenlab metadata generator
 # todo implement load_data for hengenlab
