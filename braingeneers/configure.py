@@ -1,9 +1,6 @@
 """ Global package functions and helpers for Braingeneers specific configuration. """
 import functools
 import os
-import boto3
-import smart_open
-import awswrangler
 
 # Preconfigure remote filesystem access
 # Default S3 endpoint/bucket_name, note this can be overridden with the environment variable ENDPOINT_URL
@@ -37,6 +34,13 @@ def set_default_endpoint(endpoint: str = None) -> None:
     :param endpoint: S3 or local-path endpoint as shown in examples above, if None will look for ENDPOINT
         environment variable, then default to DEFAULT_ENDPOINT if not found.
     """
+    # lazy loading of imports is necessary so that we don't import these classes with braingeneers root
+    # these imports can cause SSL warning messages for some users, so it's especially important to avoid
+    # importing them unless S3 access is needed.
+    import boto3
+    import smart_open
+    import awswrangler
+
     global _open
     endpoint = endpoint if endpoint is not None else os.environ.get('ENDPOINT', DEFAULT_ENDPOINT)
 
