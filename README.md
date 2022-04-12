@@ -18,13 +18,13 @@ part of the Braingeneers project. There are five subpackages:
 ## Installation / upgrade
 
 ```
-# Install/upgrade full package from git repo using PIP (all optional dependencies included)
+# Install/upgrade full package from git repo using PIP (all optional dependencies included).
 python -m pip install --upgrade git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]
 
-# Install/upgrade minimum package (no optional dependencies)
+# Install/upgrade minimum package (no optional dependencies, good for Raspberry PI install).
 python -m pip install --upgrade git+https://github.com/braingeneers/braingeneerspy.git
 
-# Install/upgrade minimum + iot and ml sub-packages
+# Install/upgrade minimum + iot and ml specific dependencies only.
 python -m pip install --upgrade git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,ml]
 ```
 
@@ -40,11 +40,12 @@ or some combination of dependencies you will use. Optional dependency groups are
  - `ml`: Machine Learning dependencies such as `torch` will be installed.
  - `hengenlab`: Hengenlab data loader specific packages such as `neuraltoolkit` will be installed.
 
-## Committing changes to the repo
+### Committing changes to the repo
 
 To publish changes made to the `braingeneerspy` package on github, please follow these steps. 
-Update the `version` variable in `setup.py`. To then receive the updated `braingeneerspy` 
-package on your personal computer, run the following command locally:
+ 1. Update the `version` variable in `setup.py`. 
+ 2. To then receive the updated `braingeneerspy` package on your personal computer 
+ 3. Run one of the pip install commands listed above.
 
 ## braingeneers.utils.s3wrangler
 Extends the `awswrangler.s3 package` for Braingeneers/PRP access.
