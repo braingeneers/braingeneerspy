@@ -23,29 +23,41 @@ setup(
         'License :: MIT',
     ],
     packages=find_packages(exclude=()),
+    # Include only the minimum dependencies for working with data in install_requires
+    # Consider the minimum necessary dependencies that would be installed on a RaspberryPI
     install_requires=[
         'matplotlib',
         'requests',
         'numpy',
         'scipy',
-        'boto3==1.17.96',  # depends on awscrt==0.11.22
-        'smart_open>=5.1.0',
         'tenacity',
         'awswrangler',
         'sortedcontainers',
         'powerlaw',
+        'boto3==1.17.96',  # depends on awscrt==0.11.22
+        'smart_open>=5.1.0',
     ],
+    # Include dependencies for specific use cases in extra_requires, additional categories
+    # can be added, but 'all' should contain dependencies for all user cases.
     extras_require={
         'all': [
             # iot
-            'awsiotsdk==1.6.0', 'redis',
+            'awsiotsdk==1.6.0',
+            'redis',
             # ml
             'torch',
             # hengenlab
             'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git',
         ],
-        'iot': ['awsiotsdk==1.6.0', 'redis'],
-        'ml': ['torch'],
-        'hengenlab': ['neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git'],
+        'iot': [
+            'awsiotsdk==1.6.0',
+            'redis',
+        ],
+        'ml': [
+            'torch'
+        ],
+        'hengenlab': [
+            'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git'
+        ],
     }
 )
