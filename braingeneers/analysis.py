@@ -148,20 +148,14 @@ class SpikeData():
         for start in np.arange(0, self.length, length - overlap):
             yield self.subtime(start, start + length)
 
-    def binned(self, bin_size=40, unit=None):
+    def binned(self, bin_size=40):
         '''
         Quantizes time into intervals of bin_size and counts the
         number of events in each bin, considered as a lower half-open
         interval of times, with the exception that events at time
         precisely zero will be included in the first bin.
         '''
-        bin, count = 1, 0
-        for time in self.times:
-            while time > bin*bin_size:
-                yield count
-                bin, count = bin+1, 0
-            count += 1
-        yield count
+        return self.raster(bin_size).sum(0)
 
     def subset(self, units):
         '''
@@ -246,7 +240,7 @@ class SpikeData():
 
     def interspike_intervals(self):
         'Produce a list of arrays of interspike intervals per unit.'
-        return [ts[1:] - ts[:-1] for ts in self.train]
+        return [np.diff(ts) for ts in self.train]
 
     def skewness(self):
         'Skewness of interspike interval distribution.'
@@ -318,7 +312,7 @@ class SpikeData():
             in cortical cultures with closed-loop multi-electrode
             stimulation. J Neurosci 25:3, 680–688 (2005).
         '''
-        binned = np.array(list(self.binned(bin_size)))
+        binned = self.binned(bin_size)
         binned.sort()
         N85 = int(np.round(len(binned) * 0.85))
 
@@ -369,15 +363,26 @@ class SpikeData():
         corresponding to avalanches, defined as deviations above
         a given threshold spike count.
         '''
-        this_av = []
-        for count in self.binned(bin_size):
-            if count > thresh:
-                this_av.append(count)
-            elif this_av:
-                yield this_av
-                this_av = []
-        if this_av:
-            yield this_av
+        counts = self.binned(bin_size)
+        active = counts > thresh
+        toggles = np.where(np.diff(active))[0]
+
+        if len(toggles) == 0:
+            return []
+
+        # If we start inactive, the first toggle begins the first
+        # avalanche. Otherwise, we have to ignore it because we don't
+        # know how long the system was active before.
+        if active[0]:
+            ups = toggles[1::2]
+            downs = toggles[2::2]
+        else:
+            ups = toggles[::2]
+            downs = toggles[1::2]
+
+        # Now batch up the transitions and create a list of spike
+        # counts in between them.
+        return [counts[up:down] for up,down in zip(ups,downs)]
 
     def duration_size(self, thresh, bin_size=40):
         '''
