@@ -6,6 +6,15 @@ from collections import namedtuple
 
 DerpNeuron = namedtuple('Neuron', 'spike_time fs')
 
+class DerpSpikeRecorder:
+    'Weird mockup of a NEST spike recorder.'
+    def __init__(self, idces, times):
+        self.events = dict(senders=idces, times=times)
+    def __getattr__(self, attr):
+        return self.__dict__[attr]
+    def __iter__(self):
+        yield self
+
 class AnalysisTest(unittest.TestCase):
 
     def assertSpikeDataEqual(self, sda, sdb, msg=None):
@@ -52,6 +61,11 @@ class AnalysisTest(unittest.TestCase):
         # Test idces_times().
         sd5 = ba.SpikeData(*sd.idces_times())
         self.assertSpikeDataEqual(sd, sd5)
+
+        # Test 'NEST SpikeRecorder' constructor.
+        recorder = DerpSpikeRecorder(idces, times)
+        sd6 = ba.SpikeData(recorder)
+        self.assertSpikeDataEqual(sd, sd6)
 
         # Test subset() constructor.
         idces = [1, 2, 3]
@@ -359,12 +373,81 @@ class AnalysisTest(unittest.TestCase):
                              [2, 1, 0, 2, 1, 1, 1])
 
     def test_avalanches(self):
-        # Here's a potential list of binned spike counts; ensure that
-        # the final avalanche doesn't get dropped like it used to.
-        counts = [2,5,3, 0,1,0,0, 2,2, 0, 42]
-        times = np.hstack([i*np.ones(c) for i,c in enumerate(counts)])
-        spikes = ba.SpikeData([times + 0.5])
-        self.assertListEqual(list(spikes.binned(1)), counts)
+        def sd_from_counts(counts):
+            'Generate a SpikeData whose raster matches given counts.'
+            times = np.hstack([i*np.ones(c) for i,c in enumerate(counts)])
+            return ba.SpikeData([times + 0.5])
+
+        # Double-check that this helper method works...
+        counts = np.random.randint(10, size=1000)
+        sd = sd_from_counts(counts)
+        self.assertAll(sd.binned(1) == counts)
+
+        # The simple case where there are avalanches in the middle.
+        sd = sd_from_counts([1, 2, 3, 4, 3, 2, 1, 0, 1, 2, 3, 2, 1, 0])
         self.assertListEqual(
-            [len(av) for av in spikes.avalanches(1, bin_size=1)],
-            [3, 2, 1])
+            [len(av) for av in sd.avalanches(1, bin_size=1)],
+            [5, 3])
+
+        # Ensure that avalanches coinciding with the start and end of
+        # recording don't get counted because there's no way to know
+        # how long they are.
+        sd = sd_from_counts([2,5,3, 0,1,0,0, 2,2, 0,0,0,0, 4,3,4, 0, 42])
+        self.assertListEqual(
+            [len(av) for av in sd.avalanches(1, bin_size=1)],
+            [2, 3])
+
+    def test_metadata(self):
+        # Make sure there's an error if the metadata is gibberish.
+        self.assertRaises(ValueError,
+                          lambda: ba.SpikeData([], N=5, length=100,
+                                               neuron_data=dict(trash=[47])))
+
+        # Overall propagation testing...
+        foo = ba.SpikeData([], N=5, length=1000,
+                           metadata=dict(name='Marvin'),
+                           neuron_data=dict(size=np.random.rand(5)))
+
+        # Make sure subset propagates all metadata and correctly
+        # subsets the neuron_data.
+        subset = [1, 3]
+        truth = foo.neuron_data['size'][subset]
+        bar = foo.subset(subset)
+        self.assertDictEqual(foo.metadata, bar.metadata)
+        self.assertAll(bar.neuron_data['size'] == truth)
+
+        # Change the metadata of foo and see that it's copied, so the
+        # change doesn't propagate.
+        foo.metadata['name'] = 'Ford'
+        baz = bar.subtime(500, 1000)
+        self.assertDictEqual(bar.metadata, baz.metadata)
+        self.assertIsNot(bar.metadata, baz.metadata)
+        self.assertNotEqual(foo.metadata['name'], bar.metadata['name'])
+        self.assertDictEqual(bar.neuron_data, baz.neuron_data)
+
+    def test_raw_data(self):
+        # Make sure there's an error if only one of raw_data and
+        # raw_time is provided to the constructor.
+        self.assertRaises(ValueError,
+                          lambda: ba.SpikeData([], N=5, length=100,
+                                               raw_data=[]))
+        self.assertRaises(ValueError,
+                          lambda: ba.SpikeData([], N=5, length=100,
+                                               raw_time=42))
+
+        # Make sure inconsistent lengths throw an error as well.
+        self.assertRaises(ValueError,
+                          lambda: ba.SpikeData([], N=5, length=100,
+                                               raw_data=np.zeros((5,100)),
+                                               raw_time=np.arange(42)))
+
+        # Check automatic generation of the time array.
+        sd = ba.SpikeData([], N=5, length=100,
+                          raw_data=np.random.rand(5,100),
+                          raw_time=1.0)
+        self.assertAll(sd.raw_time == np.arange(100))
+
+        # Make sure the raw data is sliced properly with time.
+        sd2 = sd.subtime(20, 30)
+        self.assertAll(sd2.raw_time == np.arange(11))
+        self.assertAll(sd2.raw_data == sd.raw_data[:,20:31])

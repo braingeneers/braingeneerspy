@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import numpy as np
 import shutil
-from utils import smart_open
+from utils import smart_open_braingeneers
 
 
 def get_archive_path():
@@ -33,7 +33,7 @@ def load_batch(batch_uuid):
         if not os.path.exists(full_path):
             full_path = "{}/{}/metadata.json".format(get_archive_url(), batch_uuid)
 
-        with smart_open.open(full_path, "r") as f:
+        with smart_open_braingeneers.open(full_path, "r") as f:
             return json.load(f)
     except OSError:
         raise OSError('Are you sure ' + batch_uuid + ' is the right uuid?')
@@ -59,7 +59,7 @@ def load_experiment(batch_uuid, experiment_num):
         if not os.path.exists(exp_full_path):
             exp_full_path = "{}/{}/original/{}".format(get_archive_url(), batch_uuid, batch['experiments'][experiment_num])
 
-        with smart_open.open(exp_full_path, "r") as f:
+        with smart_open_braingeneers.open(exp_full_path, "r") as f:
             return json.load(f)
     except OSError:
         raise OSError('Are you sure ' + batch_uuid + ' is the right uuid?')
