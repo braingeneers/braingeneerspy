@@ -374,7 +374,7 @@ def load_blocks(batch_uuid, experiment_num, channels=None, start=0, stop=None):
     return X, t, fs
 
 
-def load_data(batch_uuid, experiment_num, offset=0, length=-1, channels=None):
+def load_data(batch_uuid, experiment_num, start=0, length=-1, channels=None):
     """
     This function loads arbitrarily specified amounts of data from an experiment for Axion, Intan, Raspi, and Maxwell.
     As a note, the user MUST provide the offset (offset) and the length of frames to take. This function reads
@@ -385,7 +385,7 @@ def load_data(batch_uuid, experiment_num, offset=0, length=-1, channels=None):
         Which experiment in the batch to load.
     :param channels: list of int
         Channels of interest to obtain data from (default None)
-    :param offset: int
+    :param start: int
         Starting datapoint of interest
     :param length: int
         Range indicator of number of datapoints to take (default -1 meaning all datapoints)
@@ -398,13 +398,13 @@ def load_data(batch_uuid, experiment_num, offset=0, length=-1, channels=None):
     # hand off to correct load_data helper
     if "hardware" in metadata:
         if "Raspi" in metadata["hardware"]:
-            dataset = load_data_raspi(metadata, batch_uuid, experiment_num, offset, length)
+            dataset = load_data_raspi(metadata, batch_uuid, experiment_num, start, length)
         elif "Axion" in metadata["hardware"]:
-            dataset = load_data_axion(metadata, batch_uuid, experiment_num, offset, length)
+            dataset = load_data_axion(metadata, batch_uuid, experiment_num, start, length)
         elif "Intan" in metadata["hardware"]:
-            dataset = load_data_intan(metadata, batch_uuid, experiment_num, offset, length)
+            dataset = load_data_intan(metadata, batch_uuid, experiment_num, start, length)
         elif "Maxwell" in metadata["hardware"]:
-            dataset = load_data_maxwell(metadata, batch_uuid, experiment_num, channels, offset,
+            dataset = load_data_maxwell(metadata, batch_uuid, experiment_num, channels, start,
                                                         length)
         else:
             raise Exception('hardware field in metadata.json must contain keyword Axion, Raspi, Intan, or Maxwell')
@@ -452,7 +452,7 @@ def load_data_intan(metadata, batch_uuid, experiment_num, offset, length):
     raise NotImplementedError
 
 
-def load_data_maxwell(metadata, batch_uuid, experiment_num, channels, offset, length):
+def load_data_maxwell(metadata, batch_uuid, experiment_num, channels, start, length):
     """
     Loads specified amount of data from one block
     :param metadata: json file
@@ -463,7 +463,7 @@ def load_data_maxwell(metadata, batch_uuid, experiment_num, channels, offset, le
         Number of experiment
     :param channels: list of int
         Channels of interest
-    :param offset: int
+    :param start: int
         Starting frame (offset) of the datapoints to use
     :param length: int
         Length of datapoints to take
@@ -477,10 +477,10 @@ def load_data_maxwell(metadata, batch_uuid, experiment_num, channels, offset, le
     """
     if length == -1:
         print(
-            f"Loading file Maxwell, UUID {batch_uuid}, experiment number {experiment_num}, frame {offset} to end of file....")
+            f"Loading file Maxwell, UUID {batch_uuid}, experiment number {experiment_num}, frame {start} to end of file....")
     else:
         print(
-            f"Loading file Maxwell, UUID {batch_uuid}, experiment number {experiment_num}, frame {offset} to {offset + length}....")
+            f"Loading file Maxwell, UUID {batch_uuid}, experiment number {experiment_num}, frame {start} to {start + length}....")
     # get datafile
 
     filename = metadata['blocks'][0]['path'].split('/')[-1]
@@ -493,12 +493,12 @@ def load_data_maxwell(metadata, batch_uuid, experiment_num, channels, offset, le
     # end_block = len(metadata['blocks']) - 1
     for index in range(len(metadata['blocks'])):
         # if the offset is lower than the upper range of frames in a block, break out
-        if offset < metadata['blocks'][index]['num_frames'] / metadata['num_channels']:
+        if start < metadata['blocks'][index]['num_frames'] / metadata['num_channels']:
             start_block = index
             break
         # otherwise, keep finding the block where the offset lies
         else:
-            offset -= metadata['blocks'][index]['num_frames'] / metadata['num_channels']
+            start -= metadata['blocks'][index]['num_frames'] / metadata['num_channels']
     # Finding block where the datapoints end
     # if length is -1, read in all the frames from all blocks
     if length == -1:
@@ -510,13 +510,13 @@ def load_data_maxwell(metadata, batch_uuid, experiment_num, channels, offset, le
         frame_end = int(frame_end)
         #frame_end /= metadata['num_channels']
     else:
-        frame_end = offset + length
+        frame_end = start + length
         for index in range(start_block, len(metadata['blocks'])):
-            if (offset + length) < metadata['blocks'][index]['num_frames'] / metadata['num_channels']:
+            if (start + length) < metadata['blocks'][index]['num_frames'] / metadata['num_channels']:
                 end_block = index
                 break
             else:
-                offset -= metadata['blocks'][index]['num_frames'] / metadata['num_channels']
+                start -= metadata['blocks'][index]['num_frames'] / metadata['num_channels']
     assert end_block < len(metadata['blocks'])
     # now, with the starting block, ending block, and frames to take, take those frames and put into nparray.
     # open file
@@ -526,11 +526,11 @@ def load_data_maxwell(metadata, batch_uuid, experiment_num, channels, offset, le
             sig = h5file['sig']
             # make dataset of chosen frames
             if channels is not None:
-                num_frames = len(channels) * (frame_end - offset)
-                dataset = sig[channels, offset:frame_end]
+                num_frames = len(channels) * (frame_end - start)
+                dataset = sig[channels, start:frame_end]
             else:
-                num_frames = metadata['num_channels'] * (frame_end - offset)
-                dataset = sig[:, offset:frame_end]
+                num_frames = metadata['num_channels'] * (frame_end - start)
+                dataset = sig[:, start:frame_end]
     dataset = dataset.astype(np.float32)
     return dataset
 
