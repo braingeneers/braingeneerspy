@@ -881,6 +881,8 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
     metadata_json = {}
     ephys_experiments = OrderedDict()
     current_timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%dT%H:%M:%S')
+    basepath = 's3://braingeneers' if braingeneers.get_default_endpoint().startswith('http') \
+        else braingeneers.get_default_endpoint()
 
     # construct metadata_json
     metadata_json['issue'] = ''
@@ -890,11 +892,11 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
 
     # list raw data files at batch_uuid
     list_of_raw_data_files = sorted(s3wrangler.list_objects(
-        path=f'{braingeneers.get_default_endpoint()}/ephys/{batch_uuid}/original/data/',
+        path=os.path.join(basepath, 'ephys', batch_uuid, 'original/data/'),
         suffix='.raw',
     ))
     if len(list_of_raw_data_files) == 0:
-        raise FileNotFoundError(f'No raw data files found at s3://braingeneers/ephys/{batch_uuid}/original/data/*.raw')
+        raise FileNotFoundError(f'No raw data files found at {basepath}/ephys/{batch_uuid}/original/data/*.raw')
 
     with ThreadPoolExecutor(n_threads) as pool:
         metadata_tuples_per_data_file = list(pool.map(_axion_generate_per_block_metadata, list_of_raw_data_files))
@@ -955,7 +957,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
     metadata_json['ephys_experiments'] = list(ephys_experiments.values())
 
     if save:
-        with smart_open.open(f'{braingeneers.get_default_endpoint()}/ephys/{batch_uuid}/metadata.json', 'w') as f:
+        with smart_open.open(os.path.join(basepath, 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
             json.dump(metadata_json, f)
 
     return metadata_json
