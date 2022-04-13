@@ -427,6 +427,12 @@ class AnalysisTest(unittest.TestCase):
         self.assertListEqual(sd.avalanches(3, bin_size=1), [])
 
     def test_dcc(self):
+        # Make sure complete Poisson gibberish doesn't result in
+        # anything that looks like a power law.
+        sd = random_spikedata(1, 10000)
+        dcc = sd.deviation_from_criticality(bin_size=1)
+        self.assertTrue(dcc.p_size < 0.05 or dcc.p_duration < 0.05)
+
         # Corner case: DCC with no avalanches doesn't error.
         sd = sd_from_counts([1, 2, 3, 4, 5])
         sd.deviation_from_criticality()
