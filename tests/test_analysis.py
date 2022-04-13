@@ -383,7 +383,7 @@ class AnalysisTest(unittest.TestCase):
         def sd_from_counts(counts):
             'Generate a SpikeData whose raster matches given counts.'
             times = np.hstack([i*np.ones(c) for i,c in enumerate(counts)])
-            return ba.SpikeData([times + 0.5])
+            return ba.SpikeData([times + 0.5], length=len(counts))
 
         # Double-check that this helper method works...
         counts = np.random.randint(10, size=1000)
