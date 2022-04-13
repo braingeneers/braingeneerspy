@@ -123,7 +123,7 @@ def load_files_raspi(metadata, batch_uuid, experiment_num, start, stop):
     Parameters
     ----------
     batch_uuid : str
-        UUID of batch of experiments within the Braingeneer's archive'
+        UUID of batch of experiments within the Braingeneers archive
     experiment_num : int
         Which experiment in the batch to load
     start : int, optional
@@ -854,11 +854,13 @@ def from_uint64(all_values):
     return return_list
 
 
-def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '', n_threads: int = 16):
+def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
+                            n_threads: int = 16, save_to_s3: bool = False):
     """
     Generates metadata.json raw Axion data files on S3 from a standard UUID. Assumes raw data files are stored in:
 
-        s3://braingeneers/ephys/YYYY-MM-DD-e-[descriptor]/original/experiments/*.raw
+        ${ENDPOINT}/ephys/YYYY-MM-DD-e-[descriptor]/original/experiments/*.raw
+        (ENDPOINT defaults to s3://braingeneers)
 
     Raises an exception if no data files were found at the expected location.
 
@@ -872,6 +874,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '', n_thre
         included in a UUID the experiment name can be prefixed, for example "recording1_A1", "recording2_A1"
         for separate recordings. It is suggested to end the prefix with "_" for readability.
     :param n_threads: number of concurrent file reads (useful for parsing many network based files)
+    :param save_to_s3: bool (default == False) saves the generated metadata file back to S3 at batch_uuid
     :return: (metadata_json: dict, ephys_experiments: dict) a tuple of two dictionaries which are
         json serializable to metadata.json and experiment1.json.
     """
@@ -887,7 +890,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '', n_thre
 
     # list raw data files at batch_uuid
     list_of_raw_data_files = sorted(s3wrangler.list_objects(
-        path=f's3://braingeneers/ephys/{batch_uuid}/original/data/',
+        path=f'{braingeneers.get_default_endpoint()}/ephys/{batch_uuid}/original/data/',
         suffix='.raw',
     ))
     if len(list_of_raw_data_files) == 0:
@@ -950,6 +953,10 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '', n_thre
                 experiment['blocks'].append(block)
 
     metadata_json['ephys_experiments'] = list(ephys_experiments.values())
+
+    if save_to_s3:
+        with smart_open.open(f'{braingeneers.get_default_endpoint()}/ephys/{batch_uuid}/metadata.json', 'w') as f:
+            json.dump(metadata_json, f)
 
     return metadata_json
 
