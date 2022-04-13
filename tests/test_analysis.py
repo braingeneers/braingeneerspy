@@ -327,6 +327,13 @@ class AnalysisTest(unittest.TestCase):
         self.assertEqual(foo.spike_time_tiling(0, 1, 1),
                          foo.spike_time_tiling(1, 0, 1))
 
+        # Exactly the same thing, but for the matrix of STTCs.
+        sttc = foo.spike_time_tilings(1)
+        self.assertEqual(sttc.shape, (2,2))
+        self.assertEqual(sttc[0,1], sttc[1,0])
+        self.assertEqual(sttc[0,0], 1.0)
+        self.assertEqual(sttc[1,1], 1.0)
+
         # Default arguments, inferred value of tmax.
         tmax = max(foo.train[0].ptp(), foo.train[1].ptp())
         self.assertEqual(foo.spike_time_tiling(0, 1),
