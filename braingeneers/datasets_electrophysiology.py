@@ -855,7 +855,7 @@ def from_uint64(all_values):
 
 
 def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
-                            n_threads: int = 16, save_to_s3: bool = False):
+                            n_threads: int = 16, save: bool = False):
     """
     Generates metadata.json raw Axion data files on S3 from a standard UUID. Assumes raw data files are stored in:
 
@@ -874,7 +874,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
         included in a UUID the experiment name can be prefixed, for example "recording1_A1", "recording2_A1"
         for separate recordings. It is suggested to end the prefix with "_" for readability.
     :param n_threads: number of concurrent file reads (useful for parsing many network based files)
-    :param save_to_s3: bool (default == False) saves the generated metadata file back to S3 at batch_uuid
+    :param save: bool (default == False) saves the generated metadata file back to S3/ENDPOINT at batch_uuid
     :return: (metadata_json: dict, ephys_experiments: dict) a tuple of two dictionaries which are
         json serializable to metadata.json and experiment1.json.
     """
@@ -954,7 +954,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
 
     metadata_json['ephys_experiments'] = list(ephys_experiments.values())
 
-    if save_to_s3:
+    if save:
         with smart_open.open(f'{braingeneers.get_default_endpoint()}/ephys/{batch_uuid}/metadata.json', 'w') as f:
             json.dump(metadata_json, f)
 
