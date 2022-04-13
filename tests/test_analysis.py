@@ -388,6 +388,14 @@ class AnalysisTest(unittest.TestCase):
         self.assertListEqual(
             [len(av) for av in sd.avalanches(1, bin_size=1)],
             [5, 3])
+        self.assertListEqual(
+            [sum(av) for av in sd.avalanches(1, bin_size=1)],
+            [2+3+4+3+2, 2+3+2])
+
+        # Also the duration-size lists of the same data.
+        durations, sizes = sd.duration_size(1, bin_size=1)
+        self.assertListEqual(list(durations), [5,3])
+        self.assertListEqual(list(sizes), [2+3+4+3+2, 2+3+2])
 
         # Ensure that avalanches coinciding with the start and end of
         # recording don't get counted because there's no way to know
@@ -396,6 +404,17 @@ class AnalysisTest(unittest.TestCase):
         self.assertListEqual(
             [len(av) for av in sd.avalanches(1, bin_size=1)],
             [2, 3])
+
+        # Corner cases where there are no avalanches: no transitions
+        # because threshold too low, because threshold too high,
+        # because only crosses once downwards, and because only
+        # crosses once upwards.
+        sd = sd_from_counts([1, 2, 3, 4, 5])
+        self.assertListEqual(sd.avalanches(0, bin_size=1), [])
+        self.assertListEqual(sd.avalanches(10, bin_size=1), [])
+        self.assertListEqual(sd.avalanches(3, bin_size=1), [])
+        sd = sd_from_counts([5, 4, 3, 2, 1])
+        self.assertListEqual(sd.avalanches(3, bin_size=1), [])
 
     def test_metadata(self):
         # Make sure there's an error if the metadata is gibberish.

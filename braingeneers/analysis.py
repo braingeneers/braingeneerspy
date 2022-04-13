@@ -53,7 +53,10 @@ class SpikeData():
                 self.train = [np.asarray(n.spike_time)/n.fs*1e3
                               for n in arg1]
 
-            # If it's not iterable, it must be a NEST spike detector.
+            # If the argument is a NEST spike detector, it is
+            # technically an iterable of one NEST node, so the error
+            # that occurs is a KeyError in the node status dict.
+            # Detect this and pull indices and times lists from it.
             except KeyError:
                 times = arg1.events['times']
                 idces = arg1.events['senders']
@@ -367,9 +370,6 @@ class SpikeData():
         active = counts > thresh
         toggles = np.where(np.diff(active))[0]
 
-        if len(toggles) == 0:
-            return []
-
         # If we start inactive, the first toggle begins the first
         # avalanche. Otherwise, we have to ignore it because we don't
         # know how long the system was active before.
@@ -382,7 +382,7 @@ class SpikeData():
 
         # Now batch up the transitions and create a list of spike
         # counts in between them.
-        return [counts[up:down] for up,down in zip(ups,downs)]
+        return [counts[up+1:down+1] for up,down in zip(ups,downs)]
 
     def duration_size(self, thresh, bin_size=40):
         '''
@@ -553,7 +553,7 @@ def pearson(spikes):
 
     # Some cells won't fire in the whole observation window.
     # These should be treated as uncorrelated with everything
-    # else, rather than generating infinice Pearson coefficients.
+    # else, rather than generating infinite Pearson coefficients.
     σx[σx == 0] = np.inf
 
     # This is by the formula, but there's also a hack to deal with the
