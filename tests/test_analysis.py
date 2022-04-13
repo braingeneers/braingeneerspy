@@ -426,6 +426,11 @@ class AnalysisTest(unittest.TestCase):
         sd = sd_from_counts([5, 4, 3, 2, 1])
         self.assertListEqual(sd.avalanches(3, bin_size=1), [])
 
+    def test_dcc(self):
+        # Corner case: DCC with no avalanches doesn't error.
+        sd = sd_from_counts([1, 2, 3, 4, 5])
+        sd.deviation_from_criticality()
+
     def test_metadata(self):
         # Make sure there's an error if the metadata is gibberish.
         self.assertRaises(ValueError,

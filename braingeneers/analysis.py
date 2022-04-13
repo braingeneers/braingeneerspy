@@ -411,7 +411,7 @@ class SpikeData():
         '''
         # Calculate the spike count threshold corresponding to
         # the given quantile.
-        thresh = np.quantile(self.raster(bin_size).sum(0), quantile)
+        thresh = np.quantile(self.binned(bin_size), quantile)
 
         def p_and_alpha(data, fit):
             stat, p = fit.distribution_compare('power_law',
@@ -428,11 +428,16 @@ class SpikeData():
                          for _ in range(N)])
             return p, dist.alpha
 
+        # Gather durations and sizes. If there are no avalanches, we
+        # very much can't say the system is critical.
+        durations, sizes = self.duration_size(thresh, bin_size)
+        if len(durations) == 0:
+            return DCCResult(dcc=np.inf, p_size=1.0, p_duration=1.0)
+
         with open(os.devnull, 'w') as f, \
                 contextlib.redirect_stdout(f), \
                 contextlib.redirect_stderr(f):
-            # Gather durations and sizes, and fit power laws.
-            durations, sizes = self.duration_size(thresh, bin_size)
+            # Perform the power law fits.
             fit_duration = powerlaw.Fit(durations)
             fit_size = powerlaw.Fit(sizes)
 
