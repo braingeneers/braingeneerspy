@@ -19,13 +19,13 @@ part of the Braingeneers project. There are five subpackages:
 
 ```
 # Install/upgrade full package from git repo using PIP (all optional dependencies included).
-python -m pip install --upgrade git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]
+python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]
 
 # Install/upgrade minimum package (no optional dependencies, good for Raspberry PI install).
-python -m pip install --upgrade git+https://github.com/braingeneers/braingeneerspy.git
+python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git
 
 # Install/upgrade minimum + iot and ml specific dependencies only.
-python -m pip install --upgrade git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,ml]
+python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,ml]
 ```
 
 ### Optional dependency organization

@@ -404,7 +404,7 @@ def load_blocks(batch_uuid, experiment_num, channels=None, start=0, stop=None):
 
 
 def load_data(metadata: dict, experiment: Union[str, int], offset: int = 0, length: int = None,
-              channels: Union[List[int], int] = None):
+              channels: Union[List[int], int] = None, parallelism: (str, int) = 'auto'):
     """
     This function loads arbitrarily specified amounts of data from an experiment for Axion, Intan, Raspi, and Maxwell.
     As a note, the user MUST provide the offset (offset) and the length of frames to take. This function reads
@@ -416,7 +416,13 @@ def load_data(metadata: dict, experiment: Union[str, int], offset: int = 0, leng
     :param channels: Channels of interest to obtain data from (default None for all channels) list of ints or single int
     :param offset: int Starting datapoint of interest, 0-indexed from start of
         recording across all data files and channels-agnostic
-    :param length: int, required, number of data points to return (-1 meaning all data points)
+    :param length: int, required, number of data points to return
+        (-1 meaning all data points across the full experiment recording)
+    :param parallelism: (default == 'auto') to enable parallel read operations only if S3 is the endpoint and the length
+        is above a reasonable threshold, using the number of CPUs and length to determine number of threads to use.
+        1 or False will disable parallelism and read using only the Main thread/process. Note, if you are reading
+        data using a multi-process data loader such as PyTorch then disabling parallelism is recommended.
+        2+ will initiate read operations using the specified number of processes (using Python multiprocessing)
     :return: ndarray array of chosen data points in [channels, time] format.
     """
     assert 'uuid' in metadata, \
@@ -425,8 +431,14 @@ def load_data(metadata: dict, experiment: Union[str, int], offset: int = 0, leng
         'Metadata file is invalid, it does not contain required ephys_experiments field.'
     assert isinstance(experiment, (str, int)), \
         f'Parameter experiment must be an int index or experiment name string. Got: {experiment}'
+    assert length is not None, \
+        f'Length parameter must be set explicitly, use -1 for the full experiment dataset ' \
+        f'(across all files, warning, this can be a very large amount of data)'
+    assert parallelism == 'auto', \
+        'This feature has not yet been implemented, it is reserved for future use.'
 
-    experiment_name = list(metadata['ephys_experiments'].keys())[experiment] if isinstance(experiment, int) else experiment
+    experiment_name = list(metadata['ephys_experiments'].keys())[experiment] \
+        if isinstance(experiment, int) else experiment
     batch_uuid = metadata['uuid']
     hardware = metadata['ephys_experiments'][experiment_name]['hardware']
 
