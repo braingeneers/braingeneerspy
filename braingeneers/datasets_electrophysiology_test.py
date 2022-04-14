@@ -1,5 +1,5 @@
 import unittest
-import datasets_electrophysiology as ephys
+import braingeneers.datasets_electrophysiology as ephys
 import json
 import braingeneers.utils.smart_open_braingeneers as smart_open
 
@@ -18,6 +18,19 @@ class AxionReaderTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         pass
+
+    # @unittest.skip
+    def test_online_multiple_files(self):
+        """ Warning: large data transfer """
+        metadata = ephys.load_metadata('2021-09-23-e-MR-89-0526-drug-3hr')
+        data = ephys.load_data(metadata, 'A3', 0, 45000000, None)
+        self.assertTrue(data.shape[1] == 45000000)
+
+    def test_online_read_beyond_eof(self):
+        metadata = ephys.load_metadata(self.batch_uuid)
+        dataset_size = sum([block['num_frames'] for block in metadata['ephys_experiments']['A1']['blocks']])
+        with self.assertRaises(IndexError):
+            ephys.load_data(metadata, 'A1', offset=dataset_size - 10, length=20)
 
     def test_online_axion_generate_metadata(self):
         metadata = ephys.generate_metadata_axion(self.batch_uuid)
@@ -119,6 +132,43 @@ class AxionReaderTests(unittest.TestCase):
         self.assertEqual(data[0][1], -18 * voltage_scaling_factor)
         self.assertEqual(data[0][2], 10 * voltage_scaling_factor)
         self.assertEqual(data[0][3], 30 * voltage_scaling_factor)
+
+
+class HengenlabReaderTests(unittest.TestCase):
+    batch_uuid = '2020-04-12-e-hengenlab-caf26'
+
+    def test_online_generate_metadata(self):
+        metadata = ephys.generate_metadata_hengenlab(
+            batch_uuid=self.batch_uuid,
+            dataset_name='CAF26',
+            experiment_name='experiment1'
+        )
+
+        self.assertEqual(metadata['issue'], '')
+        self.assertEqual(metadata['notes'], '')
+        self.assertEqual(metadata['timestamp'], '2020-08-07T14:00:15')
+        self.assertEqual(metadata['uuid'], '2020-04-12-e-hengenlab-caf26')
+        self.assertEqual(len(metadata['ephys_experiments']), 1)
+
+        experiment = metadata['ephys_experiments'][0]
+        self.assertEqual(experiment['name'], 'experiment1')
+        self.assertEqual(experiment['hardware'], 'TODO')
+        self.assertEqual(experiment['notes'], '')
+        self.assertEqual(experiment['num_channels'], 192)
+        self.assertEqual(experiment['sample_rate'], 25000)
+        self.assertEqual(experiment['voltage_scaling_factor'], 'TODO')
+        self.assertEqual(experiment['timestamp'], '2020-08-07T14:00:15')
+        self.assertEqual(experiment['units'], '\u00b5V')
+        self.assertEqual(experiment['version'], '1.0.0')
+        self.assertEqual(len(experiment['blocks']), 324)
+
+        block1 = metadata['ephys_experiments'][0]['blocks'][1]
+        self.assertEqual(block1['num_frames'], 7500000)
+        self.assertEqual(block1['path'], 'original/experiment1/Headstages_192_Channels_int16_2020-08-07_14-05-16.bin')
+        self.assertEqual(block1['timestamp'], '2020-08-07T14:05:16')
+        self.assertEqual(block1['ecube_time'], None)  # todo
+
+        self.fail()
 
 
 if __name__ == '__main__':

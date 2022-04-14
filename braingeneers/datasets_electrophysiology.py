@@ -437,6 +437,11 @@ def load_data(metadata: dict, experiment: Union[str, int], offset: int = 0, leng
     assert parallelism == 'auto', \
         'This feature has not yet been implemented, it is reserved for future use.'
 
+    dataset_size = sum([block['num_frames'] for block in metadata['ephys_experiments']['A1']['blocks']])
+    if offset + length > dataset_size:
+        raise IndexError(f'Dataset size is {dataset_size}, but parameters offset + length '
+                         f'is {offset + length} which exceeds dataset size.')
+
     experiment_name = list(metadata['ephys_experiments'].keys())[experiment] \
         if isinstance(experiment, int) else experiment
     batch_uuid = metadata['uuid']
@@ -528,11 +533,11 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_name: int,
         num_channels_per_well = np.prod(experiment['axion_electrode_layout_row_col'])
 
         # select channels (None for all channels)
-        channels = np.array(channels) if isinstance(channels, (Iterable, np.ndarray)) \
+        c = np.array(channels) if isinstance(channels, (Iterable, np.ndarray)) \
             else np.arange(num_channels_per_well) if isinstance(channels, type(None)) \
             else np.array([channels])
-        channels += experiment['axion_channel_offset']
-        data_ndarray_select_channels = data_ndarray[channels, :] if channels is not None else data_ndarray
+        c += experiment['axion_channel_offset']
+        data_ndarray_select_channels = data_ndarray[c, :] if channels is not None else data_ndarray
 
         # append data from this block/file to list
         data_multi_file.append(data_ndarray_select_channels)
@@ -801,7 +806,9 @@ def sync_s3_to_kach(batch_name):
     os.system(sync_command)
 
 
-def generate_metadata_hengenlab(dataset_name: str, experiment_name: str = 'experiment1',
+def generate_metadata_hengenlab(batch_uuid: str,
+                                dataset_name: str,
+                                experiment_name: Union[List[str], str] = 'experiment1',
                                 n_threads: int = 16, save: bool = False):
     """
     Generates a metadata json and experiment1...experimentN jsons for a hengenlab dataset upload.
@@ -811,6 +818,7 @@ def generate_metadata_hengenlab(dataset_name: str, experiment_name: str = 'exper
 
     Contiguous recording periods
 
+    :param batch_uuid: location on braingeneers storage (S3)
     :param dataset_name: the dataset_name as defined in `neuraltoolkit`. Metadata will be pulled from `neuraltoolkit`.
     :param experiment_name: Dataset name as stored in `neuraltoolkit`. For example "CAF26"
     :param n_threads: (default 16) number of threads used to get ecube times and file sizes from raw data files
@@ -819,7 +827,8 @@ def generate_metadata_hengenlab(dataset_name: str, experiment_name: str = 'exper
     :return: metadata.json
     """
     metadata = {}
-    # todo working here
+
+
 
 
     return metadata
