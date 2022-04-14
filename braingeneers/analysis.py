@@ -53,7 +53,10 @@ class SpikeData():
                 self.train = [np.asarray(n.spike_time)/n.fs*1e3
                               for n in arg1]
 
-            # If it's not iterable, it must be a NEST spike detector.
+            # If the argument is a NEST spike detector, it is
+            # technically an iterable of one NEST node, so the error
+            # that occurs is a KeyError in the node status dict.
+            # Detect this and pull indices and times lists from it.
             except KeyError:
                 times = arg1.events['times']
                 idces = arg1.events['senders']
@@ -367,9 +370,6 @@ class SpikeData():
         active = counts > thresh
         toggles = np.where(np.diff(active))[0]
 
-        if len(toggles) == 0:
-            return []
-
         # If we start inactive, the first toggle begins the first
         # avalanche. Otherwise, we have to ignore it because we don't
         # know how long the system was active before.
@@ -382,7 +382,7 @@ class SpikeData():
 
         # Now batch up the transitions and create a list of spike
         # counts in between them.
-        return [counts[up:down] for up,down in zip(ups,downs)]
+        return [counts[up+1:down+1] for up,down in zip(ups,downs)]
 
     def duration_size(self, thresh, bin_size=40):
         '''
@@ -405,48 +405,78 @@ class SpikeData():
         distributions as a metric for suboptimal cortical function
         following monocular deprivation.
 
+        The returned DCCResult struct contains not only the DCC metric
+        itself but also the significance of the hypothesis that the
+        size and duration distributions of the extracted avalanches
+        are poorly fit by power laws.
+
         [1] Ma, Z., Turrigiano, G. G., Wessel, R. & Hengen, K. B.
             Cortical circuit dynamics are homeostatically tuned to
             criticality in vivo. Neuron 104, 655-664.e4 (2019).
         '''
         # Calculate the spike count threshold corresponding to
         # the given quantile.
-        thresh = np.quantile(self.raster(bin_size).sum(0), quantile)
+        thresh = np.quantile(self.binned(bin_size), quantile)
 
-        def p_and_alpha(data, fit):
-            stat, p = fit.distribution_compare('power_law',
-                                               'truncated_power_law',
-                                               nested=True)
-            if stat < 0 and p < pval_truncated:
-                dist = fit.truncated_power_law
-            else:
-                dist = fit.power_law
+        # Gather durations and sizes. If there are no avalanches, we
+        # very much can't say the system is critical.
+        durations, sizes = self.duration_size(thresh, bin_size)
+        if len(durations) == 0:
+            return DCCResult(dcc=np.inf, p_size=1.0, p_duration=1.0)
 
-            ks = stats.ks_1samp(data, dist.cdf)
-            p = np.mean([stats.ks_1samp(dist.generate_random(len(data)),
-                                        dist.cdf) > ks
-                         for _ in range(N)])
-            return p, dist.alpha
-
-        with open(os.devnull, 'w') as f, \
-                contextlib.redirect_stdout(f), \
-                contextlib.redirect_stderr(f):
-            # Gather durations and sizes, and fit power laws.
-            durations, sizes = self.duration_size(thresh, bin_size)
-            fit_duration = powerlaw.Fit(durations)
-            fit_size = powerlaw.Fit(sizes)
-
-            # Calculate significance using N data points.
-            p_size, alpha_size = p_and_alpha(sizes, fit_size)
-            p_duration, alpha_duration = p_and_alpha(durations, fit_duration)
+        # Call out to all the actual statistics.
+        p_size, alpha_size = _p_and_alpha(sizes, N, pval_truncated)
+        p_dur, alpha_dur = _p_and_alpha(durations, N, pval_truncated)
 
         # Fit and predict the dynamical critical exponent.
         τ_fit = np.polyfit(np.log(durations), np.log(sizes), 1)[0]
-        τ_pred = (alpha_duration - 1) / (alpha_size - 1)
+        τ_pred = (alpha_dur - 1) / (alpha_size - 1)
         dcc = abs(τ_pred - τ_fit)
 
         # Return the DCC value and significance.
-        return DCCResult(dcc=dcc, p_size=p_size, p_duration=p_duration)
+        return DCCResult(dcc=dcc, p_size=p_size, p_duration=p_dur)
+
+
+def _p_and_alpha(data, N_surrogate=1000, pval_truncated=0.0):
+    '''
+    Perform a power-law fit to some data, and return a p-value for the
+    hypothesis that this fit is poor, together with just the exponent
+    of the fit.
+
+    A positive value of `pval_truncated` means to allow the hypothesis
+    of a truncated power law, which must be better than the plain
+    power law with the given significance under powerlaw's default
+    nested hypothesis comparison test.
+
+    The returned significance value is computed by sampling N surrogate
+    datasets and counting what fraction are further from the fitted
+    distribution according to the one-sample Kolmogorov-Smirnoff test.
+    '''
+    # Perform the fits and compare the distributions with IO
+    # silenced because there's no option to disable printing
+    # in this library...
+    with open(os.devnull, 'w') as f, \
+            contextlib.redirect_stdout(f), \
+            contextlib.redirect_stderr(f):
+        fit = powerlaw.Fit(data)
+        stat, p = fit.distribution_compare('power_law',
+                                           'truncated_power_law',
+                                           nested=True)
+
+    # If the truncated power law is a significantly better
+    # explanation of the data, use it.
+    if stat < 0 and p < pval_truncated:
+        dist = fit.truncated_power_law
+    else:
+        dist = fit.power_law
+
+    # The p-value of the fit is the fraction of surrogate
+    # datasets which it fits worse than the input dataset.
+    ks = stats.ks_1samp(data, dist.cdf)
+    p = np.mean([stats.ks_1samp(dist.generate_random(len(data)),
+                                dist.cdf) > ks
+                 for _ in range(N_surrogate)])
+    return p, dist.alpha
 
 
 def _train_from_i_t_list(idces, times, N):
@@ -553,7 +583,7 @@ def pearson(spikes):
 
     # Some cells won't fire in the whole observation window.
     # These should be treated as uncorrelated with everything
-    # else, rather than generating infinice Pearson coefficients.
+    # else, rather than generating infinite Pearson coefficients.
     σx[σx == 0] = np.inf
 
     # This is by the formula, but there's also a hack to deal with the

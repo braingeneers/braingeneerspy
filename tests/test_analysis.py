@@ -15,7 +15,28 @@ class DerpSpikeRecorder:
     def __iter__(self):
         yield self
 
+def sd_from_counts(counts):
+    'Generate a SpikeData whose raster matches given counts.'
+    times = np.hstack([i*np.ones(c) for i,c in enumerate(counts)])
+    return ba.SpikeData([times + 0.5], length=len(counts))
+
+def random_spikedata(units, spikes, rate=1.0):
+    '''
+    Generate SpikeData with a given number of units, total number of
+    spikes, and overall mean firing rate.
+    '''
+    times = np.random.rand(spikes)*spikes/rate/units
+    idces = np.random.randint(units, size=spikes)
+    return ba.SpikeData(idces, times,
+                        length=spikes/rate/units, N=units)
+
 class AnalysisTest(unittest.TestCase):
+
+    def test_sd_from_counts(self):
+        # Just double-check that this helper method works...
+        counts = np.random.randint(10, size=1000)
+        sd = sd_from_counts(counts)
+        self.assertAll(sd.binned(1) == counts)
 
     def assertSpikeDataEqual(self, sda, sdb, msg=None):
         'Assert that two SpikeData objects contain the same data.'
@@ -243,11 +264,6 @@ class AnalysisTest(unittest.TestCase):
     def test_fano_factors(self):
         N = 10000
 
-        def spikes(units):
-            times = np.random.rand(N)*N
-            idces = np.random.randint(units, size=N)
-            return ba.SpikeData(idces, times)
-
         # If there's no variance, Fano factors should be zero, for
         # both sparse and dense implementations. Also use todense()
         # next to  toarray() to show that both np.matrix and np.array
@@ -262,7 +278,7 @@ class AnalysisTest(unittest.TestCase):
         # Poisson spike trains should have Fano factors about 1.
         # This is only rough because random, but the sparse and dense
         # versions should both be equal to each other.
-        foo = spikes(1).sparse_raster(1)
+        foo = random_spikedata(1, N).sparse_raster(1)
         f_sparse = ba.fano_factors(foo)[0]
         f_dense = ba.fano_factors(foo.toarray())[0]
         self.assertAlmostEqual(f_sparse, 1, 1)
@@ -271,7 +287,7 @@ class AnalysisTest(unittest.TestCase):
 
         # Make sure the sparse and dense are equal when there are
         # multiple spike trains as well.
-        foo = spikes(10).sparse_raster(10)
+        foo = random_spikedata(10, N).sparse_raster(10)
         f_sparse = ba.fano_factors(foo)
         f_dense = ba.fano_factors(foo.toarray())
         self.assertClose(f_sparse, f_dense)
@@ -316,16 +332,20 @@ class AnalysisTest(unittest.TestCase):
         # Examples to use in different cases.
         N = 10000
 
-        def spikes():
-            return np.random.rand(N) * N
-
         # Any spike train should be exactly equal to itself, and the
         # result shouldn't depend on which train is A and which is B.
-        foo = ba.SpikeData([spikes(), spikes()])
+        foo = random_spikedata(2, N)
         self.assertEqual(foo.spike_time_tiling(0, 0, 1), 1.0)
         self.assertEqual(foo.spike_time_tiling(1, 1, 1), 1.0)
         self.assertEqual(foo.spike_time_tiling(0, 1, 1),
                          foo.spike_time_tiling(1, 0, 1))
+
+        # Exactly the same thing, but for the matrix of STTCs.
+        sttc = foo.spike_time_tilings(1)
+        self.assertEqual(sttc.shape, (2,2))
+        self.assertEqual(sttc[0,1], sttc[1,0])
+        self.assertEqual(sttc[0,0], 1.0)
+        self.assertEqual(sttc[1,1], 1.0)
 
         # Default arguments, inferred value of tmax.
         tmax = max(foo.train[0].ptp(), foo.train[1].ptp())
@@ -353,7 +373,7 @@ class AnalysisTest(unittest.TestCase):
         # bit out of range on the negative extremes due to numerical
         # issues, but it should be fine in general.
         for _ in range(100):
-            baz = ba.SpikeData([spikes(), spikes()])
+            baz = random_spikedata(2, N)
             sttc = baz.spike_time_tiling(0, 1, np.random.lognormal())
             self.assertLessEqual(sttc, 1)
             self.assertGreaterEqual(sttc, -1)
@@ -373,21 +393,19 @@ class AnalysisTest(unittest.TestCase):
                              [2, 1, 0, 2, 1, 1, 1])
 
     def test_avalanches(self):
-        def sd_from_counts(counts):
-            'Generate a SpikeData whose raster matches given counts.'
-            times = np.hstack([i*np.ones(c) for i,c in enumerate(counts)])
-            return ba.SpikeData([times + 0.5])
-
-        # Double-check that this helper method works...
-        counts = np.random.randint(10, size=1000)
-        sd = sd_from_counts(counts)
-        self.assertAll(sd.binned(1) == counts)
-
         # The simple case where there are avalanches in the middle.
         sd = sd_from_counts([1, 2, 3, 4, 3, 2, 1, 0, 1, 2, 3, 2, 1, 0])
         self.assertListEqual(
             [len(av) for av in sd.avalanches(1, bin_size=1)],
             [5, 3])
+        self.assertListEqual(
+            [sum(av) for av in sd.avalanches(1, bin_size=1)],
+            [2+3+4+3+2, 2+3+2])
+
+        # Also the duration-size lists of the same data.
+        durations, sizes = sd.duration_size(1, bin_size=1)
+        self.assertListEqual(list(durations), [5,3])
+        self.assertListEqual(list(sizes), [2+3+4+3+2, 2+3+2])
 
         # Ensure that avalanches coinciding with the start and end of
         # recording don't get counted because there's no way to know
@@ -396,6 +414,28 @@ class AnalysisTest(unittest.TestCase):
         self.assertListEqual(
             [len(av) for av in sd.avalanches(1, bin_size=1)],
             [2, 3])
+
+        # Corner cases where there are no avalanches: no transitions
+        # because threshold too low, because threshold too high,
+        # because only crosses once downwards, and because only
+        # crosses once upwards.
+        sd = sd_from_counts([1, 2, 3, 4, 5])
+        self.assertListEqual(sd.avalanches(0, bin_size=1), [])
+        self.assertListEqual(sd.avalanches(10, bin_size=1), [])
+        self.assertListEqual(sd.avalanches(3, bin_size=1), [])
+        sd = sd_from_counts([5, 4, 3, 2, 1])
+        self.assertListEqual(sd.avalanches(3, bin_size=1), [])
+
+    def test_dcc(self):
+        # Make sure complete Poisson gibberish doesn't result in
+        # anything that looks like a power law.
+        sd = random_spikedata(1, 10000)
+        dcc = sd.deviation_from_criticality(bin_size=1)
+        self.assertTrue(dcc.p_size < 0.05 or dcc.p_duration < 0.05)
+
+        # Corner case: DCC with no avalanches doesn't error.
+        sd = sd_from_counts([1, 2, 3, 4, 5])
+        sd.deviation_from_criticality()
 
     def test_metadata(self):
         # Make sure there's an error if the metadata is gibberish.
