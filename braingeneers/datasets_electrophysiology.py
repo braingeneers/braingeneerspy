@@ -781,7 +781,8 @@ def sync_s3_to_kach(batch_name):
     os.system(sync_command)
 
 
-def generate_metadata_hengenlab(dataset_name: str):
+def generate_metadata_hengenlab(dataset_name: str, experiment_name: str = 'experiment1',
+                                n_threads: int = 16, save: bool = False):
     """
     Generates a metadata json and experiment1...experimentN jsons for a hengenlab dataset upload.
 
@@ -791,9 +792,17 @@ def generate_metadata_hengenlab(dataset_name: str):
     Contiguous recording periods
 
     :param dataset_name: the dataset_name as defined in `neuraltoolkit`. Metadata will be pulled from `neuraltoolkit`.
-    :return:
+    :param experiment_name: Dataset name as stored in `neuraltoolkit`. For example "CAF26"
+    :param n_threads: (default 16) number of threads used to get ecube times and file sizes from raw data files
+    :param save: (default False) option to save the metadata.json back to S3
+        (or the current braingeneers.default_endpoint)
+    :return: metadata.json
     """
-    pass  # todo
+    metadata = {}
+    # todo working here
+
+
+    return metadata
 
 
 # --- AXION READER -----------------------------
@@ -958,7 +967,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
 
     if save:
         with smart_open.open(os.path.join(basepath, 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
-            json.dump(metadata_json, f)
+            json.dump(metadata_json, f, indent=2)
 
     return metadata_json
 
@@ -1111,7 +1120,7 @@ def _axion_get_data(file_name, file_data_start_position,
     :param electrode_layout: row, col of electrode layout
     :return:
     """
-    with smart_open.open(file_name, 'rb') as fid:
+    with smart_open.open(file_name, 'rb', compression='disable') as fid:
         # --- GET DATA ---
         total_num_samples = sample_length * num_channels
 
