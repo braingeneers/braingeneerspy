@@ -26,6 +26,13 @@ import itertools
 # todo update existing datasets metadata json files on S3
 
 
+def get_basepath():
+    """ For S3 or local file access, this returns either s3://braingeneers or the local path up to ephys/UUID/... """
+    basepath = 's3://braingeneers' if braingeneers.get_default_endpoint().startswith('http') \
+        else braingeneers.get_default_endpoint()
+    return basepath
+
+
 @deprecated('Will be removed in the future, use braingeneers.utils.smart_open_braingeneers instead')
 def get_archive_path():
     """/public/groups/braingeneers/ephys  Return path to archive on the GI public server """
@@ -471,14 +478,15 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_name: int,
     :return: ndarray in (channels, frames) format where channels 0:64 are well A1, 64:128 are well A2, etc.
     """
     data_multi_file = []
-
+    # basepath = 's3://braingeneers' if braingeneers.get_default_endpoint().startswith('http') \
+    #     else braingeneers.get_default_endpoint()
     # get subset of files to read from metadata.blocks
     metadata_offsets_cumsum = np.cumsum([
         block['num_frames'] for block in metadata['ephys_experiments'][experiment_name]['blocks']
     ])
     block_ixs_range = np.minimum(
         len(metadata_offsets_cumsum),
-        np.searchsorted(metadata_offsets_cumsum, [offset, offset + length], side='right')
+        np.searchsorted(metadata_offsets_cumsum, [offset, offset + length - 1], side='right')
     )
     block_ixs = list(range(block_ixs_range[0], block_ixs_range[1] + 1))
     assert len(block_ixs) > 0, \
@@ -493,7 +501,7 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_name: int,
         experiment = metadata['ephys_experiments'][experiment_name]
         block = experiment['blocks'][block_ix]
         file_name = block['path']
-        full_file_path = f's3://braingeneers/ephys/{batch_uuid}/original/data/{file_name}'
+        full_file_path = os.path.join(get_basepath(), 'ephys', batch_uuid, 'original', 'data', file_name)
         sample_start = max(0, offset - metadata_offsets_cumsum[block_ix] + block['num_frames'])
         data_length = min(block['num_frames'], length - frame_read_count)
         data_ndarray = _axion_get_data(
@@ -890,8 +898,6 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
     metadata_json = {}
     ephys_experiments = OrderedDict()
     current_timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%dT%H:%M:%S')
-    basepath = 's3://braingeneers' if braingeneers.get_default_endpoint().startswith('http') \
-        else braingeneers.get_default_endpoint()
 
     # construct metadata_json
     metadata_json['issue'] = ''
@@ -901,11 +907,11 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
 
     # list raw data files at batch_uuid
     list_of_raw_data_files = sorted(s3wrangler.list_objects(
-        path=os.path.join(basepath, 'ephys', batch_uuid, 'original/data/'),
+        path=os.path.join(get_basepath(), 'ephys', batch_uuid, 'original/data/'),
         suffix='.raw',
     ))
     if len(list_of_raw_data_files) == 0:
-        raise FileNotFoundError(f'No raw data files found at {basepath}/ephys/{batch_uuid}/original/data/*.raw')
+        raise FileNotFoundError(f'No raw data files found at {get_basepath()}/ephys/{batch_uuid}/original/data/*.raw')
 
     with ThreadPoolExecutor(n_threads) as pool:
         metadata_tuples_per_data_file = list(pool.map(_axion_generate_per_block_metadata, list_of_raw_data_files))
@@ -966,7 +972,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
     metadata_json['ephys_experiments'] = list(ephys_experiments.values())
 
     if save:
-        with smart_open.open(os.path.join(basepath, 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
+        with smart_open.open(os.path.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
             json.dump(metadata_json, f, indent=2)
 
     return metadata_json
