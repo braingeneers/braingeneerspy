@@ -537,7 +537,7 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_name: int,
             else np.arange(num_channels_per_well) if isinstance(channels, type(None)) \
             else np.array([channels])
         c += experiment['axion_channel_offset']
-        data_ndarray_select_channels = data_ndarray[c, :] if channels is not None else data_ndarray
+        data_ndarray_select_channels = data_ndarray[c, :]
 
         # append data from this block/file to list
         data_multi_file.append(data_ndarray_select_channels)
