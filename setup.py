@@ -1,8 +1,46 @@
 from setuptools import setup, find_packages
 from os import path
+import itertools
+
+
+"""
+Define all groups of dependencies here. `minimal` dependencies are always installed with
+the braingeneerspy package, all other groups of dependencies will be installed
+braingeneerspy[all] or braingeneerspy[specific_dependency_group]
+Maintainers are encouraged to move dependencies to specific dependency groups and keep
+`minimal` as small as possible. `minimal` would typically be used in a RaspberryPI
+environment for example, where large dependencies can be very slow to build.
+"""
+dependencies = {
+    # Minimal dependencies are always installed with a pip install of the repo
+    'minimal': [
+        'matplotlib',
+        'requests',
+        'numpy',
+        'scipy',
+        'tenacity',
+        'awswrangler',
+        'sortedcontainers',
+        'powerlaw',
+        # 'boto3==1.17.96',  # depends on awscrt==0.11.22
+        'boto3',  # if version conflicts occur revert back to above version
+        'smart_open>=5.1.0',
+    ],
+    # Specific dependency groups allow unnecessary (and often large) dependencies to be skipped
+    # add dependency groups here, changes will be dynamically added to setup(...)
+    'iot': [
+        'awsiotsdk==1.6.0',
+        'redis',
+    ],
+    'ml': [
+        'torch',
+    ],
+    'hengenlab': [
+        'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git',
+    ],
+}
 
 here = path.abspath(path.dirname(__file__))
-
 with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
@@ -23,41 +61,10 @@ setup(
         'License :: MIT',
     ],
     packages=find_packages(exclude=()),
-    # Include only the minimum dependencies for working with data in install_requires
-    # Consider the minimum necessary dependencies that would be installed on a RaspberryPI
-    install_requires=[
-        'matplotlib',
-        'requests',
-        'numpy',
-        'scipy',
-        'tenacity',
-        'awswrangler',
-        'sortedcontainers',
-        'powerlaw',
-        'boto3==1.17.96',  # depends on awscrt==0.11.22
-        'smart_open>=5.1.0',
-    ],
-    # Include dependencies for specific use cases in extra_requires, additional categories
-    # can be added, but 'all' should contain dependencies for all user cases.
+    # Edit these fields using the `dependencies` variable above, no changes here are necessary
+    install_requires=dependencies['minimal'],
     extras_require={
-        'all': [
-            # iot
-            'awsiotsdk==1.6.0',
-            'redis',
-            # ml
-            'torch',
-            # hengenlab
-            'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git',
-        ],
-        'iot': [
-            'awsiotsdk==1.6.0',
-            'redis',
-        ],
-        'ml': [
-            'torch'
-        ],
-        'hengenlab': [
-            'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git'
-        ],
+        'all': list(itertools.chain(*dependencies.values())),              # all dependencies included
+        **{k: v for k, v in dependencies.items() if k != 'minimal'},    # each dependency group
     }
 )
