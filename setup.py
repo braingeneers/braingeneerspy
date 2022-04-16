@@ -29,7 +29,7 @@ dependencies = {
     # Specific dependency groups allow unnecessary (and often large) dependencies to be skipped
     # add dependency groups here, changes will be dynamically added to setup(...)
     'iot': [
-        'awsiotsdk==1.6.0',
+        'awsiotsdk==1.7.0',
         'redis',
     ],
     'ml': [
