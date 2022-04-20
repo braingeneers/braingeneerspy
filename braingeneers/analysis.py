@@ -160,6 +160,21 @@ class SpikeData():
         '''
         return self.raster(bin_size).sum(0)
 
+    def rates(self, unit='kHz'):
+        '''
+        Calculate the firing rate of each neuron as an average number
+        of events per time over the duration of the data. The unit may
+        be either `Hz` or `kHz` (default).
+        '''
+        rates = np.array([len(t) for t in self.train]) / self.length
+
+        if unit == 'Hz':
+            return 1e3*rates
+        elif unit == 'kHz':
+            return rates
+        else:
+            raise ValueError(f'Unknown unit {unit} (try Hz or kHz)')
+
     def subset(self, units):
         '''
         Return a new SpikeData with spike times for only some units.

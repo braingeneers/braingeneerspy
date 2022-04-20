@@ -32,12 +32,6 @@ def random_spikedata(units, spikes, rate=1.0):
 
 class AnalysisTest(unittest.TestCase):
 
-    def test_sd_from_counts(self):
-        # Just double-check that this helper method works...
-        counts = np.random.randint(10, size=1000)
-        sd = sd_from_counts(counts)
-        self.assertAll(sd.binned(1) == counts)
-
     def assertSpikeDataEqual(self, sda, sdb, msg=None):
         'Assert that two SpikeData objects contain the same data.'
         for a,b in zip(sda.train, sdb.train):
@@ -51,6 +45,12 @@ class AnalysisTest(unittest.TestCase):
     def assertClose(self, a, b, msg=None, **kw):
         'Assert that two arrays are equal within tolerance.'
         self.assertTrue(np.allclose(a, b, **kw), msg=msg)
+
+    def test_sd_from_counts(self):
+        # Just double-check that this helper method works...
+        counts = np.random.randint(10, size=1000)
+        sd = sd_from_counts(counts)
+        self.assertAll(sd.binned(1) == counts)
 
     def test_spike_data(self):
         # Generate a bunch of random spike times and indices.
@@ -149,9 +149,7 @@ class AnalysisTest(unittest.TestCase):
         # Generate Poisson spike trains and make sure no spikes are
         # lost in translation.
         N = 10000
-        times = np.random.rand(N) * 1e4
-        idces = np.random.randint(10, size=N)
-        sd = ba.SpikeData(idces, times)
+        sd = random_spikedata(10, N)
 
         # Try both a sparse and a dense raster.
         self.assertEqual(sd.raster().sum(), N)
@@ -181,6 +179,15 @@ class AnalysisTest(unittest.TestCase):
         # raster and other binning methods.
         binned = np.array([list(sd.binned(10))])
         self.assertAll(sd.raster(10) == binned)
+
+
+    def test_rates(self):
+        # Generate random spike trains of varying lengths and
+        # therefore rates to calculate.
+        counts = np.random.poisson(100, size=50)
+        sd = ba.SpikeData([np.random.rand(n)
+                           for n in counts], length=1)
+        self.assertAll(sd.rates() == counts)
 
 
     def test_pearson(self):
