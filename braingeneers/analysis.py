@@ -350,11 +350,14 @@ class SpikeData():
         '''
         tA, tB = self.train[i], self.train[j]
 
+        if len(tA) == 0 or len(tB) == 0:
+            return 0.0
+
         TA = _sttc_ta(tA, delt, self.length) / self.length
         TB = _sttc_ta(tB, delt, self.length) / self.length
 
-        PA = _sttc_na(tA, tB, delt) / len(tA) if len(tA) > 0 else 1.0
-        PB = _sttc_na(tB, tA, delt) / len(tB) if len(tB) > 0 else 1.0
+        PA = _sttc_na(tA, tB, delt) / len(tA)
+        PB = _sttc_na(tB, tA, delt) / len(tB)
 
         aa = (PA-TB)/(1-PA*TB) if PA*TB != 1 else 0
         bb = (PB-TA)/(1-PB*TA) if PB*TA != 1 else 0

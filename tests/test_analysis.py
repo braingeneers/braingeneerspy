@@ -369,14 +369,19 @@ class AnalysisTest(unittest.TestCase):
         # lim(dt to 0.5) STTC(dt) = -1, but STTC(dt >= 0.5) = 0.
         self.assertEqual(bar.spike_time_tiling(0, 1, 0.5), 0)
 
-        # Make sure it stays within range. Technically it goes a tiny
-        # bit out of range on the negative extremes due to numerical
-        # issues, but it should be fine in general.
+        # Make sure it stays within range even for spike trains with
+        # completely random lengths.
         for _ in range(100):
-            baz = random_spikedata(2, N)
+            baz = ba.SpikeData([np.random.rand(np.random.poisson(100))
+                                for _ in range(2)])
             sttc = baz.spike_time_tiling(0, 1, np.random.lognormal())
             self.assertLessEqual(sttc, 1)
             self.assertGreaterEqual(sttc, -1)
+
+        # STTC of an empty spike train should definitely be 0!
+        fish = ba.SpikeData([[], np.random.rand(100)])
+        sttc = fish.spike_time_tiling(0, 1, 0.01)
+        self.assertEqual(sttc, 0)
 
     def test_binning_doesnt_lose_spikes(self):
         # Generate the times of a Poisson spike train, and ensure that
