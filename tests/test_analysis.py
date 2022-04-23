@@ -398,7 +398,7 @@ class AnalysisTest(unittest.TestCase):
             [2, 3])
 
     def test_metadata(self):
-        # Make sure there's an error if the metadata is gibberish.
+        # Make sure there's an error if the new_metadata is gibberish.
         self.assertRaises(ValueError,
                           lambda: ba.SpikeData([], N=5, length=100,
                                                neuron_data=dict(trash=[47])))
@@ -408,21 +408,21 @@ class AnalysisTest(unittest.TestCase):
                            metadata=dict(name='Marvin'),
                            neuron_data=dict(size=np.random.rand(5)))
 
-        # Make sure subset propagates all metadata and correctly
+        # Make sure subset propagates all new_metadata and correctly
         # subsets the neuron_data.
         subset = [1, 3]
         truth = foo.neuron_data['size'][subset]
         bar = foo.subset(subset)
-        self.assertDictEqual(foo.metadata, bar.metadata)
+        self.assertDictEqual(foo.metadata, bar.new_metadata)
         self.assertAll(bar.neuron_data['size'] == truth)
 
-        # Change the metadata of foo and see that it's copied, so the
+        # Change the new_metadata of foo and see that it's copied, so the
         # change doesn't propagate.
         foo.metadata['name'] = 'Ford'
         baz = bar.subtime(500, 1000)
-        self.assertDictEqual(bar.metadata, baz.metadata)
-        self.assertIsNot(bar.metadata, baz.metadata)
-        self.assertNotEqual(foo.metadata['name'], bar.metadata['name'])
+        self.assertDictEqual(bar.new_metadata, baz.new_metadata)
+        self.assertIsNot(bar.new_metadata, baz.new_metadata)
+        self.assertNotEqual(foo.metadata['name'], bar.new_metadata['name'])
         self.assertDictEqual(bar.neuron_data, baz.neuron_data)
 
     def test_raw_data(self):

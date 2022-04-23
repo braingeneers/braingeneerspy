@@ -62,13 +62,13 @@ class EphysDataset(Dataset):
             self.datalen = data_length
         channels = self.attr_df.iloc[idx][2]
         # checking if 'all' option was given. should be true if 'all'.
-        if any(chr.isalpha() for chr in channels):
+        if any(char.isalpha() for char in channels):
             self.channels = [i for i in range(0, 1028)]
         # otherwise, use number passed in
         else:
             self.channels = [int(i) for i in channels.split('/')]
 
-        dataset = de.load_data(self.UUID, self.exp_num, self.start, self.datalen, self.channels)
+        dataset = de.load_data(de.load_metadata(self.UUID), self.exp_num, self.start, self.datalen, self.channels)
         datachunk = np.empty((dataset.shape[0], self.sample_size))
         # if 'center', idx should point to the CENTER of a set of data, and get the frames from halfway in front and behind.
         # 4/4/22 replacing idx with offset. idx now points to a certain row in the csv.

@@ -30,7 +30,7 @@ class SpikeData():
         objects whose parameter spike_time is a list of spike times.
 
         Metadata can also be passed in to the constructor, on a global
-        basis in a dict called `metadata` or on a per-neuron basis in
+        basis in a dict called `new_metadata` or on a per-neuron basis in
         a dict of lists `neuron_data`.
 
         Raw timeseries data can be passed in as `raw_data`. If this is
@@ -106,13 +106,13 @@ class SpikeData():
             self.raw_data = np.zeros((0,0))
             self.raw_time = np.zeros((0,))
 
-        # Finally, install the metadata, making sure the neuron_data
+        # Finally, install the new_metadata, making sure the neuron_data
         # has the right number of values.
         self.metadata = metadata.copy()
         self.neuron_data = neuron_data.copy()
         for k,values in self.neuron_data.items():
             if len(values) != self.N:
-                raise ValueError('Malformed metadata: '
+                raise ValueError('Malformed new_metadata: '
                                  f'neuron_data[{k}] should have'
                                  f'{self.N} items.')
 
@@ -184,7 +184,7 @@ class SpikeData():
         backwards from the end. They can also be None or Ellipsis,
         which results in only paying attention to the other bound.
 
-        All metadata and neuron data are propagated, while raw data is
+        All new_metadata and neuron data are propagated, while raw data is
         sliced to the same range of times, but overlap is okay, so we
         include all samples within the closed interval.
         '''
