@@ -569,7 +569,7 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
     """
     Loads specified amount of data from one block
     :param metadata: json file
-        JSON file containing new_metadata of experiment
+        JSON file containing metadata of experiment
     :param batch_uuid: str
         UUID of batch of experiments within the Braingeneers's archive
     :param experiment_name: str
