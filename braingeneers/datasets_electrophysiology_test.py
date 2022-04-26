@@ -4,6 +4,11 @@ import json
 import braingeneers.utils.smart_open_braingeneers as smart_open
 
 
+class MaxwellReaderTests(unittest.TestCase):
+    def test_online_maxwell_load_data(self):
+        self.fail()
+
+
 class AxionReaderTests(unittest.TestCase):
     """
     Online test cases require access to braingeneers/S3 including ~/.aws/credentials file
@@ -69,9 +74,9 @@ class AxionReaderTests(unittest.TestCase):
         # validate json serializability
         json.dumps(metadata)
 
-        # save metadata files - used in development, kept here for quick reference
-        # with smart_open.open(f's3://braingeneers/ephys/{self.batch_uuid}/metadata.json', 'w') as f:
-        #     json.dump(metadata, f, indent=2)
+        # save new_metadata files - used in development, kept here for quick reference
+        # with smart_open.open(f's3://braingeneers/ephys/{self.batch_uuid}/new_metadata.json', 'w') as f:
+        #     json.dump(new_metadata, f, indent=2)
 
     def test_online_load_data_axion(self):
         file_214_offset = 802446875
@@ -94,7 +99,7 @@ class AxionReaderTests(unittest.TestCase):
         self.assertTrue(len(metadata_json) > 0)  # Trivial validation
         self.assertEqual(len(metadata_json['ephys_experiments']), 24)
 
-        # save metadata files - used in development, kept here for quick reference
+        # save new_metadata files - used in development, kept here for quick reference
         with smart_open.open(f's3://braingeneers/ephys/{uuid_24well_data}/metadata.json', 'w') as f:
             json.dump(metadata_json, f, indent=2)
 

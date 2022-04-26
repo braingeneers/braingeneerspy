@@ -565,72 +565,68 @@ def load_data_intan(metadata, batch_uuid, experiment_num, offset, length):
     raise NotImplementedError
 
 
-def load_data_maxwell(metadata, batch_uuid, experiment_num, channels, offset, length):
+def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, length):
     """
     Loads specified amount of data from one block
     :param metadata: json file
-        JSON file containing metadata of experiment
+        JSON file containing new_metadata of experiment
     :param batch_uuid: str
         UUID of batch of experiments within the Braingeneers's archive
-    :param experiment_num: int
-        Number of experiment
+    :param experiment_name: str
+        Experiment name as a string
     :param channels: list of int
         Channels of interest
-    :param offset: int
+    :param start: int
         Starting frame (offset) of the datapoints to use
     :param length: int
         Length of datapoints to take
     :return:
     dataset: nparray
         Dataset of datapoints.
-    fs : float
-        Sample rate in Hz. How quickly the samples are taken.
-    num_frames : int
-        number of frames being taken
     """
     if length == -1:
         print(
-            f"Loading file Maxwell, UUID {batch_uuid}, experiment number {experiment_num}, frame {offset} to end of file....")
+            f"Loading file Maxwell, UUID {batch_uuid}, {experiment_name}, frame {start} to end of file....")
     else:
         print(
-            f"Loading file Maxwell, UUID {batch_uuid}, experiment number {experiment_num}, frame {offset} to {offset + length}....")
+            f"Loading file Maxwell, UUID {batch_uuid}, {experiment_name}, frame {start} to {start + length}....")
     # get datafile
 
-    filename = metadata['blocks'][0]['path'].split('/')[-1]
+    filename = metadata['ephys_experiments'][experiment_name]['blocks'][0]['path'].split('/')[-1]
     datafile = '{}/{}/original/data/{}'.format(get_archive_url(), batch_uuid, filename)
-    fs = metadata['sample_rate']
 
-    # keep in mind that the range is across all channels. So, num_frames from the metadata is NOT the correct range.
+    # keep in mind that the range is across all channels. So, num_frames from the new_metadata is NOT the correct range.
     # Finding the block where the datapoints start
     start_block = 0
-    # end_block = len(metadata['blocks']) - 1
-    for index in range(len(metadata['blocks'])):
+    # end_block = len(new_metadata['blocks']) - 1
+    for index in range(len(metadata['ephys_experiments'][experiment_name]['blocks'])):
         # if the offset is lower than the upper range of frames in a block, break out
-        if offset < metadata['blocks'][index]['num_frames'] / metadata['num_channels']:
+        if start < metadata['ephys_experiments'][experiment_name]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment_name]['num_channels']:
             start_block = index
             break
         # otherwise, keep finding the block where the offset lies
         else:
-            offset -= metadata['blocks'][index]['num_frames'] / metadata['num_channels']
+            start -= metadata['ephys_experiments'][experiment_name]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment_name]['num_channels']
     # Finding block where the datapoints end
+    # metadata['ephys_experiments'][experiment_name]['num_channels']
     # if length is -1, read in all the frames from all blocks
     if length == -1:
-        end_block = len(metadata['blocks']) - 1
+        end_block = len(metadata['ephys_experiments'][experiment_name]['blocks']) - 1
         frame_end = 0
         # add up all the frames divided by their channel number
-        for block in metadata['blocks']:
-            frame_end += block['num_frames'] / metadata['num_channels']
+        for block in metadata['ephys_experiments'][experiment_name]['blocks']:
+            frame_end += block['num_frames'] / metadata['ephys_experiments'][experiment_name]['num_channels']
         frame_end = int(frame_end)
-        #frame_end /= metadata['num_channels']
+        #frame_end /= new_metadata['num_channels']
     else:
-        frame_end = offset + length
-        for index in range(start_block, len(metadata['blocks'])):
-            if (offset + length) < metadata['blocks'][index]['num_frames'] / metadata['num_channels']:
+        frame_end = start + length
+        for index in range(start_block, len(metadata['ephys_experiments'][experiment_name]['blocks'])):
+            if (start + length) < metadata['ephys_experiments'][experiment_name]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment_name]['num_channels']:
                 end_block = index
                 break
             else:
-                offset -= metadata['blocks'][index]['num_frames'] / metadata['num_channels']
-    assert end_block < len(metadata['blocks'])
+                start -= metadata['ephys_experiments'][experiment_name]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment_name]['num_channels']
+    assert end_block < len(metadata['ephys_experiments'][experiment_name]['blocks'])
     # now, with the starting block, ending block, and frames to take, take those frames and put into nparray.
     # open file
     with smart_open.open(datafile, 'rb') as file:
@@ -639,11 +635,11 @@ def load_data_maxwell(metadata, batch_uuid, experiment_num, channels, offset, le
             sig = h5file['sig']
             # make dataset of chosen frames
             if channels is not None:
-                num_frames = len(channels) * (frame_end - offset)
-                dataset = sig[channels, offset:frame_end]
+                #num_frames = len(channels) * (frame_end - start)
+                dataset = sig[channels, start:frame_end]
             else:
-                num_frames = metadata['num_channels'] * (frame_end - offset)
-                dataset = sig[:, offset:frame_end]
+                #num_frames = metadata['ephys_experiments'][experiment_name]['num_channels'] * (frame_end - start)
+                dataset = sig[:, start:frame_end]
     dataset = dataset.astype(np.float32)
     return dataset
 

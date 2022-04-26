@@ -7,4 +7,5 @@ tmp/
 *.pyc
 build/
 .DS_Store
-braingeneers/test
+braingeneers/test/*
+braingeneers/test/unit_test.py
