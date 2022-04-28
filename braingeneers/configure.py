@@ -56,7 +56,6 @@ DEPENDENCIES = {
     ],
     'hengenlab': [
         'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git',
-        'sahara_work @ git+https://github.com/hengenlab/sahara_work.git',
     ],
 }
 
