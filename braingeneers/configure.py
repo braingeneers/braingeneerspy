@@ -2,8 +2,6 @@
 import functools
 import os
 from typing import List, Tuple, Union, Iterable, Iterator
-from importlib.metadata import requires
-from packaging.requirements import Requirement
 import re
 import itertools
 import importlib
@@ -56,6 +54,7 @@ DEPENDENCIES = {
     ],
     'hengenlab': [
         'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git',
+        'sahara_work @ git+https://github.com/hengenlab/sahara_work.git',
     ],
 }
 
