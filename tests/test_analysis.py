@@ -189,6 +189,11 @@ class AnalysisTest(unittest.TestCase):
                            for n in counts], length=1)
         self.assertAll(sd.rates() == counts)
 
+        # Test the other possible units of rates.
+        self.assertAll(sd.rates('Hz') == counts*1000)
+        self.assertRaises(ValueError,
+                          lambda: sd.rates('bad_unit'))
+
 
     def test_pearson(self):
         # These four cells are constructed so that A is perfectly
@@ -415,7 +420,7 @@ class AnalysisTest(unittest.TestCase):
             [2+3+4+3+2, 2+3+2])
 
         # Also the duration-size lists of the same data.
-        durations, sizes = sd.duration_size(1, bin_size=1)
+        durations, sizes = sd.avalanche_duration_size(1, bin_size=1)
         self.assertListEqual(list(durations), [5,3])
         self.assertListEqual(list(sizes), [2+3+4+3+2, 2+3+2])
 
@@ -503,3 +508,10 @@ class AnalysisTest(unittest.TestCase):
         sd2 = sd.subtime(20, 30)
         self.assertAll(sd2.raw_time == np.arange(11))
         self.assertAll(sd2.raw_data == sd.raw_data[:,20:31])
+
+    def test_isi_methods(self):
+        # Try creating an ISI histogram to make sure it works. If all
+        # spikes are accounted for, the 100 spikes turn into 99 ISIs.
+        # sd = ba.SpikeData([1e3*np.random.rand(1000)], length=1e3)
+        # self.assertAlmostEqual(sd.isi_skewness()[0], 2, 1)
+        pass
