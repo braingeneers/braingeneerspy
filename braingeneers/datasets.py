@@ -20,7 +20,7 @@ def get_archive_url():
     
 def load_batch(batch_uuid):
     """
-    Load the new_metadata for a batch of experiments and return as a dict
+    Load the metadata for a batch of experiments and return as a dict
     Parameters
     ----------
     batch_uuid : str
@@ -29,9 +29,9 @@ def load_batch(batch_uuid):
     """
 
     try:
-        full_path = "{}/{}/new_metadata.json".format(get_archive_path(), batch_uuid)
+        full_path = "{}/{}/metadata.json".format(get_archive_path(), batch_uuid)
         if not os.path.exists(full_path):
-            full_path = "{}/{}/new_metadata.json".format(get_archive_url(), batch_uuid)
+            full_path = "{}/{}/metadata.json".format(get_archive_url(), batch_uuid)
 
         with smart_open_braingeneers.open(full_path, "r") as f:
             return json.load(f)
@@ -41,7 +41,7 @@ def load_batch(batch_uuid):
     
 def load_experiment(batch_uuid, experiment_num):
     """
-    Load new_metadata from PRP S3 for a single experiment
+    Load metadata from PRP S3 for a single experiment
     Parameters
     ----------
     batch_uuid : str
@@ -50,8 +50,8 @@ def load_experiment(batch_uuid, experiment_num):
         Which experiment in the batch to load
     Returns
     -------
-    new_metadata : dict
-        All of the new_metadata associated with this experiment
+    metadata : dict
+        All of the metadata associated with this experiment
     """
     batch = load_batch(batch_uuid)
     try:

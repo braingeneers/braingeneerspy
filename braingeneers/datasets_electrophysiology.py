@@ -595,10 +595,10 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
     filename = metadata['ephys_experiments'][experiment_name]['blocks'][0]['path'].split('/')[-1]
     datafile = '{}/{}/original/data/{}'.format(get_archive_url(), batch_uuid, filename)
 
-    # keep in mind that the range is across all channels. So, num_frames from the new_metadata is NOT the correct range.
+    # keep in mind that the range is across all channels. So, num_frames from the metadata is NOT the correct range.
     # Finding the block where the datapoints start
     start_block = 0
-    # end_block = len(new_metadata['blocks']) - 1
+    # end_block = len(metadata['blocks']) - 1
     for index in range(len(metadata['ephys_experiments'][experiment_name]['blocks'])):
         # if the offset is lower than the upper range of frames in a block, break out
         if start < metadata['ephys_experiments'][experiment_name]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment_name]['num_channels']:
@@ -617,7 +617,7 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
         for block in metadata['ephys_experiments'][experiment_name]['blocks']:
             frame_end += block['num_frames'] / metadata['ephys_experiments'][experiment_name]['num_channels']
         frame_end = int(frame_end)
-        #frame_end /= new_metadata['num_channels']
+        #frame_end /= metadata['num_channels']
     else:
         frame_end = start + length
         for index in range(start_block, len(metadata['ephys_experiments'][experiment_name]['blocks'])):
