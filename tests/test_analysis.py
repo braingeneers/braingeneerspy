@@ -301,39 +301,39 @@ class AnalysisTest(unittest.TestCase):
 
     def test_spike_time_tiling_ta(self):
         # Trivial base cases.
-        self.assertEqual(ba._sttc_ta([42], 1, 100), 2)
-        self.assertEqual(ba._sttc_ta([], 1, 100), 0)
+        self.assertEqual(ba.analysis._sttc_ta([42], 1, 100), 2)
+        self.assertEqual(ba.analysis._sttc_ta([], 1, 100), 0)
 
         # When spikes don't overlap, you should get exactly 2ndt.
-        self.assertEqual(ba._sttc_ta(np.arange(42)+1, 0.5, 100), 42.0)
+        self.assertEqual(ba.analysis._sttc_ta(np.arange(42)+1, 0.5, 100), 42.0)
 
-        # When spikes overlap fully, you should get exactly
-        # (tmax-tmin) + 2dt
-        self.assertEqual(ba._sttc_ta(np.arange(42)+100, 100, 300), 241)
+        # When spikes overlap fully, you should get exactly (tmax-tmin) + 2dt
+        self.assertEqual(ba.analysis._sttc_ta(np.arange(42)+100,
+                                              100, 300), 241)
 
     def test_spike_time_tiling_na(self):
         # Trivial base cases.
-        self.assertEqual(ba._sttc_na([1,2,3], [], 1), 0)
-        self.assertEqual(ba._sttc_na([], [1,2,3], 1), 0)
+        self.assertEqual(ba.analysis._sttc_na([1,2,3], [], 1), 0)
+        self.assertEqual(ba.analysis._sttc_na([], [1,2,3], 1), 0)
 
-        self.assertEqual(ba._sttc_na([1], [2], 0.5), 0)
-        self.assertEqual(ba._sttc_na([1], [2], 1), 1)
+        self.assertEqual(ba.analysis._sttc_na([1], [2], 0.5), 0)
+        self.assertEqual(ba.analysis._sttc_na([1], [2], 1), 1)
 
         # Make sure closed intervals are being used.
-        na = ba._sttc_na(np.arange(10), np.arange(10)+0.5, 0.5)
+        na = ba.analysis._sttc_na(np.arange(10), np.arange(10)+0.5, 0.5)
         self.assertEqual(na, 10)
 
         # Skipping multiple spikes in spike train B.
-        self.assertEqual(ba._sttc_na([4], [1, 2, 3, 4.5], 0.1), 0)
-        self.assertEqual(ba._sttc_na([4], [1, 2, 3, 4.5], 0.5), 1)
+        self.assertEqual(ba.analysis._sttc_na([4], [1, 2, 3, 4.5], 0.1), 0)
+        self.assertEqual(ba.analysis._sttc_na([4], [1, 2, 3, 4.5], 0.5), 1)
 
         # Many spikes in train B covering a single one in A.
-        self.assertEqual(ba._sttc_na([2], [1, 2, 3], 0.1), 1)
-        self.assertEqual(ba._sttc_na([2], [1, 2, 3], 1), 1)
+        self.assertEqual(ba.analysis._sttc_na([2], [1, 2, 3], 0.1), 1)
+        self.assertEqual(ba.analysis._sttc_na([2], [1, 2, 3], 1), 1)
 
         # Many spikes in train A are covered by one in B.
-        self.assertEqual(ba._sttc_na([1, 2, 3], [2], 0.1), 1)
-        self.assertEqual(ba._sttc_na([1, 2, 3], [2], 1), 3)
+        self.assertEqual(ba.analysis._sttc_na([1, 2, 3], [2], 0.1), 1)
+        self.assertEqual(ba.analysis._sttc_na([1, 2, 3], [2], 1), 3)
 
     def test_spike_time_tiling_coefficient(self):
         # Examples to use in different cases.
