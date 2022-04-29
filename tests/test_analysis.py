@@ -301,39 +301,39 @@ class AnalysisTest(unittest.TestCase):
 
     def test_spike_time_tiling_ta(self):
         # Trivial base cases.
-        self.assertEqual(ba._sttc_ta([42], 1, 100), 2)
-        self.assertEqual(ba._sttc_ta([], 1, 100), 0)
+        self.assertEqual(ba.analysis._sttc_ta([42], 1, 100), 2)
+        self.assertEqual(ba.analysis._sttc_ta([], 1, 100), 0)
 
         # When spikes don't overlap, you should get exactly 2ndt.
-        self.assertEqual(ba._sttc_ta(np.arange(42)+1, 0.5, 100), 42.0)
+        self.assertEqual(ba.analysis._sttc_ta(np.arange(42)+1, 0.5, 100), 42.0)
 
-        # When spikes overlap fully, you should get exactly
-        # (tmax-tmin) + 2dt
-        self.assertEqual(ba._sttc_ta(np.arange(42)+100, 100, 300), 241)
+        # When spikes overlap fully, you should get exactly (tmax-tmin) + 2dt
+        self.assertEqual(ba.analysis._sttc_ta(np.arange(42)+100,
+                                              100, 300), 241)
 
     def test_spike_time_tiling_na(self):
         # Trivial base cases.
-        self.assertEqual(ba._sttc_na([1,2,3], [], 1), 0)
-        self.assertEqual(ba._sttc_na([], [1,2,3], 1), 0)
+        self.assertEqual(ba.analysis._sttc_na([1,2,3], [], 1), 0)
+        self.assertEqual(ba.analysis._sttc_na([], [1,2,3], 1), 0)
 
-        self.assertEqual(ba._sttc_na([1], [2], 0.5), 0)
-        self.assertEqual(ba._sttc_na([1], [2], 1), 1)
+        self.assertEqual(ba.analysis._sttc_na([1], [2], 0.5), 0)
+        self.assertEqual(ba.analysis._sttc_na([1], [2], 1), 1)
 
         # Make sure closed intervals are being used.
-        na = ba._sttc_na(np.arange(10), np.arange(10)+0.5, 0.5)
+        na = ba.analysis._sttc_na(np.arange(10), np.arange(10)+0.5, 0.5)
         self.assertEqual(na, 10)
 
         # Skipping multiple spikes in spike train B.
-        self.assertEqual(ba._sttc_na([4], [1, 2, 3, 4.5], 0.1), 0)
-        self.assertEqual(ba._sttc_na([4], [1, 2, 3, 4.5], 0.5), 1)
+        self.assertEqual(ba.analysis._sttc_na([4], [1, 2, 3, 4.5], 0.1), 0)
+        self.assertEqual(ba.analysis._sttc_na([4], [1, 2, 3, 4.5], 0.5), 1)
 
         # Many spikes in train B covering a single one in A.
-        self.assertEqual(ba._sttc_na([2], [1, 2, 3], 0.1), 1)
-        self.assertEqual(ba._sttc_na([2], [1, 2, 3], 1), 1)
+        self.assertEqual(ba.analysis._sttc_na([2], [1, 2, 3], 0.1), 1)
+        self.assertEqual(ba.analysis._sttc_na([2], [1, 2, 3], 1), 1)
 
         # Many spikes in train A are covered by one in B.
-        self.assertEqual(ba._sttc_na([1, 2, 3], [2], 0.1), 1)
-        self.assertEqual(ba._sttc_na([1, 2, 3], [2], 1), 3)
+        self.assertEqual(ba.analysis._sttc_na([1, 2, 3], [2], 0.1), 1)
+        self.assertEqual(ba.analysis._sttc_na([1, 2, 3], [2], 1), 3)
 
     def test_spike_time_tiling_coefficient(self):
         # Examples to use in different cases.
@@ -450,7 +450,7 @@ class AnalysisTest(unittest.TestCase):
         sd.deviation_from_criticality()
 
     def test_metadata(self):
-        # Make sure there's an error if the new_metadata is gibberish.
+        # Make sure there's an error if the metadata is gibberish.
         self.assertRaises(ValueError,
                           lambda: ba.SpikeData([], N=5, length=100,
                                                neuron_data=dict(trash=[47])))
@@ -460,21 +460,21 @@ class AnalysisTest(unittest.TestCase):
                            metadata=dict(name='Marvin'),
                            neuron_data=dict(size=np.random.rand(5)))
 
-        # Make sure subset propagates all new_metadata and correctly
+        # Make sure subset propagates all metadata and correctly
         # subsets the neuron_data.
         subset = [1, 3]
         truth = foo.neuron_data['size'][subset]
         bar = foo.subset(subset)
-        self.assertDictEqual(foo.metadata, bar.new_metadata)
+        self.assertDictEqual(foo.metadata, bar.metadata)
         self.assertAll(bar.neuron_data['size'] == truth)
 
-        # Change the new_metadata of foo and see that it's copied, so the
+        # Change the metadata of foo and see that it's copied, so the
         # change doesn't propagate.
         foo.metadata['name'] = 'Ford'
         baz = bar.subtime(500, 1000)
-        self.assertDictEqual(bar.new_metadata, baz.new_metadata)
-        self.assertIsNot(bar.new_metadata, baz.new_metadata)
-        self.assertNotEqual(foo.metadata['name'], bar.new_metadata['name'])
+        self.assertDictEqual(bar.metadata, baz.metadata)
+        self.assertIsNot(bar.metadata, baz.metadata)
+        self.assertNotEqual(foo.metadata['name'], bar.metadata['name'])
         self.assertDictEqual(bar.neuron_data, baz.neuron_data)
 
     def test_raw_data(self):

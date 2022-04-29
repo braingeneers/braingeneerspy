@@ -17,15 +17,18 @@ part of the Braingeneers project. There are five subpackages:
 
 ## Installation / upgrade
 
+Most dependencies are optional installations for this package. 
+Below are examples of various installation configurations.
+
 ```
-# Install/upgrade full package from git repo using PIP (all optional dependencies included).
+# Typical install (includes `iot`, `analysis`, and data access functions, skips `ml`, and lab-specific dependencies): 
+python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,analysis]
+
+# Full install (all optional dependencies included).
 python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]
 
-# Install/upgrade minimum package (no optional dependencies, good for Raspberry PI install).
+# Minimum install (no optional dependencies, good for Raspberry PI builds).
 python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git
-
-# Install/upgrade minimum + iot and ml specific dependencies only.
-python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,ml]
 ```
 
 ### Optional dependency organization
@@ -37,6 +40,7 @@ or some combination of dependencies you will use. Optional dependency groups are
  - *Unspecified*: Minimal packages for data access will be installed.
  - `all`: All optional dependencies will be included.
  - `iot`: IOT dependencies such as AWS, Redis packages will be installed.
+ - `analysis`: Dependencies for data analysis routines, plotting tools, math libraries, etc.
  - `ml`: Machine Learning dependencies such as `torch` will be installed.
  - `hengenlab`: Hengenlab data loader specific packages such as `neuraltoolkit` will be installed.
 
