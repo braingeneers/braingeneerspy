@@ -1,7 +1,7 @@
 """ Unit test for BraingeneersMqttClient, assumes Braingeneers ~/.aws/credentials file exists """
 import unittest
 import unittest.mock
-import braingeneers.utils.messaging as messaging
+import braingeneers.iot.messaging as messaging
 import threading
 import awscrt.io
 import uuid

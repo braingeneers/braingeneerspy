@@ -1,10 +1,11 @@
-""" Global package functions and helpers for Braingeneers specific configuration. """
+""" Global package functions and helpers for Braingeneers specific configuration and package management. """
 import functools
 import os
 from typing import List, Tuple, Union, Iterable, Iterator
 import re
 import itertools
 import importlib
+import distutils
 
 
 """
@@ -32,15 +33,16 @@ DEPENDENCIES = {
         'tenacity',
         'awswrangler',
         'sortedcontainers',
-        # 'boto3==1.17.96',  # depends on awscrt==0.11.22
-        'boto3',  # if version conflicts occur revert back to above version
+        'boto3==1.17.96',  # depends on awscrt==0.11.22
+        # 'boto3',  # if version conflicts occur revert back to above version
         'smart_open>=5.1.0',
         'h5py',
     ],
     # Specific dependency groups allow unnecessary (and often large) dependencies to be skipped
     # add dependency groups here, changes will be dynamically added to setup(...)
     'iot': [
-        'awsiotsdk==1.6.0',
+        'awsiotsdk==1.6.0',  # dependency issues occur when the current version is installed, that may be resolvable
+        # 'awsiotsdk',
         'redis',
     ],
     'analysis': [
@@ -108,6 +110,23 @@ def set_default_endpoint(endpoint: str = None) -> None:
     CURRENT_ENDPOINT = endpoint
 
 
+def get_packages_from_install_name(package_install_name: str) -> List[str]:
+    """
+    Based on: https://stackoverflow.com/a/54853084/4790871
+
+    Converts the package installation name found in DEPENDENCIES to a list of one or more packages contained in
+    the installer.
+
+    :param package_install_name: name of a pip based package name, example: braingeneerspy
+    :return: a list of packages contained in package_install_name, example: ["braingeneers"],
+        may contain multiple packages.
+    """
+    import pkg_resources as pkg
+    metadata_dir = pkg.get_distribution(package_install_name).egg_info
+    with open('%s/%s' % (metadata_dir, 'top_level.txt')) as f:
+        return f.read().rstrip().split('\n')
+
+
 @functools.lru_cache(maxsize=None)
 def verify_optional_extras(optional_extras: (str, List[str]), raise_exception: bool = True):
     """
@@ -133,18 +152,38 @@ def verify_optional_extras(optional_extras: (str, List[str]), raise_exception: b
     :return: None if all dependencies are met else a list of missing dependencies
     """
     optional_extras = set([optional_extras] if isinstance(optional_extras, str) else optional_extras)  # ensure set
-    required_packages = set(itertools.chain(*[v for k, v in DEPENDENCIES.items() if k in optional_extras]))
-    missing_packages = [
-        package
-        for package in required_packages
-        if importlib.util.find_spec(re.split(r'[^a-z^A-Z^0-9^_^-]+', package)[0]) is None
-    ]
+    required_eggs = set(itertools.chain(*[v for k, v in DEPENDENCIES.items() if k in optional_extras]))
+    required_eggs_parsed = set([re.split(r'[^a-zA-Z0-9_-]+', package)[0] for package in required_eggs])
+    required_packages = set(itertools.chain(*[get_packages_from_install_name(egg) for egg in required_eggs_parsed]))
+    missing_packages = [package for package in required_packages if importlib.util.find_spec(package) is None]
 
     if len(missing_packages) > 0 and raise_exception:
         exception_message = f'Package dependencies are missing, ' \
                             f'see README.md for optional package installation instructions ' \
-                            f'packages: {",".join(map(str, optional_extras))}, ' \
-                            f'missing packages: {",".join(map(str, missing_packages))}.'
+                            f'optional dependency group(s): {",".join(map(str, optional_extras))}, ' \
+                            f'missing package(s): {",".join(map(str, missing_packages))}.'
         raise ModuleNotFoundError(exception_message)
     else:
         return missing_packages if len(missing_packages) > 0 else None
+
+
+def skip_unittest_if_offline(f):
+    """
+    Decorator for unit tests which check if environment variable ONLINE_TESTS is set to "false".
+
+    Usage example:
+    --------------
+    import unittest
+
+    class MyUnitTests(unittest.TestCase):
+        @braingeneers.skip_if_offline()
+        def test_online_features(self):
+            self.assertTrue(do_something())
+    """
+    def wrapper(self, *args, **kwargs):
+        allow_online_tests = bool(distutils.util.strtobool(os.environ.get('ONLINE_TESTS', 'true')))
+        if not allow_online_tests:
+            self.skipTest()
+        else:
+            f(self, *args, **kwargs)
+    return wrapper

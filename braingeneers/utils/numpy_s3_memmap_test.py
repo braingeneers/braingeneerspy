@@ -1,5 +1,5 @@
 import unittest
-from braingeneers.utils import NumpyS3Memmap
+from braingeneers.utils import NumpyS3Memmap  # deprecated form
 import numpy as np
 
 
@@ -18,12 +18,13 @@ class TestNumpyS3Memmap(unittest.TestCase):
         self.assertTrue(np.all(x[:, 0:2] == e[:, 0:2]))
         self.assertTrue(np.all(x[:, [0, 1]] == e[:, [0, 1]]))
 
-    def test_in_the_wild_file(self):
+    def test_online_in_the_wild_file(self):
         """
-        This test assumes ../tmp/well_A1_chan_group_idx_1_time_000.npy exists
-        Specifically this test case found a bug in numpy arrays that for fortran ordered
+        This test assumes online access.
+        Specifically this test case found a bug in numpy arrays for fortran order.
         """
-        x = NumpyS3Memmap('s3://braingeneersdev/ephys/2020-07-06-e-MGK-76-2614-Drug/numpy/well_A1_chan_group_idx_1_time_000.npy')
+        x = NumpyS3Memmap('s3://braingeneersdev/ephys/2020-07-06-e-MGK-76-2614-Drug/numpy/'
+                          'well_A1_chan_group_idx_1_time_000.npy')
         self.assertEqual(x.shape, (3750000, 4))
 
         all_data = x[:]

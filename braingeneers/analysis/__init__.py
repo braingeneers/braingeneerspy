@@ -1,4 +1,4 @@
-import braingeneers.configure
+import braingeneers
 from braingeneers.analysis.analysis import *
 
-braingeneers.configure.verify_optional_extras('analysis')  # verify the optional packages are installed
+braingeneers.verify_optional_extras('analysis')  # verify the optional packages are installed

@@ -11,5 +11,15 @@ def __getattr__(name):
         )
         from braingeneers.iot import messaging
         return messaging
+
+    elif name == 'NumpyS3Memmap':
+        warnings.warn(
+            message='braingeneers.utils.NumpyS3Memmap has been deprecated, '
+                    'please import braingeneers.utils.numpy_s3_memmap.NumpyS3Memmap.',
+            category=DeprecationWarning,
+        )
+        from braingeneers.utils.numpy_s3_memmap import NumpyS3Memmap
+        return NumpyS3Memmap
+
     else:
         raise AttributeError(name)

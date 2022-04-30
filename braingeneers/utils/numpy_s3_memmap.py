@@ -6,15 +6,16 @@ import logging
 import urllib.parse
 import numpy as np
 from tenacity import *
+import braingeneers
 
 logging.basicConfig(stream=sys.stdout, level=logging.WARNING)
 logger = logging.getLogger(__name__)
 _s3client = None
+braingeneers.set_default_endpoint()
 
 
 # todo list:
 #   1) switch to using smart_open and support local or remote files
-#   2) move to braingeneerspy package
 
 
 class NumpyS3Memmap:
@@ -134,7 +135,7 @@ def read_s3_bytes(bucket, key, bytes_from=None, bytes_to=None, s3client=None):
     if s3client is None:
         global _s3client
         if _s3client is None:
-            _s3client = boto3.client('s3', endpoint_url=os.environ['ENDPOINT_URL'])
+            _s3client = boto3.client('s3', endpoint_url=braingeneers.get_default_endpoint())
         s3client = _s3client
 
     rng = '' if bytes_from is None else 'bytes={}-{}'.format(bytes_from, bytes_to - 1)

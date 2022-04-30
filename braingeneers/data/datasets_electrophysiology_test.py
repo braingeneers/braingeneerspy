@@ -1,10 +1,12 @@
 import unittest
-import braingeneers.datasets_electrophysiology as ephys
+import braingeneers.data.datasets_electrophysiology as ephys
 import json
+from braingeneers import skip_unittest_if_offline
 import braingeneers.utils.smart_open_braingeneers as smart_open
 
 
 class MaxwellReaderTests(unittest.TestCase):
+    @skip_unittest_if_offline
     def test_online_maxwell_load_data(self):
         self.fail()
 
@@ -24,19 +26,21 @@ class AxionReaderTests(unittest.TestCase):
     def tearDown(self) -> None:
         pass
 
-    # @unittest.skip
+    @unittest.skip
     def test_online_multiple_files(self):
-        """ Warning: large data transfer """
+        """ Warning: large (Many GB) data transfer """
         metadata = ephys.load_metadata('2021-09-23-e-MR-89-0526-drug-3hr')
         data = ephys.load_data(metadata, 'A3', 0, 45000000, None)
         self.assertTrue(data.shape[1] == 45000000)
 
+    @skip_unittest_if_offline
     def test_online_read_beyond_eof(self):
         metadata = ephys.load_metadata(self.batch_uuid)
         dataset_size = sum([block['num_frames'] for block in metadata['ephys_experiments']['A1']['blocks']])
         with self.assertRaises(IndexError):
             ephys.load_data(metadata, 'A1', offset=dataset_size - 10, length=20)
 
+    @skip_unittest_if_offline
     def test_online_axion_generate_metadata(self):
         metadata = ephys.generate_metadata_axion(self.batch_uuid)
         experiment0 = metadata['ephys_experiments'][0]
@@ -78,6 +82,7 @@ class AxionReaderTests(unittest.TestCase):
         # with smart_open.open(f's3://braingeneers/ephys/{self.batch_uuid}/metadata.json', 'w') as f:
         #     json.dump(metadata, f, indent=2)
 
+    @skip_unittest_if_offline
     def test_online_load_data_axion(self):
         file_214_offset = 802446875
         metadata = ephys.load_metadata(self.batch_uuid)
@@ -93,6 +98,7 @@ class AxionReaderTests(unittest.TestCase):
         self.assertAlmostEqual(data[0][2], 10 * voltage_scaling_factor)
         self.assertAlmostEqual(data[0][3], 30 * voltage_scaling_factor)
 
+    @skip_unittest_if_offline
     def test_online_axion_generate_metadata_24well(self):
         uuid_24well_data = '2021-09-23-e-MR-89-0526-spontaneous'
         metadata_json = ephys.generate_metadata_axion(uuid_24well_data)
@@ -103,24 +109,28 @@ class AxionReaderTests(unittest.TestCase):
         with smart_open.open(f's3://braingeneers/ephys/{uuid_24well_data}/metadata.json', 'w') as f:
             json.dump(metadata_json, f, indent=2)
 
+    @skip_unittest_if_offline
     def test_online_axion_load_data_24well(self):
         uuid_24well_data = '2021-09-23-e-MR-89-0526-spontaneous'
         metadata_json = ephys.load_metadata(uuid_24well_data)
         data = ephys.load_data(metadata=metadata_json, experiment='B1', offset=0, length=10, channels=0)
         self.assertEqual(data.shape, (1, 10))  # trivial validation, needs to be improved
 
+    @skip_unittest_if_offline
     def test_online_axion_load_data_24well_int_index(self):
         uuid_24well_data = '2021-09-23-e-MR-89-0526-spontaneous'
         metadata_json = ephys.load_metadata(uuid_24well_data)
         data = ephys.load_data(metadata=metadata_json, experiment=1, offset=0, length=10, channels=0)
         self.assertEqual(data.shape, (1, 10))  # trivial validation, needs to be improved
 
+    @skip_unittest_if_offline
     def test_online_load_metadata(self):
         metadata = ephys.load_metadata(self.batch_uuid)
         self.assertTrue('uuid' in metadata)  # sanity check only
         self.assertTrue(len(metadata['ephys_experiments']) == 6)  # sanity check only
         self.assertTrue('voltage_scaling_factor' in metadata['ephys_experiments']['A1'])  # sanity check only
 
+    @skip_unittest_if_offline
     def test_online_axion_load_data_none_for_all_channels(self):
         """ axion should accept None for "all" channels """
         file_214_offset = 802446875
@@ -142,11 +152,11 @@ class AxionReaderTests(unittest.TestCase):
 class HengenlabReaderTests(unittest.TestCase):
     batch_uuid = '2020-04-12-e-hengenlab-caf26'
 
+    @skip_unittest_if_offline
     def test_online_generate_metadata(self):
         metadata = ephys.generate_metadata_hengenlab(
             batch_uuid=self.batch_uuid,
             dataset_name='CAF26',
-            experiment_name='experiment1'
         )
 
         self.assertEqual(metadata['issue'], '')
@@ -157,7 +167,7 @@ class HengenlabReaderTests(unittest.TestCase):
 
         experiment = metadata['ephys_experiments'][0]
         self.assertEqual(experiment['name'], 'experiment1')
-        self.assertEqual(experiment['hardware'], 'TODO')
+        self.assertEqual(experiment['hardware'], 'Hengenlab eCube')
         self.assertEqual(experiment['notes'], '')
         self.assertEqual(experiment['num_channels'], 192)
         self.assertEqual(experiment['sample_rate'], 25000)

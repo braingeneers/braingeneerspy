@@ -10,7 +10,7 @@ Usage examples:
 import awswrangler
 from awswrangler import config
 from awswrangler.s3 import *
-import braingeneers.configure
+import braingeneers
 
 
-braingeneers.configure.set_default_endpoint()
+braingeneers.set_default_endpoint()
