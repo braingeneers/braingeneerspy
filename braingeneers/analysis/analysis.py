@@ -260,12 +260,12 @@ class SpikeData():
         'Produce a list of arrays of interspike intervals per unit.'
         return [np.diff(ts) for ts in self.train]
 
-    def skewness(self):
+    def isi_skewness(self):
         'Skewness of interspike interval distribution.'
         intervals = self.interspike_intervals()
         return [stats.skew(intl) for intl in intervals]
 
-    def log_histogram(self, bin_num=300):
+    def isi_log_histogram(self, bin_num=300):
         '''
         Logarithmic (log base 10) interspike interval histogram.
         Return histogram and bins in log10 scale.
@@ -279,18 +279,6 @@ class SpikeData():
             ret.append(hist)
             ret_logbins.append(log_bins)
         return ret, ret_logbins
-
-    def cumulative_moving_average(self, hist):
-        'The culmulative moving average for a histogram. Return a list of CMA.'
-        ret = []
-        for h in hist:
-            cma = 0
-            cma_list = []
-            for i in range(len(h)):
-                cma = (cma * i + h[i]) / (i+1)
-                cma_list.append(cma)
-            ret.append(cma_list)
-        return ret
 
     def isi_threshold_cma(self, hist, bins, coef=1):
         '''
@@ -402,7 +390,7 @@ class SpikeData():
         # counts in between them.
         return [counts[up+1:down+1] for up,down in zip(ups,downs)]
 
-    def duration_size(self, thresh, bin_size=40):
+    def avalanche_duration_size(self, thresh, bin_size=40):
         '''
         Collect the avalanches in this data and regroup them into
         a pair of lists: durations and sizes.
@@ -438,7 +426,7 @@ class SpikeData():
 
         # Gather durations and sizes. If there are no avalanches, we
         # very much can't say the system is critical.
-        durations, sizes = self.duration_size(thresh, bin_size)
+        durations, sizes = self.avalanche_duration_size(thresh, bin_size)
         if len(durations) == 0:
             return DCCResult(dcc=np.inf, p_size=1.0, p_duration=1.0)
 
@@ -610,6 +598,19 @@ def pearson(spikes):
     corr = np.array(Exy - Ex*Ex.T) / (σx*σx.T)
     np.fill_diagonal(corr, 1)
     return corr
+
+
+def cumulative_moving_average(hist):
+    'The culmulative moving average for a histogram. Return a list of CMA.'
+    ret = []
+    for h in hist:
+        cma = 0
+        cma_list = []
+        for i in range(len(h)):
+            cma = (cma * i + h[i]) / (i+1)
+            cma_list.append(cma)
+        ret.append(cma_list)
+    return ret
 
 
 def burst_detection(spike_times, burst_threshold, spike_num_thr=3):

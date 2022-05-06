@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 from os import path
 import itertools
-import braingeneers.configure as config
+import braingeneers.utils.configure as config
 
 
 here = path.abspath(path.dirname(__file__))
