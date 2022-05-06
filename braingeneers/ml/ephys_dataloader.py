@@ -1,8 +1,6 @@
-import torch
 from torch.utils.data import Dataset
-from braingeneers import datasets_electrophysiology as de
+from data import datasets_electrophysiology as de
 import numpy as np
-import time
 import pandas as pd
 
 

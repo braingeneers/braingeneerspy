@@ -518,7 +518,7 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_name: int,
         experiment = metadata['ephys_experiments'][experiment_name]
         block = experiment['blocks'][block_ix]
         file_name = block['path']
-        full_file_path = os.path.join(get_basepath(), 'ephys', batch_uuid, 'original', 'data', file_name)
+        full_file_path = os.path.join(get_basepath(), 'ephys', batch_uuid, 'original', '', file_name)
         sample_start = max(0, offset - metadata_offsets_cumsum[block_ix] + block['num_frames'])
         data_length = min(block['num_frames'], length - frame_read_count)
         data_ndarray = _axion_get_data(
