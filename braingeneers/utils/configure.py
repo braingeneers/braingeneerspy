@@ -52,7 +52,7 @@ DEPENDENCIES = {
     ],
     'ml': [
         'torch',
-        'sklearn',
+        'scikit-learn',
     ],
     'hengenlab': [
         'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git',
