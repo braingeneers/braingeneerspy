@@ -11,8 +11,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 # DEPENDENCIES:
 #   Dependencies are listed in configure.py, they are imported from braingeneers.configure.dependencies
 #   dynamically. Please edit dependencies in configure.py, not here. This was done so that the dependency
-#   list is not duplicated. It is also necessary because
-#
+#   list is not duplicated. It is also necessary to allow the dependency list to be validated at runtime.
 setup(
     name='braingeneerspy',
     version='0.1.0',
