@@ -6,9 +6,9 @@ part of the Braingeneers project. There are five subpackages:
   * `braingeneers.analysis` code for data analysis.
 
   * `braingeneers.data` all code for basic data access.
-  * `braingeneers.data.datasets_electrophysiology` contains methods which load and manipulate ephys data.
-  * `braingeneers.data.datasets_fluidics` contains methods which load and manipulate fluidics data.
-  * `braingeneers.data.datasets_imaging` contains methods which load and manipulate imaging data.
+    * `braingeneers.data.datasets_electrophysiology` contains methods which load and manipulate ephys data.
+    * `braingeneers.data.datasets_fluidics` contains methods which load and manipulate fluidics data.
+    * `braingeneers.data.datasets_imaging` contains methods which load and manipulate imaging data.
     
   * `braingeneers.iot` all code for IOT (internet of things) communication.
     * `braingeneers.iot.messaging` a single interface for all messaging and inter-device data transfer functions (MQTT, redis, device state, etc.). A wetAI tutorial on this package exists.
@@ -29,13 +29,13 @@ Below are examples of various installation configurations.
 
 ```
 # Typical install (includes `iot`, `analysis`, and `data` access functions, skips `ml`, and lab-specific dependencies): 
-python -m pip install --force-reinstall "git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,analysis]"
+python -m pip install --force-reinstall 'git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,analysis]'
 
 # Full install (all optional dependencies included).
-python -m pip install --force-reinstall "git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]"
+python -m pip install --force-reinstall 'git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]'
 
 # Minimum install (no optional dependencies, good for Raspberry PI builds).
-python -m pip install --force-reinstall "git+https://github.com/braingeneers/braingeneerspy.git"
+python -m pip install --force-reinstall 'git+https://github.com/braingeneers/braingeneerspy.git'
 ```
 
 ### Optional dependency organization
