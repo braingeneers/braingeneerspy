@@ -437,7 +437,7 @@ def load_data(metadata: dict, experiment: Union[str, int], offset: int = 0, leng
     assert parallelism == 'auto', \
         'This feature has not yet been implemented, it is reserved for future use.'
 
-    dataset_size = sum([block['num_frames'] for block in metadata['ephys_experiments']['A1']['blocks']])
+    dataset_size = sum([block['num_frames'] for block in metadata['ephys_experiments'][experiment]['blocks']])
     if offset + length > dataset_size:
         raise IndexError(f'Dataset size is {dataset_size}, but parameters offset + length '
                          f'is {offset + length} which exceeds dataset size.')

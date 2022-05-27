@@ -8,7 +8,17 @@ import braingeneers.utils.smart_open_braingeneers as smart_open
 class MaxwellReaderTests(unittest.TestCase):
     @skip_unittest_if_offline
     def test_online_maxwell_load_data(self):
-        self.fail()
+        uuid = '2022-05-18-e-connectoid'
+        metadata = ephys.load_metadata(uuid)
+        data = ephys.load_data(
+            metadata=metadata, experiment='experiment1', offset=0, length=4, channels=[0]
+        )
+        self.assertEqual(data.shape, (1, 4))  # trivial check that we read data
+
+    @skip_unittest_if_offline
+    def test_online_maxwell_load_data_by_index_number(self):
+        """ Test that load_data can accept an index number. """
+        self.fail()  # needs to be implemented asap, this is a known bug
 
 
 class AxionReaderTests(unittest.TestCase):
