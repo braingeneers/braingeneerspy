@@ -1,21 +1,26 @@
 """ Unit test for BraingeneersMqttClient, assumes Braingeneers ~/.aws/credentials file exists """
-import unittest
+import datetime
+import time
 import unittest.mock
 import braingeneers.iot.messaging as messaging
 import threading
-import awscrt.io
 import uuid
 import warnings
+import functools
+import awscrt
+import awsiot
 
 
 class TestBraingeneersMessageBroker(unittest.TestCase):
     def setUp(self) -> None:
         warnings.filterwarnings("ignore", category=ResourceWarning, message="unclosed.*<ssl.SSLSocket.*>")
         self.mb = messaging.MessageBroker(f'test-{uuid.uuid4()}')
-        awscrt.io.init_logging(6, 'stderr')
+        self.mb_test_device = messaging.MessageBroker('unittest')
+        # awscrt.io.init_logging(awscrt.io.LogLevel.Trace, 'stderr')  # enable Trace logging of AWS IOT
 
     def tearDown(self) -> None:
         self.mb.shutdown()
+        self.mb_test_device.shutdown()
 
     def test_publish_subscribe_message(self):
         """ Uses a custom callback to test publish subscribe messages """
@@ -97,16 +102,87 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         self.assertTrue('y' in state)
         self.assertTrue(state['y'] == 24)
 
-    def test_get_set_device_state(self):
-        self.mb.delete_device_state('test')
-        self.mb.update_device_state('test', {'x': 42})
-        state = self.mb.get_device_state('test')
+    def test_get_update_device_state(self):
+        self.mb_test_device.delete_device_state('test')
+        self.mb_test_device.update_device_state('test', {'x': 42})
+        state = self.mb_test_device.get_device_state('test')
         self.assertTrue('x' in state)
         self.assertEqual(state['x'], 42)
-        self.mb.delete_device_state('test')
+        self.mb_test_device.delete_device_state('test')
 
     def test_list_devices_basic(self):
-        # awscrt.io.init_logging(awscrt.io.LogLevel.Warn, 'stderr')
-        self.mb.subscribe_message('devices/test', callback=unittest.mock.Mock())
-        devices_online = self.mb.list_devices()
-        assert len(devices_online) > 0
+        q = self.mb_test_device.subscribe_message('test/unittest', callback=messaging.CallableQueue())
+        self.mb_test_device.publish_message('test/unittest', message={'test': 'true'})
+        q.get()  # waits for the message to be published and received before moving on to check the online devices
+
+        time.sleep(20)  # Due to issue: https://stackoverflow.com/questions/72564492
+        devices_online = self.mb_test_device.list_devices()
+        self.assertTrue(len(devices_online) > 0)
+
+    @staticmethod
+    def callback_device_state_change(barrier: threading.Barrier, result: dict,
+                                     device_name: str, device_state_key: str, new_value):
+        print('')
+        print(f'unittest callback - device_name: {device_name}, device_state_key: {device_state_key}, new_value: {new_value}')
+        result['device_name'] = device_name
+        result['device_state_key'] = device_state_key
+        result['new_value'] = new_value
+        barrier.wait()
+
+    def test_subscribe_device_state_change(self):
+        result = {}
+        t = str(datetime.datetime.today())
+        self.mb_test_device.update_device_state('unittest', {'unchanging_key': 'static'})
+        barrier = threading.Barrier(2)
+        func = functools.partial(self.callback_device_state_change, barrier, result)
+        self.mb_test_device.subscribe_device_state_change(
+            device_name='unittest', device_state_keys=['test_key'], callback=func
+        )
+        self.mb_test_device.update_device_state('unittest', {'test_key': t})
+        try:
+            barrier.wait(timeout=5)
+        except threading.BrokenBarrierError:
+            self.fail(msg='Barrier timeout')
+
+        self.assertEqual(result['device_name'], 'unittest')
+        self.assertEqual(result['device_state_key'], 'test_key')
+        self.assertEqual(result['new_value'], t)
+
+
+def callback_device_state_change(barrier: threading.Barrier, result: dict,
+                                 device_name: str, device_state_key: str, new_value):
+    print('')
+    print(f'UNITTEST CALLBACK\n\tdevice_name: {device_name}\n\tdevice_state_key: {device_state_key}\n\tnew_value: {new_value}')
+    result['device_name'] = device_name
+    result['device_state_key'] = device_state_key
+    result['new_value'] = new_value
+    barrier.wait()
+
+
+# if __name__ == '__main__':
+#     mb_test_device = messaging.MessageBroker('unittest')
+#     # awscrt.io.init_logging(awscrt.io.LogLevel.Trace, 'stderr')
+#
+#     result = {}
+#     print('a')
+#     t = str(datetime.datetime.today())
+#     print('b')
+#     mb_test_device.update_device_state('unittest', {'unchanging_key': 'static'})
+#     print('c')
+#     barrier = threading.Barrier(2)
+#     print('d')
+#     func = functools.partial(callback_device_state_change, barrier, result)
+#     print('e')
+#     mb_test_device.subscribe_device_state_change(
+#         device_name='unittest', device_state_keys=['test_key'], callback=func
+#     )
+#     print('f')
+#     mb_test_device.update_device_state('unittest', {'test_key': t})
+#     try:
+#         barrier.wait(timeout=5)
+#     except threading.BrokenBarrierError:
+#         print(msg='Barrier timeout')
+#
+#     assert result['device_name'] == 'unittest'
+#     assert result['device_state_key'] == 'test_key'
+#     assert result['new_value'] == t

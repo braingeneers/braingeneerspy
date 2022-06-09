@@ -33,16 +33,16 @@ DEPENDENCIES = {
         'tenacity',
         'awswrangler',
         'sortedcontainers',
-        'boto3==1.17.96',  # depends on awscrt==0.11.22
-        # 'boto3',  # if version conflicts occur revert back to above version
+        # 'boto3==1.17.96',  # depends on awscrt==0.11.22
+        'boto3',  # if version conflicts occur revert to above version
         'smart_open>=5.1.0',
         'h5py',
     ],
     # Specific dependency groups allow unnecessary (and often large) dependencies to be skipped
     # add dependency groups here, changes will be dynamically added to setup(...)
     'iot': [
-        'awsiotsdk==1.6.0',  # dependency issues occur when the current version is installed, that may be resolvable
-        # 'awsiotsdk',
+        # 'awsiotsdk==1.6.0',  # dependency issues occur when the current version is installed, that may be resolvable
+        'awsiotsdk',
         'redis',
     ],
     'analysis': [

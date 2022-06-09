@@ -30,6 +30,11 @@ logger = logging.getLogger()
 logger.level = logging.INFO
 
 
+class CallableQueue(queue.Queue):
+    def __call__(self, *args):
+        self.put(args)
+
+
 class MessageBroker:
     """
     This class provides a simplified API for interacting with the AWS MQTT service and Redis service
@@ -116,7 +121,8 @@ class MessageBroker:
         )
         publish_future.result()
 
-    def subscribe_message(self, topic: str, callback: Callable) -> Callable:
+    def subscribe_message(self, topic: str, callback: Callable, timeout_sec: float = 10) -> \
+            Union[Callable, CallableQueue]:
         """
         Subscribes to receive messages on a given topic. When providing a topic you will be
         subscribing to all messages on that topic and any sub topic. For example, subscribing to
@@ -130,16 +136,16 @@ class MessageBroker:
             def my_callback(topic: str, message: dict):
                 print(f'Received message {message} on topic {topic}')  # Print message
 
-            client = MqttClient('test')  # device named test
-            client.subscribe('test', my_callback)  # subscribe to all topics under test
+            mb = MessageBroker('test')  # device named test
+            mb.subscribe('test', my_callback)  # subscribe to all topics under test
 
         Polling messages instead of subscribing to push:
             You can poll for new messages instead of subscribing to push notifications (which happen
             in a separate thread) using the following example:
 
-            client = MqttClient('test')  # device named test
+            mb = MessageBroker('test')  # device named test
             q = messaging.CallableQueue()  # a queue.Queue object that stores (topic, message) tuples
-            client.subscribe_message('test', q)  # subscribe to all topics under test
+            mb.subscribe_message('test', q)  # subscribe to all topics under test
             topic, message = q.get()
             print(f'Topic {topic} received message {message}')  # Print message
 
@@ -147,6 +153,7 @@ class MessageBroker:
             https://github.com/braingeneers/wiki/blob/main/shared/mqtt.md
         :param callback: a function with the signature mycallbackfunction(topic: str, message),
             where message is a JSON object serialized to python format.
+        :param timeout_sec: number of seconds to wait to verify connection successful.
         :return: the original callable, this is returned for convenience sake only, it's not altered in any way.
         """
         subscribe_future, packet_id = self.mqtt_connection.subscribe(
@@ -154,7 +161,7 @@ class MessageBroker:
             callback=functools.partial(self._callback_handler, callback=callback),
             qos=awscrt.mqtt.QoS.AT_LEAST_ONCE,
         )
-        subscribe_future.result()
+        subscribe_future.result(timeout=timeout_sec)
         return callback
 
     def publish_data_stream(self, stream_name: str, data: Dict[Union[str, bytes], bytes], stream_size: int) -> None:
@@ -368,7 +375,7 @@ class MessageBroker:
         Subscribe to be notified if one or more state variables changes.
 
         Callback is a function with the following signature:
-          def mycallback(device: str, device_state_key: str, new_value)
+          def mycallback(device_name: str, device_state_key: str, new_value)
 
         There is one built-in state variable named 'connectivity.connected' which fires
         if the device connected status changes, value will be True or False. All other
@@ -379,7 +386,23 @@ class MessageBroker:
         :param callback:
         :return:
         """
-        raise NotImplemented('Not yet implemented, contact dfparks@ucsc.edu')
+        # Get the latest version for tracking
+        # todo
+
+        # Subscribe on the $aws/things/THING_NAME/shadow/update/delta
+        func = functools.partial(self._callback_subscribe_device_state_change, callback, device_name, device_state_keys)
+        self.subscribe_message(f'$aws/things/{device_name}/shadow/update/accepted', func)
+
+    @staticmethod
+    def _callback_subscribe_device_state_change(callback: Callable,
+                                                device_name: str, device_state_keys: List[str],
+                                                topic: str, message: dict):
+        print('')
+        print(f'_callback_subscribe_device_state_change\n\tdevice_name: {device_name}\n\ttopic: {topic}\n\tmessage: {message}')  # todo debug step, remove
+
+        # Call users callback once for each updated key
+        for k in set(device_state_keys).intersection(message['state']['reported'].keys()):
+            callback(device_name, k, message['state']['reported'][k])
 
     def _redis_xread_thread(self, stream_names, callback, include_existing):
         """ Performs blocking Redis XREAD operations in a continuous loop. """
@@ -545,11 +568,6 @@ class TemporaryEnvironment:
             del os.environ[self.env]
         else:
             os.environ[self.env] = self.save_original_env_value
-
-
-class CallableQueue(queue.Queue):
-    def __call__(self, *args):
-        self.put(args)
 
 
 # The AWS root certificate. Embedded here to avoid requiring installing it as a dependency.
