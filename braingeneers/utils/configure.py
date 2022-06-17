@@ -37,6 +37,7 @@ DEPENDENCIES = {
         'boto3',  # if version conflicts occur revert to above version
         'smart_open>=5.1.0',
         'h5py',
+        'schedule'
     ],
     # Specific dependency groups allow unnecessary (and often large) dependencies to be skipped
     # add dependency groups here, changes will be dynamically added to setup(...)
