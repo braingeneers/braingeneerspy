@@ -8,12 +8,14 @@ import uuid
 import schedule
 import time
 import warnings
+import builtins
+import inspect
 
 
 
-
-def start(device_name, device_type, experiment):
+def start_iot(device_name, device_type, experiment):
     """Create a device and have it start listening for commands. This is intended for simple use cases"""
+    from braingeneers.iot import messaging; import uuid; import schedule; import time; import warnings; #import requried packages for function
     global iot_status                                                              # states if iot is running. Other iot functions can change it asynchronously
     warnings.filterwarnings(action='once')                                         # stops same warning from appearing more than once
     mb = messaging.MessageBroker(str(uuid.uuid4))                                  # spin up iot
@@ -39,7 +41,12 @@ def start(device_name, device_type, experiment):
         time.sleep(.1)                                                             # wait a little to save cpu usage
     mb.shutdown()                                                                  # shutdown iot at the end.
 
-
+    
+def ready_iot():
+    """Save source code for start_iot function to a place where it can be executed by the user"""
+    builtins.ready_iot = inspect.getsource(start_iot)
+    
+    
 def send( device_name, command ):
     """Send a python script as a string which is then implemented by an IoT device. This is intended for simple use cases"""
     warnings.filterwarnings("ignore")
@@ -81,7 +88,4 @@ def pause( device_name ):
 def run( device_name ):
     """Resumes running of iot listener on device by changing flag on shadow. This is intended for simple use cases"""
     send(device_name, "global iot_status; iot_status='run'")
-
-
-
 
