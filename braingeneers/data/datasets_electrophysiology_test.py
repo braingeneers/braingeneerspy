@@ -1,4 +1,6 @@
 import unittest
+
+import braingeneers
 import braingeneers.data.datasets_electrophysiology as ephys
 import json
 from braingeneers import skip_unittest_if_offline
@@ -19,6 +21,13 @@ class MaxwellReaderTests(unittest.TestCase):
     def test_online_maxwell_load_data_by_index_number(self):
         """ Test that load_data can accept an index number. """
         self.fail()  # needs to be implemented asap, this is a known bug
+
+    @skip_unittest_if_offline
+    def test_bug_metadata_read(self):
+        # uuid = '2022-04-25-e-'
+        uuid = '9999-00-00-e-test'
+        metadata = ephys.load_metadata(uuid)
+        self.assertTrue(len(metadata) > 0)
 
 
 class AxionReaderTests(unittest.TestCase):
@@ -157,6 +166,16 @@ class AxionReaderTests(unittest.TestCase):
         self.assertEqual(data[0][1], -18 * voltage_scaling_factor)
         self.assertEqual(data[0][2], 10 * voltage_scaling_factor)
         self.assertEqual(data[0][3], 30 * voltage_scaling_factor)
+
+    @skip_unittest_if_offline
+    def test_bug_read_length_neg_one(self):
+        """
+        Tests a bug reported by Matt getting the error: ValueError: read length must be non-negative or -1
+        :return:
+        """
+        metadata = ephys.load_metadata('2021-09-23-e-MR-89-0526-drug-3hr')
+        data = ephys.load_data(metadata=metadata, experiment='D2', offset=0, length=450000, channels=[0, 2, 6, 7])
+        self.assertTrue('No exception, no problem.')
 
 
 class HengenlabReaderTests(unittest.TestCase):

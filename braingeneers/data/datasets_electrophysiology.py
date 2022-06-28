@@ -19,6 +19,7 @@ import braingeneers
 from collections import OrderedDict
 import sortedcontainers
 import itertools
+import posixpath
 
 
 # todo implement hengenlab metadata generator
@@ -112,7 +113,7 @@ def load_metadata(batch_uuid: str) -> dict:
         if braingeneers.get_default_endpoint().startswith('http') \
         else braingeneers.get_default_endpoint()
 
-    metadata_full_path = os.path.join(base_path, 'ephys', batch_uuid, 'metadata.json')
+    metadata_full_path = posixpath.join(base_path, 'ephys', batch_uuid, 'metadata.json')
     with smart_open.open(metadata_full_path, 'r') as f:
         metadata = json.load(f)
 
@@ -518,7 +519,7 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_name: int,
         experiment = metadata['ephys_experiments'][experiment_name]
         block = experiment['blocks'][block_ix]
         file_name = block['path']
-        full_file_path = os.path.join(get_basepath(), 'ephys', batch_uuid, 'original', 'data', file_name)
+        full_file_path = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original', 'data', file_name)
         sample_start = max(0, offset - metadata_offsets_cumsum[block_ix] + block['num_frames'])
         data_length = min(block['num_frames'], length - frame_read_count)
         data_ndarray = _axion_get_data(
@@ -924,7 +925,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
 
     # list raw data files at batch_uuid
     list_of_raw_data_files = sorted(s3wrangler.list_objects(
-        path=os.path.join(get_basepath(), 'ephys', batch_uuid, 'original/data/'),
+        path=posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original/data/'),
         suffix='.raw',
     ))
     if len(list_of_raw_data_files) == 0:
@@ -989,7 +990,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
     metadata_json['ephys_experiments'] = list(ephys_experiments.values())
 
     if save:
-        with smart_open.open(os.path.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
+        with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
             json.dump(metadata_json, f, indent=2)
 
     return metadata_json
@@ -1133,14 +1134,12 @@ def _axion_get_data(file_name, file_data_start_position,
                     sample_offset, sample_length,
                     num_channels, corrected_map):
     """
-    :param file_name: file name
-    :param file_data_start_position: data start position in file as returned by metadata
-    :param sample_offset: number of frames to skip from beginning of file
-    :param sample_length: length of data section in frames (agnostic of channel count)
-    :param num_channels:
-    :param corrected_map: mapping to correctly rearrange columns
-    :param well_layout: row, col of well layout
-    :param electrode_layout: row, col of electrode layout
+    :param: file_name: file name
+    :param: file_data_start_position: data start position in file as returned by metadata
+    :param: sample_offset: number of frames to skip from beginning of file
+    :param: sample_length: length of data section in frames (agnostic of channel count)
+    :param: num_channels:
+    :param: corrected_map: mapping to correctly rearrange columns
     :return:
     """
     with smart_open.open(file_name, 'rb', compression='disable') as fid:
