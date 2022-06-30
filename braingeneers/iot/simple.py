@@ -74,7 +74,7 @@ def start_iot(device_name, device_type, experiment, commands=[]): #, #allowed_co
     def respondToCommand(topic: str, message: dict):                               # build function that runs when device receives command
         try:
             if len(commands)>0:                                                    # if user inputed list of allowed commands 
-                if not "global iot_status; iot_status=" in message["command"] and \ 
+                if not "global iot_status; iot_status=" in message["command"] and \
                    not any(x in message["command"] for x in commands ):            # check if sent command contains an allowed command, if not throw error
                     raise Exception(f"User message-- {message['command']}-- doesn't contain required commands -- {commands}")         
             logger.debug(f"Run Command: {message['command']}")                     # log to history that the sent command was run
