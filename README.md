@@ -29,13 +29,13 @@ Below are examples of various installation configurations.
 
 ```
 # Typical install (includes `iot`, `analysis`, and `data` access functions, skips `ml`, and lab-specific dependencies): 
-python -m pip install --force-reinstall 'git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,analysis]'
+python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,analysis]
 
 # Full install (all optional dependencies included).
-python -m pip install --force-reinstall 'git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]'
+python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]
 
 # Minimum install (no optional dependencies, good for Raspberry PI builds).
-python -m pip install --force-reinstall 'git+https://github.com/braingeneers/braingeneerspy.git'
+python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git
 ```
 
 ### Optional dependency organization
