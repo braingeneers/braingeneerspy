@@ -124,8 +124,8 @@ def get_packages_from_install_name(package_install_name: str) -> List[str]:
     """
     import pkg_resources as pkg
     metadata_dir = pkg.get_distribution(package_install_name).egg_info
-    with open('%s/%s' % (metadata_dir, 'top_level.txt')) as f:
-        return f.read().rstrip().split('\n')
+    with open(os.path.join(metadata_dir, 'top_level.txt')) as f:
+        return f.read().split()
 
 
 @functools.lru_cache(maxsize=None)
