@@ -1,4 +1,3 @@
-
 """ A simple protocol for connecting devices to IoT and schedule experiments"""
 
 # import stuff
@@ -10,7 +9,9 @@ import warnings
 import builtins
 import inspect
 import logging
+import traceback
 from dateutil import tz
+
 
 def start_iot(device_name, device_type, experiment, commands=[]): #, #allowed_commands={"pump":["func_1","func_1"], "image":["func_1","func_1"]}):
     """Create a device and have it start listening for commands. This is intended for simple use cases"""
@@ -19,27 +20,31 @@ def start_iot(device_name, device_type, experiment, commands=[]): #, #allowed_co
     def _updateIot(device_name, mb ):
         """Updates the IoT device's publicly visible state according to the local schedule/status"""
         # Update schedule
-        jobs, jobs_str = [],[]
-        for i,job in enumerate(schedule.get_jobs()):                         # debugging: print(i) #print(job.__str__()) #print(job.__repr__())
-            jobs.append( job.__str__() )                                     # append python command that wass used to create shceduled job
-            if job.cancel_after:                                             # if job must be cancelled at a certain time, add cancel time
-                jobs[i]+= job.cancel_after.astimezone(tz.gettz('US/Pacific')).strftime("UNTIL-%Y-%m-%d %H:%M:%S") 
+        try:                                                                     # Use try/catch so that error like no internet don't stop experiment
+            jobs, jobs_str = [],[]
+            for i,job in enumerate(schedule.get_jobs()):                         # debugging: print(i) #print(job.__str__()) #print(job.__repr__())
+                jobs.append( job.__str__() )                                     # append python command that wass used to create shceduled job
+                if job.cancel_after:                                             # if job must be cancelled at a certain time, add cancel time
+                    jobs[i]+= job.cancel_after.astimezone(tz.gettz('US/Pacific')).strftime("UNTIL-%Y-%m-%d %H:%M:%S") 
 
-            job_str = f"Job {i}: "+job.__repr__()
-            if job.last_run:                                                                                # if job was previously run
-                last_time = job.last_run.astimezone(tz.gettz('US/Pacific')).strftime("%Y-%m-%d %H:%M:%S")   # get time of last scheduled event
-                job_str = job_str.split("last run: ")[0]+"last run: "+last_time+", next run: "
-            next_time = job.next_run.astimezone(tz.gettz('US/Pacific')).strftime("%Y-%m-%d %H:%M:%S)")      # get time of next scheduled event     
-            jobs_str.append( job_str.split("next run: ")[0]+"next run: "+next_time )# append
+                job_str = f"Job {i}: "+job.__repr__()
+                if job.last_run:                                                                                # if job was previously run
+                    last_time = job.last_run.astimezone(tz.gettz('US/Pacific')).strftime("%Y-%m-%d %H:%M:%S")   # get time of last scheduled event
+                    job_str = job_str.split("last run: ")[0]+"last run: "+last_time+", next run: "
+                next_time = job.next_run.astimezone(tz.gettz('US/Pacific')).strftime("%Y-%m-%d %H:%M:%S)")      # get time of next scheduled event     
+                jobs_str.append( job_str.split("next run: ")[0]+"next run: "+next_time )# append
 
-        # Update log
-        with open("iot.log") as file:                  # Get history of iot commands and scheduel from the file iot.log
-            lines = file.readlines()
-            log = [line.rstrip() for line in lines]
-            if len(log)>35:                            # If iot log is more than 25 lines, get just the last 25 lines
-                log = log[-35:]    
-        mb.update_device_state( device_name, {"status":iot_status,"jobs":jobs,"schedule":jobs_str,"history":log} )
-
+            # Update log
+            with open("iot.log") as file:                  # Get history of iot commands and scheduel from the file iot.log
+                lines = file.readlines()
+                log = [line.rstrip() for line in lines]
+                if len(log)>35:                            # If iot log is more than 25 lines, get just the last 25 lines
+                    log = log[-35:]    
+            mb.update_device_state( device_name, {"status":iot_status,"jobs":jobs,"schedule":jobs_str,"history":log} )
+            
+        except:
+            logger.error("\n"+traceback.format_exc())                             # Write error to log
+    
     
     # Create function for when IoT command is received
     def respondToCommand(topic: str, message: dict):                               # build function that runs when device receives command
@@ -97,7 +102,9 @@ def start_iot(device_name, device_type, experiment, commands=[]): #, #allowed_co
                 _updateIot(device_name, mb )                                       # schedule info has changed, so update IoT state
         time.sleep(.1)                                                             # wait a little to save cpu usage
     mb.shutdown()                                                                  # shutdown iot at the end.
-
+    
+    
 def ready_iot():
     """Save source code for start_iot function to a place where it can be executed by the user"""
     builtins.ready_iot = inspect.getsource(start_iot)
+
