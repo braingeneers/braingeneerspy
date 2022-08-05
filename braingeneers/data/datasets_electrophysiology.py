@@ -437,7 +437,11 @@ def load_data(metadata: dict, experiment: Union[str, int], offset: int = 0, leng
         f'(across all files, warning, this can be a very large amount of data)'
     assert parallelism == 'auto', \
         'This feature has not yet been implemented, it is reserved for future use.'
-
+    # if experiment is a number, assume that it's one behind the experiment it's referring to
+    # in fact, load_metadata will organize the original metadata by name as key, so need to adjust as such
+    if isinstance(experiment, int):
+        # change the value to a string
+        experiment = f'experiment{experiment + 1}'
     dataset_size = sum([block['num_frames'] for block in metadata['ephys_experiments'][experiment]['blocks']])
     if offset + length > dataset_size:
         raise IndexError(f'Dataset size is {dataset_size}, but parameters offset + length '
@@ -618,7 +622,6 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
         for block in metadata['ephys_experiments'][experiment_name]['blocks']:
             frame_end += block['num_frames'] / metadata['ephys_experiments'][experiment_name]['num_channels']
         frame_end = int(frame_end)
-        #frame_end /= metadata['num_channels']
     else:
         frame_end = start + length
         for index in range(start_block, len(metadata['ephys_experiments'][experiment_name]['blocks'])):
@@ -636,10 +639,8 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
             sig = h5file['sig']
             # make dataset of chosen frames
             if channels is not None:
-                #num_frames = len(channels) * (frame_end - start)
                 dataset = sig[channels, start:frame_end]
             else:
-                #num_frames = metadata['ephys_experiments'][experiment_name]['num_channels'] * (frame_end - start)
                 dataset = sig[:, start:frame_end]
     dataset = dataset.astype(np.float32)
     return dataset

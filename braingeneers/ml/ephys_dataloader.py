@@ -1,17 +1,18 @@
 from torch.utils.data import Dataset
-from data import datasets_electrophysiology as de
+from braingeneers.data import datasets_electrophysiology as de
 import numpy as np
 import pandas as pd
 
 
 # HERE set numpy seed
+# todo: Need to have a good default for experiment_num and sample_size so can be used w/ spectrogram easily
 
 class EphysDataset(Dataset):
 
-    def __init__(self, batch_uuid, experiment_num, sample_size, attr_csv, start, align='center', bounds='exception', length=-1,
+    def __init__(self, batch_uuid, experiment_num, sample_size, attr_csv, align='center', bounds='exception',
+                 length=-1,
                  channels=None):
         """
-
         :param batch_uuid: str
             String indicating which batch to take from
         :param experiment_num: int
@@ -21,22 +22,13 @@ class EphysDataset(Dataset):
                             should be returning. This is NOT the size of the dataset being loaded in by load_data.
         :param attr_csv: str of filepath or name of readable file
             CSV file specifying offset, length, and channels. Offset MUST be specified.
-        :param start: int
-            Start of larger dataset (frame)
         :param align: str
             Indicates how to use idx: indicating center of data datachunk, left of datachunk, or right of datachunk
         :param bounds: str
             Indicates how to treat cases where there's OutOfBounds issues (e.g. center idx @ 0 would go below 0). options are
             'exception', 'pad', 'flush'.
-        :param start: int
-            How far into the dataset to take the larger sample of data points
-        :param length: int
-            Range of data points to be taken
-        :param channels: list of int
-            Channels of interest to take data from
         """
         self.attr_df = pd.read_csv(attr_csv)
-        self.start = start
         # store as self variables to do
         self.UUID = batch_uuid
         self.exp_num = experiment_num
@@ -66,7 +58,7 @@ class EphysDataset(Dataset):
         else:
             self.channels = [int(i) for i in channels.split('/')]
 
-        dataset = de.load_data(de.load_metadata(self.UUID), self.exp_num, self.start, self.datalen, self.channels)
+        dataset = de.load_data(de.load_metadata(self.UUID), self.exp_num, self.offset, self.datalen, self.channels)
         datachunk = np.empty((dataset.shape[0], self.sample_size))
         # if 'center', idx should point to the CENTER of a set of data, and get the frames from halfway in front and behind.
         # 4/4/22 replacing idx with offset. idx now points to a certain row in the csv.
@@ -88,7 +80,6 @@ class EphysDataset(Dataset):
                     left_pad = 0 - left_bound
                     left_bound = 0
                     right_pad = right_bound - dataset.shape[1]
-                    right_bound = dataset.shape[1]
                     # pad both sides
                     datachunk[:, :left_pad] = 0
                     datachunk[:, right_pad:] = 0
@@ -101,7 +92,6 @@ class EphysDataset(Dataset):
                     datachunk[:, left_pad:] = dataset[:, left_bound:right_bound]
                 elif right_bound > dataset.shape[1]:
                     # calc overshoot and reset right_bound, fill with datachunk first and pad with 0s
-                    right_pad = right_bound - dataset.shape[1]
                     right_bound = dataset.shape[1]
                     datalimit = right_bound - left_bound
                     datachunk[:, :datalimit] = dataset[:, left_bound:right_bound]
@@ -143,7 +133,6 @@ class EphysDataset(Dataset):
                     left_pad = 0 - left_bound
                     left_bound = 0
                     right_pad = right_bound - dataset.shape[1]
-                    right_bound = dataset.shape[1]
                     # pad both sides
                     datachunk[:, :left_pad] = 0
                     datachunk[:, right_pad:] = 0
@@ -197,7 +186,6 @@ class EphysDataset(Dataset):
                     left_pad = 0 - left_bound
                     left_bound = 0
                     right_pad = right_bound - dataset.shape[1]
-                    right_bound = dataset.shape[1]
                     # pad both sides
                     datachunk[:, :left_pad] = 0
                     datachunk[:, right_pad:] = 0
@@ -233,7 +221,6 @@ class EphysDataset(Dataset):
                 else:
                     # if none of these apply, then the bounds are valid and should be used.
                     datachunk = dataset[:, left_bound:right_bound]
-            # datachunk = dataset[:, idx - self.sample_size:idx]
         return datachunk
 
     def __len__(self):
