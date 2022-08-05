@@ -196,17 +196,29 @@ class SpikeData():
         else:
             raise ValueError(f'Unknown unit {unit} (try Hz or kHz)')
 
-    def subset(self, units):
+    def subset(self, units, by=None):
         '''
-        Return a new SpikeData with spike times for only some units.
+        Return a new SpikeData with spike times for only some units,
+        selected either byy their indices or by an ID stored under a given
+        key in the neuron_data. If IDs are not unique, every neuron which
+        matches is included in the output.
 
         Metadata and raw data are propagated exactly, while neuron
         data is subsetted in the same way as the spike trains.
         '''
-        train = [ts for i,ts in enumerate(self.train) if i in units]
-        neuron_data = {k: [v for i,v in enumerate(vs) if i in units]
+        # The inclusion condition depends on whether we're selecting by ID
+        # or by index.
+        if by is None:
+            def cond(i):
+                return i in units
+        else:
+            def cond(i):
+                return self.neuron_data[by][i] in units
+
+        train = [ts for i,ts in enumerate(self.train) if cond(i)]
+        neuron_data = {k: [v for i,v in enumerate(vs) if cond(i)]
                        for k,vs in self.neuron_data.items()}
-        return self.__class__(train, length=self.length, N=len(units),
+        return self.__class__(train, length=self.length, N=len(train),
                               neuron_data=neuron_data,
                               metadata=self.metadata,
                               raw_time=self.raw_time,
