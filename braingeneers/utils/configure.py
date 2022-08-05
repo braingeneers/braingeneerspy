@@ -31,13 +31,13 @@ DEPENDENCIES = {
         'requests',
         'numpy',
         'tenacity',
-        'awswrangler',
         'sortedcontainers',
-        # 'boto3==1.17.96',  # depends on awscrt==0.11.22
         'boto3',  # if version conflicts occur revert to above version
-        'smart_open>=5.1.0',
+    ],
+    'data': [
         'h5py',
-        'schedule'
+        'smart_open>=5.1.0',
+        'awswrangler',
     ],
     # Specific dependency groups allow unnecessary (and often large) dependencies to be skipped
     # add dependency groups here, changes will be dynamically added to setup(...)
@@ -45,6 +45,7 @@ DEPENDENCIES = {
         # 'awsiotsdk==1.6.0',  # dependency issues occur when the current version is installed, that may be resolvable
         'awsiotsdk',
         'redis',
+        'schedule',
     ],
     'analysis': [
         'scipy',
@@ -124,8 +125,8 @@ def get_packages_from_install_name(package_install_name: str) -> List[str]:
     """
     import pkg_resources as pkg
     metadata_dir = pkg.get_distribution(package_install_name).egg_info
-    with open('%s/%s' % (metadata_dir, 'top_level.txt')) as f:
-        return f.read().rstrip().split('\n')
+    with open(os.path.join(metadata_dir, 'top_level.txt')) as f:
+        return f.read().split()
 
 
 @functools.lru_cache(maxsize=None)
