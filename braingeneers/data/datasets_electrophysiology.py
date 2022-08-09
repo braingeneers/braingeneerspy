@@ -733,7 +733,6 @@ def load_sorted_phy(batch_uuid: str, dataset_name: str, type='default', fs=20000
     cluster_templates = []
     for i in labeled_clusters:
         nbgh_chans = np.nonzero(templates[i].any(0))[0]
-        # print(nbgh_chans)
         nbgh_temps = np.transpose(templates[i][:, templates[i].any(0)])
         nbgh_dict = dict(zip(channels[nbgh_chans], nbgh_temps))
         cluster_templates.append(nbgh_dict)
