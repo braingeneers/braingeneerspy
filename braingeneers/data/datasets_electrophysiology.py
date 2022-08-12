@@ -728,10 +728,11 @@ def load_sorted_phy(batch_uuid: str, dataset_name: str, type='default', fs=20000
         spike_times = list(itertools.chain.from_iterable(spike_times))
 
     chan_indices = np.searchsorted(channels, best_channels)
-    chan_template = templates[labeled_clusters, :, chan_indices]
+    cluster_indices = np.searchsorted(np.unique(clusters), labeled_clusters)
+    chan_template = templates[cluster_indices, :, chan_indices]
 
     cluster_templates = []
-    for i in labeled_clusters:
+    for i in cluster_indices:
         nbgh_chans = np.nonzero(templates[i].any(0))[0]
         nbgh_temps = np.transpose(templates[i][:, templates[i].any(0)])
         nbgh_dict = dict(zip(channels[nbgh_chans], nbgh_temps))
