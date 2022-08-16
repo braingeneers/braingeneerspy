@@ -716,7 +716,8 @@ def load_sorted_phy(batch_uuid: str, dataset_name: str, type='default', fs=20000
                 labeled_clusters = np.unique(clusters)
                 best_channels = [channels[np.argmax(np.ptp(templates[i], axis=0))][0]
                                  for i in labeled_clusters]
-
+            
+            spike_templates = np.load(f_zip.open('spike_templates.npy'))
             spike_times = np.load(f_zip.open('spike_times.npy')) / fs * 1e3
             positions = np.load(f_zip.open('channel_positions.npy'))
 
@@ -726,9 +727,25 @@ def load_sorted_phy(batch_uuid: str, dataset_name: str, type='default', fs=20000
         clusters = list(itertools.chain.from_iterable(clusters))
     if isinstance(spike_times[0], np.ndarray):
         spike_times = list(itertools.chain.from_iterable(spike_times))
+    if isinstance(spike_templates[0], np.ndarray):
+        spike_templates = np.asarray(list(itertools.chain.from_iterable(spike_templates)))
 
+    df = pd.DataFrame({"clusters": clusters, "spikeTimes": spike_times})
+    cluster_spikes = df.groupby("clusters").agg({"spikeTimes": lambda x: list(x)})
+    cluster_spikes = cluster_spikes[cluster_spikes.index.isin(labeled_clusters)]
+    
+    labeled_clusters = np.asarray(labeled_clusters)
+    if max(labeled_clusters) >= templates.shape[0]:   # units are spited or merged during curation
+        ind = np.where(labeled_clusters >= templates.shape[0])[0]
+        for i in ind:
+            spike_ids = np.nonzero(np.in1d(clusters, labeled_clusters[i]))[0]
+            original_cluster = np.unique((spike_templates[spike_ids]))[0] # to simplify the process,
+            # take the first original cluster for merged clusters because merge happens when
+            # two clusters templates are similar
+            labeled_clusters[i] = original_cluster
+    
     chan_indices = np.searchsorted(channels, best_channels)
-    cluster_indices = np.searchsorted(np.unique(clusters), labeled_clusters)
+    cluster_indices = np.searchsorted(np.unique(spike_templates), labeled_clusters)
     chan_template = templates[cluster_indices, :, chan_indices]
 
     cluster_templates = []
@@ -737,10 +754,6 @@ def load_sorted_phy(batch_uuid: str, dataset_name: str, type='default', fs=20000
         nbgh_temps = np.transpose(templates[i][:, templates[i].any(0)])
         nbgh_dict = dict(zip(channels[nbgh_chans], nbgh_temps))
         cluster_templates.append(nbgh_dict)
-
-    df = pd.DataFrame({"clusters": clusters, "spikeTimes": spike_times})
-    cluster_spikes = df.groupby("clusters").agg({"spikeTimes": lambda x: list(x)})
-    cluster_spikes = cluster_spikes[cluster_spikes.index.isin(labeled_clusters)]
 
     chan_pos = positions[chan_indices]
 
