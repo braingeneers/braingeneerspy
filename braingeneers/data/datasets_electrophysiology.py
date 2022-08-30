@@ -589,6 +589,8 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
     dataset: nparray
         Dataset of datapoints.
     """
+    # TODO: Check the length and see if there are enough blocks to even support it
+    # NOTE: Blocks (right now) are worthless to me
     if length == -1:
         print(
             f"Loading file Maxwell, UUID {batch_uuid}, {experiment_name}, frame {start} to end of file....")
@@ -598,6 +600,7 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
     # get datafile
 
     filename = metadata['ephys_experiments'][experiment_name]['blocks'][0]['path'].split('/')[-1]
+    # if the file is meant to be local, should account for that and load a local file instead.
     datafile = '{}/{}/original/data/{}'.format(get_archive_url(), batch_uuid, filename)
 
     # keep in mind that the range is across all channels. So, num_frames from the metadata is NOT the correct range.
@@ -624,13 +627,14 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
         frame_end = int(frame_end)
     else:
         frame_end = start + length
-        for index in range(start_block, len(metadata['ephys_experiments'][experiment_name]['blocks'])):
-            if (start + length) < metadata['ephys_experiments'][experiment_name]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment_name]['num_channels']:
-                end_block = index
-                break
-            else:
-                start -= metadata['ephys_experiments'][experiment_name]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment_name]['num_channels']
-    assert end_block < len(metadata['ephys_experiments'][experiment_name]['blocks'])
+    #     for index in range(start_block, len(metadata['ephys_experiments'][experiment_name]['blocks'])):
+    #         if (start + length) < metadata['ephys_experiments'][experiment_name]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment_name]['num_channels']:
+    #             end_block = index
+    #             break
+    #         else:
+    #             length -= metadata['ephys_experiments'][experiment_name]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment_name]['num_channels']
+    #             end_block = len(metadata['ephys_experiments'][experiment_name]['blocks'])
+    # assert end_block < len(metadata['ephys_experiments'][experiment_name]['blocks'])
     # now, with the starting block, ending block, and frames to take, take those frames and put into nparray.
     # open file
     with smart_open.open(datafile, 'rb') as file:
