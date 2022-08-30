@@ -83,9 +83,10 @@ class AnalysisTest(unittest.TestCase):
         sd5 = ba.SpikeData(*sd.idces_times())
         self.assertSpikeDataEqual(sd, sd5)
 
-        # Test 'NEST SpikeRecorder' constructor.
+        # Test 'NEST SpikeRecorder' constructor, passing in an arange to
+        # take the place of the NodeCollection you would usually use.
         recorder = DerpSpikeRecorder(idces, times)
-        sd6 = ba.SpikeData(recorder)
+        sd6 = ba.SpikeData(recorder, np.arange(5))
         self.assertSpikeDataEqual(sd, sd6)
 
         # Test subset() constructor.
@@ -93,6 +94,15 @@ class AnalysisTest(unittest.TestCase):
         sdsub = sd.subset(idces)
         for i,j in enumerate(idces):
             self.assertAll(sdsub.train[i] == sd.train[j])
+
+        # Make sure you can subset by neuron_data, not just raw index.
+        sdsub = sd6.subset([4,5])
+        sdsub2 = sd6.subset([4,5], by='nest_id')
+        self.assertSpikeDataEqual(sdsub, sdsub2)
+
+        # Make sure the previous is actually using neuron_data.
+        sdsub3 = sd6.subset([3,4,5], by='nest_id').subset([4,5], by='nest_id')
+        self.assertSpikeDataEqual(sdsub, sdsub3)
 
         # Test subtime() constructor idempotence.
         sdtimefull = sd.subtime(0, 100)

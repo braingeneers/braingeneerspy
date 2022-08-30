@@ -25,9 +25,10 @@ class SpikeData():
         format: a list indexed by unit ID, where each element is
         a list of spike times. The five possibilities accepted are:
         (1) a pair of lists corresponding to unit indices and times,
-        (2) a list of lists of spike times, (3) a list of channel-time
-        pairs, (4) a NEST spike detector, and (5) a list of Neuron
-        objects whose parameter spike_time is a list of spike times.
+        (2) a NEST spike recorder plus the collection of nodes to
+        record from, (3) a list of lists of spike times, (4) a list of
+        channel-time pairs, (5) a list of Neuron objects whose
+        parameter spike_time is a list of spike times.
 
         Metadata can also be passed in to the constructor, on a global
         basis in a dict called `metadata` or on a per-neuron basis in
@@ -44,23 +45,46 @@ class SpikeData():
         samples, which are converted to milliseconds using the sample
         rate saved in the Neuron object.
         '''
-        # If two arguments are provided, they're indices and times.
+        # Install the metadata and neuron_data.
+        self.metadata = metadata.copy()
+        self.neuron_data = neuron_data.copy()
+
+        # If two arguments are provided, they're either a NEST spike
+        # detector plus NodeCollection, or just a list of indices and
+        # times.
         if arg2 is not None:
-            self.train = _train_from_i_t_list(arg1, arg2, N)
+
+            # First, try parsing spikes from a NEST spike detector. Accept
+            # either a number of cells or a NodeCollection as arg2.
+            try:
+                times = arg1.events['times']
+                idces = arg1.events['senders']
+                try:
+                    N = arg2
+                    cells = np.arange(N)+1
+                except ValueError:
+                    cells = np.array(arg2)
+                    N = cells.max()
+                cellrev = np.zeros(N+1, int)
+                cellrev[cells] = np.arange(len(cells))
+
+                # Store the underlying NEST cell IDs in the neuron_data.
+                self.neuron_data['nest_id'] = cells
+
+                self.train = [[] for _ in cells]
+                for i,t in zip(idces, times):
+                    if i <= N:
+                        self.train[cellrev[i]].append(t)
+
+            # If that fails, we must have lists of indices and times.
+            except AttributeError:
+                self.train = _train_from_i_t_list(arg1, arg2, N)
+
         else:
             # The input could be a list [musclebeachtools.Neuron]
             try:
                 self.train = [np.asarray(n.spike_time)/n.fs*1e3
                               for n in arg1]
-
-            # If the argument is a NEST spike detector, it is
-            # technically an iterable of one NEST node, so the error
-            # that occurs is a KeyError in the node status dict.
-            # Detect this and pull indices and times lists from it.
-            except KeyError:
-                times = arg1.events['times']
-                idces = arg1.events['senders']
-                self.train = _train_from_i_t_list(idces, times, N)
 
             # Now it could be either (channel, time) pairs or
             # a complete prebuilt spike train.
@@ -109,14 +133,11 @@ class SpikeData():
             self.raw_data = np.zeros((0,0))
             self.raw_time = np.zeros((0,))
 
-        # Finally, install the metadata, making sure the neuron_data
-        # has the right number of values.
-        self.metadata = metadata.copy()
-        self.neuron_data = neuron_data.copy()
+        # Double-check that the neuron_data has the right number of values.
         for k,values in self.neuron_data.items():
             if len(values) != self.N:
                 raise ValueError('Malformed metadata: '
-                                 f'neuron_data[{k}] should have'
+                                 f'neuron_data[{k}] should have '
                                  f'{self.N} items.')
 
     @property
@@ -175,17 +196,29 @@ class SpikeData():
         else:
             raise ValueError(f'Unknown unit {unit} (try Hz or kHz)')
 
-    def subset(self, units):
+    def subset(self, units, by=None):
         '''
-        Return a new SpikeData with spike times for only some units.
+        Return a new SpikeData with spike times for only some units,
+        selected either byy their indices or by an ID stored under a given
+        key in the neuron_data. If IDs are not unique, every neuron which
+        matches is included in the output.
 
         Metadata and raw data are propagated exactly, while neuron
         data is subsetted in the same way as the spike trains.
         '''
-        train = [ts for i,ts in enumerate(self.train) if i in units]
-        neuron_data = {k: [v for i,v in enumerate(vs) if i in units]
+        # The inclusion condition depends on whether we're selecting by ID
+        # or by index.
+        if by is None:
+            def cond(i):
+                return i in units
+        else:
+            def cond(i):
+                return self.neuron_data[by][i] in units
+
+        train = [ts for i,ts in enumerate(self.train) if cond(i)]
+        neuron_data = {k: [v for i,v in enumerate(vs) if cond(i)]
                        for k,vs in self.neuron_data.items()}
-        return self.__class__(train, length=self.length, N=len(units),
+        return self.__class__(train, length=self.length, N=len(train),
                               neuron_data=neuron_data,
                               metadata=self.metadata,
                               raw_time=self.raw_time,
