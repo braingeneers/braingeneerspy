@@ -604,8 +604,7 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
     # get datafile
 
     filename = metadata['ephys_experiments'][experiment_name]['blocks'][0]['path'].split('/')[-1]
-    # if the file is meant to be local, should account for that and load a local file instead.
-    datafile = '{}/{}/original/data/{}'.format(get_archive_url(), batch_uuid, filename)
+    datafile = posixpath.join(braingeneers.get_default_endpoint(), 'ephys', batch_uuid, 'original', 'data', filename)
 
     # keep in mind that the range is across all channels. So, num_frames from the metadata is NOT the correct range.
     # Finding the block where the datapoints start
