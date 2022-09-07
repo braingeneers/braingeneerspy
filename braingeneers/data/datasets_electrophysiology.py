@@ -719,6 +719,9 @@ def load_stims_maxwell(uuid:str, metadata_ephys_exp:dict):
     except FileNotFoundError:
         print(f'\tThere seems to be no stim log file for this experiment! :(')
         return None
+    except OSError:
+        print(f'\tThere seems to be no stim log file (on s3) for this experiment! :(')
+        return None
 
 
 def compute_milliseconds(num_frames, sampling_rate):
