@@ -604,7 +604,7 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
     # get datafile
 
     filename = metadata['ephys_experiments'][experiment_name]['blocks'][0]['path'].split('/')[-1]
-    datafile = posixpath.join(braingeneers.get_default_endpoint(), 'ephys', batch_uuid, 'original', 'data', filename)
+    datafile = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original', 'data', filename)
 
     # keep in mind that the range is across all channels. So, num_frames from the metadata is NOT the correct range.
     # Finding the block where the datapoints start
@@ -656,6 +656,31 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
 def load_data_hengenlab(metadata: dict, batch_uuid: str, experiment_num: int,
                         channels: Iterable[int], offset: int, length: int):
     pass  # todo
+
+
+def load_mapping_maxwell(uuid:str, metadata_ephys_exp:dict):
+    '''
+    Loads the mapping of maxwell array from hdf5 file
+    
+    :param uuid: uuid of the experiment
+        UUID of batch of experiments
+    :param metadata_ephys_exp: metadata of the experiment for one recording
+        This must look like metadata['ephys_experiments']['experiment1']
+        from the normal metadata loading function
+    :return: mapping of maxwell array as a dataframe
+    '''
+    exp_path = metadata_ephys_exp['blocks'][0]['path']
+    exp_filename = posixpath.basename(exp_path)
+    DATA_PATH = 'original/data/'
+
+    file_path = posixpath.join(get_basepath(), 
+            'ephys',uuid, DATA_PATH, exp_filename)
+
+    with smart_open.open(file_path, 'rb') as f:
+        with h5py.File(f, 'r') as h5:
+            mapping = np.array(h5['mapping']) #ch, elec, x, y
+            mapping = pd.DataFrame(mapping)
+    return mapping
 
 
 def compute_milliseconds(num_frames, sampling_rate):
