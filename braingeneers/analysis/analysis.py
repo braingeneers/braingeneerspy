@@ -62,7 +62,7 @@ class SpikeData():
                 try:
                     N = arg2
                     cells = np.arange(N)+1
-                except ValueError:
+                except TypeError:
                     cells = np.array(arg2)
                     N = cells.max()
                 cellrev = np.zeros(N+1, int)
