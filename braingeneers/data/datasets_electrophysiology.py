@@ -595,12 +595,15 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
     """
     # TODO: Check the length and see if there are enough blocks to even support it
     # NOTE: Blocks (right now) are worthless to me
+
+    experiment_stem = posixpath.basename(metadata['ephys_experiments'][experiment_name]['blocks'][0]['path'])
+
     if length == -1:
         print(
-            f"Loading file Maxwell, UUID {batch_uuid}, {experiment_name}, frame {start} to end of file....")
+            f"Loading file Maxwell, UUID {batch_uuid}, {experiment_name}: {experiment_stem}, frame {start} to end of file....")
     else:
         print(
-            f"Loading file Maxwell, UUID {batch_uuid}, {experiment_name}, frame {start} to {start + length}....")
+            f"Loading file Maxwell, UUID {batch_uuid}, {experiment_name}: {experiment_stem}, frame {start} to {start + length}....")
     # get datafile
 
     filename = metadata['ephys_experiments'][experiment_name]['blocks'][0]['path'].split('/')[-1]
@@ -676,11 +679,46 @@ def load_mapping_maxwell(uuid:str, metadata_ephys_exp:dict):
     file_path = posixpath.join(get_basepath(), 
             'ephys',uuid, DATA_PATH, exp_filename)
 
+    print('Loading mapping from UUID: {}, experiment: {}'.format(uuid, exp_filename))
+
     with smart_open.open(file_path, 'rb') as f:
         with h5py.File(f, 'r') as h5:
             mapping = np.array(h5['mapping']) #ch, elec, x, y
             mapping = pd.DataFrame(mapping)
     return mapping
+
+
+def load_stims_maxwell(uuid:str, metadata_ephys_exp:dict):
+    '''
+    Loads the stim log files for a given experiment.
+    
+    :param uuid: uuid of the experiment
+        UUID of batch of experiments
+    :param metadata_ephys_exp: metadata of the experiment for one recording
+        This must look like metadata['ephys_experiments']['experiment1']
+        from the normal metadata loading function
+    :return: dataframe of stim logs
+    '''
+    exp_path = metadata_ephys_exp['blocks'][0]['path']
+    # This is gross, we have to split off the .raw.h5, requiring 2 splits
+    exp_stem = os.path.splitext(posixpath.basename(exp_path))[0]
+    exp_stem = os.path.splitext(exp_stem)[0]
+    exp_stim_log = exp_stem + 'log.csv' 
+    DATA_PATH = 'original/data/'
+
+
+    stim_path = posixpath.join(get_basepath(), 'ephys', uuid, DATA_PATH, 
+                                exp_stim_log)
+    
+    print('Loading stim log from UUID: {}, log: {}'.format(uuid, exp_stim_log))
+    try:
+        with smart_open.open(stim_path, 'rb') as f:
+            # read the csv into dataframe
+            df = pd.read_csv(f, header=0, index_col=0)
+        return df
+    except FileNotFoundError:
+        print(f'\tThere seems to be no stim log file for this experiment! :(')
+        return None
 
 
 def compute_milliseconds(num_frames, sampling_rate):
