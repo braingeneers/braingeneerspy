@@ -7,13 +7,14 @@ import time
 # self.token = API_KEY
 
 class DatabaseInteractor:
-    
+
     def __init__(self, endpoint, api_token) -> None:
         self.endpoint = endpoint
         self.token = api_token
 
     def create_interaction_thing(self, name, interaction_type, description="", shadow={}):
         api_url = self.endpoint + "/interaction-things/"
+        # print(api_url)
         headers = {"Authorization": "Bearer " + self.token}
         info = {
             "data": {
@@ -24,7 +25,7 @@ class DatabaseInteractor:
             }
         }
 
-        response = requests.post(self, api_url, headers=headers, json=info)
+        response = requests.post(api_url, headers=headers, json=info)
         # response = requests.post(api_url, json=info, headers={
         #                         'Authorization': 'bearer ' + self.token})
         return response.json()
