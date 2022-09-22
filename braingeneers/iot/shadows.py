@@ -169,3 +169,120 @@ class DatabaseInteractor:
         # print(response.status_code)
         # print(response.json())
         return response.json()
+
+    ## Plates
+    def create_plate(self, name, rows, columns):
+        api_url = self.endpoint+"/plates/"
+        image_params = {
+            "images": True,
+            "uuids": [
+                "2022-07-11-i-connectoid-3",
+                "2020-02-07-fluidics-imaging-2"
+            ],
+            "group_id": "C"
+        }
+        info = {
+            "data": {
+                "name": name,
+                "rows": rows,
+                "columns": columns,
+                "image_parameters": image_params
+            }
+        }
+        response = requests.post(api_url, json=info, headers={
+                                'Authorization': 'bearer ' + self.token})
+        print(response.status_code)
+        print(response.json())
+        if response.status_code == 200:
+            self.generate_wells_for_plate(
+                response.json()['data']['id'], rows, columns)
+
+        return response.json()['data']['id']
+
+
+    def generate_wells_for_plate(self, plate_id, rows, columns):
+        api_url = self.endpoint+"/wells/"
+        for i in range(1, rows+1):
+            for j in range(1, columns+1):
+                info = {
+                    "data": {
+                        "name": str(i) + str(j),
+                        "position_index": str(i) + str(j),
+                        "plate": plate_id
+                    }
+                }
+                response = requests.post(api_url, json=info, headers={
+                                        'Authorization': 'bearer ' + self.token})
+                print(response.status_code)
+                # print(response.json())
+
+
+    ## update methods:
+
+
+
+
+    ## get methods:
+    def get_plate_by_name(self, name):
+        api_url = self.endpoint+"/plates/?filters[name][$eq]="+name
+        response = requests.get(api_url, headers={
+            'Authorization': 'bearer ' + self.token})
+
+        return response.json()
+
+    def get_plate(self, plate_id):
+        api_url = self.endpoint+"/plates/"+str(plate_id)+"?populate=%2A"
+        response = requests.get(api_url, headers={
+            'Authorization': 'bearer ' + self.token})
+
+        return response.json()
+
+    def list_all_plates(self):
+        api_url = self.endpoint+"/plates/"
+        response = requests.get(api_url, headers={
+            'Authorization': 'bearer ' + self.token})
+
+        return response.json()
+
+## Wells
+
+    def create_well(self, name, position_index, plate_id):
+        api_url = self.endpoint+"/wells/"
+        info = {
+            "data": {
+                "name": name,
+                "position_index": position_index,
+                "plate": plate_id
+            }
+        }
+        response = requests.post(api_url, json=info, headers={
+                                'Authorization': 'bearer ' + self.token})
+        print(response.status_code)
+        print(response.json())
+        return response.json()['data']['id']
+
+    def delete_well(self, well_id):
+        api_url = self.endpoint+"/wells/"+str(well_id)
+        response = requests.delete(api_url, headers={
+            'Authorization': 'bearer ' + self.token})
+        print(response.status_code)
+        print(response.json())
+
+    def delete_all_wells(self):
+        # this is a mess forget about it for now
+        api_url = self.endpoint+"/wells?pagination[pageSize]=100"
+        response = requests.get(
+            api_url, headers={'Authorization': 'bearer ' + self.token})
+        wells = response.json()
+        num_pages = wells['meta']['pagination']['pageCount']
+        for well in wells['data']:
+            # print(well['id'])
+            api_url = "http://localhost:1337/api/wells/" + str(well['id'])
+            response = requests.delete(
+                api_url, headers={'Authorization': 'bearer ' + self.token})
+            print(response.status_code)
+            # if response.status_code != 200:
+            #     return
+            # get next page of wells
+            # time.sleep(1)
+## generalize?
