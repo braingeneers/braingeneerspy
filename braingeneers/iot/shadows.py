@@ -2,13 +2,6 @@ import requests
 # import time
 
 
-from credentials import API_KEY
-
-endpoint = "http://braingeneers.gi.ucsc.edu:1337/api"
-
-token = API_KEY
-    
-
 class DatabaseInteractor:
     """
     This class provides methods for interacting with the Strapi Shadows database.
@@ -37,9 +30,10 @@ class DatabaseInteractor:
             subscribe_device_state_change(device: str, device_state_keys: List[str], callback: Callable)  # subscribe to notifications when a device state changes.
 
     """
-    class Thing:
 
-        def __init__(self, type=None , name=None):
+    class Thing(object):
+
+        def __init__(self, type=None , name=None,):
                 self.id = None
                 self.type = type
                 self.name = name
@@ -51,33 +45,33 @@ class DatabaseInteractor:
         def add_to_shadow(self, key, value):
             self.shadow[key] = value
 
-        def push_thing_to_database(self):
-            pass
+        # def push_thing_to_database(self):
+        #     pass
 
         #json representation of the thing
         def to_json(self):
             return {"id": self.id, "name": self.name, "type": self.type, "shadow": self.shadow, "currentExperiment": self.currentExperiment, "currentPlate": self.currentPlate}
 
-        def get_thing_from_database(name):
-            url = endpoint + "/interaction-things?filters[name][$eq]=" + name
-            headers = {"Authorization": "Bearer " + token}
-            response = requests.get(url, headers=headers)
-
-            # data = response.json().get("data")
 
 
-            thing = DatabaseInteractor.Thing()
-            thing.id =  response.json()['data'][0]['id']
-            thing.name = response.json()['data'][0]['attributes']["name"]
-            thing.type = response.json()['data'][0]['attributes']["type"]
-            thing.shadow = response.json()['data'][0]['attributes']["shadow"]
-            # self.currentExperiment = response.json()[0]["currentExperiment"]
-            # self.currentPlate = response.json()[0]["currentPlate"]
+    def get_thing_from_database(self, name):
+        url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name
+        headers = {"Authorization": "Bearer " + self.token}
+        response = requests.get(url, headers=headers)
 
-            print(response.json())
-            return thing
+        # data = response.json().get("data")
 
 
+        thing = DatabaseInteractor.Thing()
+        thing.id = response.json()['data'][0]['id']
+        thing.name = response.json()['data'][0]['attributes']["name"]
+        thing.type = response.json()['data'][0]['attributes']["type"]
+        thing.shadow = response.json()['data'][0]['attributes']["shadow"]
+        # self.currentExperiment = response.json()[0]["currentExperiment"]
+        # self.currentPlate = response.json()[0]["currentPlate"]
+
+        print(response.json())
+        return thing
 
     def __init__(self, endpoint, api_token) -> None:
             self.endpoint = endpoint
