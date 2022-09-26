@@ -30,6 +30,9 @@ class DatabaseInteractor:
             subscribe_device_state_change(device: str, device_state_keys: List[str], callback: Callable)  # subscribe to notifications when a device state changes.
 
     """
+    def __init__(self, endpoint, api_token) -> None:
+        self.endpoint = endpoint
+        self.token = api_token
 
     class Thing(object):
 
@@ -53,16 +56,14 @@ class DatabaseInteractor:
             return {"id": self.id, "name": self.name, "type": self.type, "shadow": self.shadow, "currentExperiment": self.currentExperiment, "currentPlate": self.currentPlate}
 
 
-
     def get_thing_from_database(self, name):
         url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name
         headers = {"Authorization": "Bearer " + self.token}
         response = requests.get(url, headers=headers)
-
-        # data = response.json().get("data")
-
-
-        thing = DatabaseInteractor.Thing()
+        if len(response.json()['data']) == 0:
+            print("Interaction thing not found")
+            return None
+        thing = self.Thing()
         thing.id = response.json()['data'][0]['id']
         thing.name = response.json()['data'][0]['attributes']["name"]
         thing.type = response.json()['data'][0]['attributes']["type"]
@@ -73,9 +74,47 @@ class DatabaseInteractor:
         print(response.json())
         return thing
 
-    def __init__(self, endpoint, api_token) -> None:
-            self.endpoint = endpoint
-            self.token = api_token
+    def add_thing_to_database(self, thing): 
+        ##very limited usefullness, doesn't update existing things, only adds if they don't exist
+        url = self.endpoint + "/interaction-things?filters[name][$eq]=" + thing.name
+        headers = {"Authorization": "Bearer " + self.token}
+        response = requests.get(url, headers=headers)
+        if len(response.json()['data']) == 0:
+            api_url = self.endpoint + "/interaction-things/"
+            # print(api_url)
+            headers = {"Authorization": "Bearer " + self.token}
+            info = {
+                "data": {
+                    "name": thing.name,
+                    "description": "",
+                    "type": thing.type,
+                    "shadow": thing.shadow
+                }
+            }
+
+            response = requests.post(api_url, headers=headers, json=info)
+            # response = requests.post(api_url, json=info, headers={
+            #                         'Authorization': 'bearer ' + self.token})
+            return response.json()
+        else:
+            print("Interaction thing already exists")
+            return response.json()
+
+    def update_thing_on_database(self, thing):
+        url = self.endpoint + "/interaction-things/" + str(thing.id)
+        headers = {"Authorization": "Bearer " + self.token}
+        data = {
+            "data": {
+                "name": thing.name,
+                "type": thing.type,
+                "shadow": thing.shadow
+            }
+
+        }
+
+        response = requests.put(url, headers=headers, json=data)
+        print(response.json())
+        return response
 
     def create_interaction_thing(self, name, interaction_type, description="", shadow={}):
         url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name

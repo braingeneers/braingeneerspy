@@ -23,6 +23,9 @@ instance = sh.DatabaseInteractor(endpoint, API_KEY)
 
 thing = instance.get_thing_from_database("Forky")
 print(thing.to_json())
+thing.add_to_shadow("fartt","sparklettt")
+print(thing.to_json())
+instance.update_thing_on_database(thing)
 
 '''
 How do we want this to flow
