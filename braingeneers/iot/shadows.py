@@ -1,5 +1,5 @@
 import requests
-import time
+# import time
 
 class DatabaseInteractor:
     """
@@ -35,22 +35,29 @@ class DatabaseInteractor:
         self.token = api_token
 
     def create_interaction_thing(self, name, interaction_type, description="", shadow={}):
-        api_url = self.endpoint + "/interaction-things/"
-        # print(api_url)
+        url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name
         headers = {"Authorization": "Bearer " + self.token}
-        info = {
-            "data": {
-                "name": name,
-                "description": description,
-                "type": interaction_type,
-                "shadow": shadow
+        response = requests.get(url, headers=headers)
+        if len(response.json()['data']) == 0:
+            api_url = self.endpoint + "/interaction-things/"
+            # print(api_url)
+            headers = {"Authorization": "Bearer " + self.token}
+            info = {
+                "data": {
+                    "name": name,
+                    "description": description,
+                    "type": interaction_type,
+                    "shadow": shadow
+                }
             }
-        }
 
-        response = requests.post(api_url, headers=headers, json=info)
-        # response = requests.post(api_url, json=info, headers={
-        #                         'Authorization': 'bearer ' + self.token})
-        return response.json()
+            response = requests.post(api_url, headers=headers, json=info)
+            # response = requests.post(api_url, json=info, headers={
+            #                         'Authorization': 'bearer ' + self.token})
+            return response.json()
+        else:
+            print("Interaction thing already exists")
+            return response.json()
 
 
     def update_experiment_on_interaction_thing(self, interaction_thing_id, experiment_id):
@@ -286,3 +293,7 @@ class DatabaseInteractor:
             # get next page of wells
             # time.sleep(1)
 ## generalize?
+
+# Objects
+
+

@@ -8,5 +8,5 @@ token = API_KEY
 # Create a shadow object
 instance = sh.DatabaseInteractor(endpoint, API_KEY)
 
-print(instance.create_interaction_thing("test_thing", "BioPlateScope", "test_description", {"test_key": "test_value"}))
+print(instance.create_interaction_thing("test_thingy", "BioPlateScope", "test_description", {"test_key": "test_value"}))
 
