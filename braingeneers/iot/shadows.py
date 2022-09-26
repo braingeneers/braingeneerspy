@@ -1,6 +1,10 @@
 import requests
 # import time
 
+
+
+    
+
 class DatabaseInteractor:
     """
     This class provides methods for interacting with the Strapi Shadows database.
@@ -29,10 +33,31 @@ class DatabaseInteractor:
             subscribe_device_state_change(device: str, device_state_keys: List[str], callback: Callable)  # subscribe to notifications when a device state changes.
 
     """
+    class Thing:
+
+        def __init__(self, type , name):
+                self.id = None
+                self.type = type
+                self.name = name
+                self.shadow = {}
+                self.currentExperiment = None
+                self.currentPlate = None
+
+    ## a method that adds a value to the shadow
+        def add_to_shadow(self, key, value):
+            self.shadow[key] = value
+
+        def push_thing_to_database(self):
+            pass
+
+        #json representation of the thing
+        def to_json(self):
+            return {"id": self.id, "name": self.name, "type": self.type, "shadow": self.shadow, "currentExperiment": self.currentExperiment, "currentPlate": self.currentPlate}
+
 
     def __init__(self, endpoint, api_token) -> None:
-        self.endpoint = endpoint
-        self.token = api_token
+            self.endpoint = endpoint
+            self.token = api_token
 
     def create_interaction_thing(self, name, interaction_type, description="", shadow={}):
         url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name
@@ -58,6 +83,11 @@ class DatabaseInteractor:
         else:
             print("Interaction thing already exists")
             return response.json()
+
+    # def update_values_on_interaction_thing(self, name, values={}):
+    #     interaction_thing_id = self.get_interaction_thing_id_from_name(name)
+    #     data =
+    #     self.update_shadow_without_overwrite(interaction_thing_id, values)
 
 
     def update_experiment_on_interaction_thing(self, interaction_thing_id, experiment_id):
