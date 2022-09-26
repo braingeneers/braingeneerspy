@@ -54,6 +54,22 @@ class DatabaseInteractor:
         def to_json(self):
             return {"id": self.id, "name": self.name, "type": self.type, "shadow": self.shadow, "currentExperiment": self.currentExperiment, "currentPlate": self.currentPlate}
 
+        def get_thing_from_database(self, name):
+            url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name
+            headers = {"Authorization": "Bearer " + self.token}
+            response = requests.get(url, headers=headers)
+
+            self.id = response.json()[0]["id"]
+            self.name = response.json()[0]["name"]
+            self.type = response.json()[0]["type"]
+            self.shadow = response.json()[0]["shadow"]
+            # self.currentExperiment = response.json()[0]["currentExperiment"]
+            # self.currentPlate = response.json()[0]["currentPlate"]
+
+            print(response.json())
+            return response.json()['data'][0]['id']
+
+
 
     def __init__(self, endpoint, api_token) -> None:
             self.endpoint = endpoint
