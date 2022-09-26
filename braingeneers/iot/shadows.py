@@ -2,7 +2,11 @@ import requests
 # import time
 
 
+from credentials import API_KEY
 
+endpoint = "http://braingeneers.gi.ucsc.edu:1337/api"
+
+token = API_KEY
     
 
 class DatabaseInteractor:
@@ -35,7 +39,7 @@ class DatabaseInteractor:
     """
     class Thing:
 
-        def __init__(self, type , name):
+        def __init__(self, type=None , name=None):
                 self.id = None
                 self.type = type
                 self.name = name
@@ -54,20 +58,24 @@ class DatabaseInteractor:
         def to_json(self):
             return {"id": self.id, "name": self.name, "type": self.type, "shadow": self.shadow, "currentExperiment": self.currentExperiment, "currentPlate": self.currentPlate}
 
-        def get_thing_from_database(self, name):
-            url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name
-            headers = {"Authorization": "Bearer " + self.token}
+        def get_thing_from_database(name):
+            url = endpoint + "/interaction-things?filters[name][$eq]=" + name
+            headers = {"Authorization": "Bearer " + token}
             response = requests.get(url, headers=headers)
 
-            self.id = response.json()[0]["id"]
-            self.name = response.json()[0]["name"]
-            self.type = response.json()[0]["type"]
-            self.shadow = response.json()[0]["shadow"]
+            # data = response.json().get("data")
+
+
+            thing = DatabaseInteractor.Thing()
+            thing.id =  response.json()['data'][0]['id']
+            thing.name = response.json()['data'][0]['attributes']["name"]
+            thing.type = response.json()['data'][0]['attributes']["type"]
+            thing.shadow = response.json()['data'][0]['attributes']["shadow"]
             # self.currentExperiment = response.json()[0]["currentExperiment"]
             # self.currentPlate = response.json()[0]["currentPlate"]
 
             print(response.json())
-            return response.json()['data'][0]['id']
+            return thing
 
 
 
