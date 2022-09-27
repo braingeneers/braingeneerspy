@@ -34,7 +34,7 @@ class DatabaseInteractor:
         self.endpoint = endpoint
         self.token = api_token
 
-    class Thing(object):
+    class Thing:
 
         def __init__(self, type=None , name=None,):
                 self.id = None
@@ -116,6 +116,34 @@ class DatabaseInteractor:
         print(response.json())
         return response
 
+    class Plate:
+            
+        def __init__(self, name=None, rows=1, columns=1,  description=""):
+            self.id = None
+            self.name = name
+            self.description = description
+            
+            # generate wells
+
+        def to_json(self):
+            return {"id": self.id, "name": self.name, "description": self.description, "wells": self.wells}
+
+
+    class Well:
+        def __init__(self, name=None, description=""):
+            self.id = None
+            self.name = name
+            self.description = description
+            self.samples = []
+
+        def to_json(self):
+            return {"id": self.id, "name": self.name, "description": self.description}
+
+
+
+
+
+## here begins the old ones
     def create_interaction_thing(self, name, interaction_type, description="", shadow={}):
         url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name
         headers = {"Authorization": "Bearer " + self.token}
