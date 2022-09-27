@@ -249,8 +249,25 @@ class DatabaseInteractor:
         else:
             print("Plate exists")
             plate = self.Plate()
-            for key in response.json()['data']['attributes']:
-                print(key, response.json()['data']['attributes'][key])
+            attributes = response.json()['data']['attributes']
+            for key in attributes:
+                # print(key, attributes[key])
+                # if attributes[key] is type dict:
+                if type(attributes[key]) is dict and "data" in attributes[key]:
+                    if len(attributes[key]["data"]) != 0:
+                        list = []
+                        for item in attributes[key]["data"]:
+                            if "id" in item:
+                                list.append(item["id"])
+
+                        # print(list)
+                        # print(attributes[key]["data"])
+                        setattr(plate, key, list)
+                else:
+                    setattr(plate, key, attributes[key])
+                    # print(attributes[key])
+                    # print("is dict")
+                    # plate[key] = attributes[key]
                 # plate[key] = response.json()['data'][key]
             plate.id = response.json()['data']['id']
             return plate

@@ -30,7 +30,7 @@ instance = sh.DatabaseInteractor(endpoint, API_KEY)
 # plate = instance.create_plate("test_plate_obj", 2, 4)
 # print(plate.to_json())
 # instance.sync_plate(plate)
-plate = instance.get_plate(14)
+plate = instance.get_plate(10)
 print(plate)
 '''
 How do we want this to flow
