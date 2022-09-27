@@ -118,10 +118,13 @@ class DatabaseInteractor:
 
     class Plate:
             
-        def __init__(self, name=None, rows=1, columns=1,  description=""):
+        def __init__(self, name=None, rows=1, columns=1,  description="", wells = []):
             self.id = None
             self.name = name
+            self.rows = rows
+            self.columns = columns
             self.description = description
+            self.wells = wells
             
             # generate wells
 
@@ -139,6 +142,103 @@ class DatabaseInteractor:
         def to_json(self):
             return {"id": self.id, "name": self.name, "description": self.description}
 
+
+    def create_plate(self, name, rows, columns):
+        url = self.endpoint + "/plates?filters[name][$eq]=" + name
+        headers = {"Authorization": "Bearer " + self.token}
+        response = requests.get(url, headers=headers)
+        if len(response.json()['data']) == 0:
+            plate = self.Plate(name, rows, columns)
+            api_url = self.endpoint+"/plates/"
+            image_params = {
+                "images": True,
+                "uuids": [
+                    "2022-07-11-i-connectoid-3",
+                    "2020-02-07-fluidics-imaging-2"
+                ],
+                "group_id": "C"
+            }
+            info = {
+                "data": {
+                    "name": name,
+                    "rows": rows,
+                    "columns": columns,
+                    "image_parameters": image_params
+                }
+            }
+            response = requests.post(api_url, json=info, headers={
+                                    'Authorization': 'bearer ' + self.token})
+            print(response.status_code)
+            print(response.json())
+            if response.status_code == 200:
+                wells = self.generate_wells_for_plate(response.json()['data']['id'], rows, columns)
+                plate.wells = wells
+                plate.id = response.json()['data']['id']
+
+            return plate
+        else:
+            print("Plate already exists")
+            return response.json()['data'][0]
+
+    def sync_plate(self, plate):
+        if plate.id:
+            api_url = self.endpoint+"/plates/" + str(plate.id)
+            image_params = {
+                "images": True,
+                "uuids": [
+                    "2022-07-11-i-connectoid-3",
+                    "2020-02-07-fluidics-imaging-2"
+                ],
+                "group_id": "C"
+            }
+            info = {
+                "data": {
+                    "name": plate.name,
+                    "rows": plate.rows,
+                    "columns": plate.columns,
+                    "image_parameters": image_params,
+                    "wells": [893]
+                }
+            }
+            response = requests.put(api_url, json=info, headers={
+                                    'Authorization': 'bearer ' + self.token})
+            print(response.status_code)
+            print(response.json())
+            return plate
+
+
+    def generate_wells_for_plate(self, plate_id, rows, columns):
+        api_url = self.endpoint+"/wells/"
+        wells_list = []
+        for i in range(1, rows+1):
+            for j in range(1, columns+1):
+                info = {
+                    "data": {
+                        "name": str(i) + str(j),
+                        "position_index": str(i) + str(j),
+                        "plate": plate_id
+                    }
+                }
+                response = requests.post(api_url, json=info, headers={
+                                        'Authorization': 'bearer ' + self.token})
+                print(response.status_code)
+                if( response.status_code == 200):
+                    wells_list.append(response.json()['data']['id'])
+                else:
+                    print("Failed to create well")
+                # print(response.json())
+        return wells_list
+
+
+class Experiment:
+    def __init__(self, name=None, description="", plates=[]):
+        self.id = None
+        self.name = name
+        self.description = description
+        self.plates = plates
+
+    def to_json(self):
+        return {"id": self.id, "name": self.name, "description": self.description, "plates": self.plates}
 
 
 
@@ -293,50 +393,50 @@ class DatabaseInteractor:
         return response.json()
 
     ## Plates
-    def create_plate(self, name, rows, columns):
-        api_url = self.endpoint+"/plates/"
-        image_params = {
-            "images": True,
-            "uuids": [
-                "2022-07-11-i-connectoid-3",
-                "2020-02-07-fluidics-imaging-2"
-            ],
-            "group_id": "C"
-        }
-        info = {
-            "data": {
-                "name": name,
-                "rows": rows,
-                "columns": columns,
-                "image_parameters": image_params
-            }
-        }
-        response = requests.post(api_url, json=info, headers={
-                                'Authorization': 'bearer ' + self.token})
-        print(response.status_code)
-        print(response.json())
-        if response.status_code == 200:
-            self.generate_wells_for_plate(
-                response.json()['data']['id'], rows, columns)
+    # def create_plate(self, name, rows, columns):
+    #     api_url = self.endpoint+"/plates/"
+    #     image_params = {
+    #         "images": True,
+    #         "uuids": [
+    #             "2022-07-11-i-connectoid-3",
+    #             "2020-02-07-fluidics-imaging-2"
+    #         ],
+    #         "group_id": "C"
+    #     }
+    #     info = {
+    #         "data": {
+    #             "name": name,
+    #             "rows": rows,
+    #             "columns": columns,
+    #             "image_parameters": image_params
+    #         }
+    #     }
+    #     response = requests.post(api_url, json=info, headers={
+    #                             'Authorization': 'bearer ' + self.token})
+    #     print(response.status_code)
+    #     print(response.json())
+    #     if response.status_code == 200:
+    #         self.generate_wells_for_plate(
+    #             response.json()['data']['id'], rows, columns)
 
-        return response.json()['data']['id']
+    #     return response.json()['data']['id']
 
 
-    def generate_wells_for_plate(self, plate_id, rows, columns):
-        api_url = self.endpoint+"/wells/"
-        for i in range(1, rows+1):
-            for j in range(1, columns+1):
-                info = {
-                    "data": {
-                        "name": str(i) + str(j),
-                        "position_index": str(i) + str(j),
-                        "plate": plate_id
-                    }
-                }
-                response = requests.post(api_url, json=info, headers={
-                                        'Authorization': 'bearer ' + self.token})
-                print(response.status_code)
-                # print(response.json())
+    # def generate_wells_for_plate(self, plate_id, rows, columns):
+    #     api_url = self.endpoint+"/wells/"
+    #     for i in range(1, rows+1):
+    #         for j in range(1, columns+1):
+    #             info = {
+    #                 "data": {
+    #                     "name": str(i) + str(j),
+    #                     "position_index": str(i) + str(j),
+    #                     "plate": plate_id
+    #                 }
+    #             }
+    #             response = requests.post(api_url, json=info, headers={
+    #                                     'Authorization': 'bearer ' + self.token})
+    #             print(response.status_code)
+    #             # print(response.json())
 
 
     ## update methods:

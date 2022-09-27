@@ -21,11 +21,15 @@ instance = sh.DatabaseInteractor(endpoint, API_KEY)
 # print(thing.to_json())
 # print(instance.create_interaction_thing("test_thingy", "BioPlateScope", "test_description", {"test_key": "test_value"}))
 
-thing = instance.get_thing_from_database("Forky")
-print(thing.to_json())
-thing.add_to_shadow("fartt","sparklettt")
-print(thing.to_json())
-instance.update_thing_on_database(thing)
+# thing = instance.get_thing_from_database("Forky")
+# print(thing.to_json())
+# thing.add_to_shadow("fartt","sparklettt")
+# print(thing.to_json())
+# instance.update_thing_on_database(thing)
+
+plate = instance.create_plate("test_plate_obj", 2, 4)
+print(plate.to_json())
+instance.sync_plate(plate)
 
 '''
 How do we want this to flow
