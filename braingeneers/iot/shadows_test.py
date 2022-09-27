@@ -27,10 +27,11 @@ instance = sh.DatabaseInteractor(endpoint, API_KEY)
 # print(thing.to_json())
 # instance.update_thing_on_database(thing)
 
-plate = instance.create_plate("test_plate_obj", 2, 4)
-print(plate.to_json())
-instance.sync_plate(plate)
-
+# plate = instance.create_plate("test_plate_obj", 2, 4)
+# print(plate.to_json())
+# instance.sync_plate(plate)
+plate = instance.get_plate(14)
+print(plate)
 '''
 How do we want this to flow
 

@@ -128,8 +128,18 @@ class DatabaseInteractor:
             
             # generate wells
 
+        #string representation of the plate
+        def __str__(self):
+            return str(vars(self))
+
         def to_json(self):
-            return {"id": self.id, "name": self.name, "description": self.description, "wells": self.wells}
+            # output = "{"
+            # for key in filter(lambda a: not a.startswith('__'), dir(self)):
+            #     output += f'"{key}": {self[key]},'
+            # output += "}"
+            return vars(self)
+                
+            # return {"id": self.id, "name": self.name, "description": self.description, "wells": self.wells}
 
 
     class Well:
@@ -197,7 +207,7 @@ class DatabaseInteractor:
                     "rows": plate.rows,
                     "columns": plate.columns,
                     "image_parameters": image_params,
-                    "wells": [893]
+                    "wells": plate.wells
                 }
             }
             response = requests.put(api_url, json=info, headers={
@@ -229,6 +239,21 @@ class DatabaseInteractor:
                 # print(response.json())
         return wells_list
 
+    def get_plate(self, plate_id):
+        url = self.endpoint + "/plates/" + str(plate_id) + "?populate=%2A"
+        headers = {"Authorization": "Bearer " + self.token}
+        response = requests.get(url, headers=headers)
+        if len(response.json()['data']) == 0:
+            print("Plate doesn't exist")
+            return None
+        else:
+            print("Plate exists")
+            plate = self.Plate()
+            for key in response.json()['data']['attributes']:
+                print(key, response.json()['data']['attributes'][key])
+                # plate[key] = response.json()['data'][key]
+            plate.id = response.json()['data']['id']
+            return plate
 
 class Experiment:
     def __init__(self, name=None, description="", plates=[]):
