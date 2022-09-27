@@ -30,8 +30,12 @@ instance = sh.DatabaseInteractor(endpoint, API_KEY)
 # plate = instance.create_plate("test_plate_obj", 2, 4)
 # print(plate.to_json())
 # instance.sync_plate(plate)
-plate = instance.get_plate(10)
-print(plate)
+# plate = instance.get_plate(10)
+# print(plate)
+# experiment = instance.create_experiment("test_experiment_obj_3", "test_description")
+experiment = instance.get_experiment(9)
+experiment.plates.append(10)
+print(experiment)
 '''
 How do we want this to flow
 
