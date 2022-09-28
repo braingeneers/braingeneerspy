@@ -89,7 +89,7 @@ class DatabaseInteractor:
         return response.json()
 
     def add_experiment_to_thing(self, thing, experiment):
-        api_url = self.endpoint + "/interaction-things/" + str(thing.id)
+        api_url = self.endpoint + "/interaction-things/" + str(thing.id) + "?populate=%2A"
         headers = {"Authorization": "Bearer " + self.token}
         info = {
             "data": {
@@ -97,6 +97,7 @@ class DatabaseInteractor:
             }
         }
         response = requests.put(api_url, headers=headers, json=info)
+        print(response.status_code)
         print(response.json())
         thing.parse_API_response(response.json()["data"])
         return thing
