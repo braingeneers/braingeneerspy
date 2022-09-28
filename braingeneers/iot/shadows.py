@@ -62,11 +62,21 @@ class DatabaseInteractor:
         def parse_API_response(self, response_data):
             self.id = response_data['id']
             self.attributes = response_data['attributes']
-            # self.name = response_data['attributes']["name"]
-            # self.type = response_data['attributes']["type"]
-            # self.shadow = response_data['attributes']["shadow"] or {}
-            # self.current_experiment = response_data['attributes']["current_experiment"]
-            # self.current_plate = response_data['attributes']["current_plate"]
+            for key in self.attributes:
+                # print(key, self.attributes[key])
+                if type(self.attributes[key]) is dict and "data" in self.attributes[key]:
+                    if self.attributes[key]["data"] is not None and len(self.attributes[key]["data"]) != 0:
+                        # print("found data", self.attributes[key]["data"])
+                        list = []
+                        if type(self.attributes[key]["data"]) is list:
+                            for item in self.attributes[key]["data"]:
+                                print("item", item)
+                                if "id" in item:
+                                    list.append(item["id"])
+                        else:
+                            list = self.attributes[key]["data"]["id"]
+
+                        self.attributes[key] = list
 
     def __get_id_from_name(self, object_type, name):
         url = self.endpoint + "/" + object_type + "?filters[name][$eq]=" + name
@@ -199,7 +209,8 @@ class DatabaseInteractor:
 
         # }
         response = requests.put(url, headers=headers, json=data)
-        # print(response.json())
+        print(response.json())
+        print(response.status_code)
         thing.parse_API_response(response.json()['data'])
         return thing
 
