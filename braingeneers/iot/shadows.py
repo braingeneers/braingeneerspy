@@ -38,13 +38,13 @@ class DatabaseInteractor:
 
         def __init__(self, type=None , name=None,):
                 self.id = None
-                self.type = type
-                self.name = name
-                self.shadow = {}
-                self.currentExperiment = None
-                self.currentPlate = None
+                self.attributes = {}
+                self.attributes.type = type
+                self.attributes.name = name
+                self.attributes.shadow = {}
+                self.attributes.current_experiment = None
+                self.attributes.current_plate = None
 
-    ## a method that adds a value to the shadow
         def add_to_shadow(self, key, value):
             self.shadow[key] = value
 
@@ -56,22 +56,101 @@ class DatabaseInteractor:
         def to_json(self):
             return vars(self)
 
+        def parse_API_response(self, response_data):
+            self.id = response_data['id']
+            self.attributes = response_data['attributes']
+            # self.name = response_data['attributes']["name"]
+            # self.type = response_data['attributes']["type"]
+            # self.shadow = response_data['attributes']["shadow"] or {}
+            # self.current_experiment = response_data['attributes']["current_experiment"]
+            # self.current_plate = response_data['attributes']["current_plate"]
 
-    def get_thing_from_database(self, name):
+    def __get_id_from_name(self, object_type, name):
+        url = self.endpoint + "/" + object_type + "?filters[name][$eq]=" + name
+        headers = {"Authorization": "Bearer " + self.token}
+        response = requests.get(url, headers=headers)
+        if len(response.json()['data']) == 0:
+            return None
+        else:
+            return response.json()['data'][0]['id']
+
+    def add_plate_to_thing(self, thing, plate):
+        api_url = self.endpoint + "/interaction-things/" + str(thing.id)
+        headers = {"Authorization": "Bearer " + self.token}
+        info = {
+            "data": {
+                "current_plate": plate.id
+            }
+        }
+        response = requests.put(api_url, headers=headers, json=info)
+        return response.json()
+
+    def add_experiment_to_thing(self, thing, experiment):
+        api_url = self.endpoint + "/interaction-things/" + str(thing.id)
+        headers = {"Authorization": "Bearer " + self.token}
+        info = {
+            "data": {
+                "current_experiment": experiment.id
+            }
+        }
+        response = requests.put(api_url, headers=headers, json=info)
+        return response.json()
+
+    def create_interaction_thing(self, type, name):
+        url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name
+        headers = {"Authorization": "Bearer " + self.token}
+        response = requests.get(url, headers=headers)
+        if len(response.json()['data']) == 0:
+            thing = self.Thing(type, name)
+            api_url = self.endpoint+"/interaction-things/"
+            info = {
+                "data": {
+                    "name": name,
+                    "type": type
+                }
+            }
+            response = requests.post(api_url, json=info, headers={
+                                    'Authorization': 'bearer ' + self.token})
+            # print(response.status_code)
+            # print(response.json())
+            if response.status_code == 200:
+                thing.id = response.json()['data']['id']
+
+            return thing
+        else:
+            print("thing already exists")
+            print(response.json())
+            try:
+                thing = self.Thing()
+                thing.parse_API_response(response.json()['data'][0])
+                # thing.id = response.json()['data'][0]['id']
+                # thing.name = response.json()['data'][0]['attributes']["name"]
+                # thing.type = response.json()['data'][0]['attributes']["type"]
+                # thing.shadow = response.json()['data'][0]['attributes']["shadow"]
+                # thing.current_experiment = response.json()['data'][0]["current_experiment"]
+                # thing.current_plate = response.json()['data'][0]["current_plate"]
+            except KeyError:
+                print("some values are missing")
+            return thing
+
+
+    def get_thing(self, name):
         url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name
         headers = {"Authorization": "Bearer " + self.token}
         response = requests.get(url, headers=headers)
         if len(response.json()['data']) == 0:
             print("Interaction thing not found")
             return None
-        thing = self.Thing()
-        thing.id = response.json()['data'][0]['id']
-        thing.name = response.json()['data'][0]['attributes']["name"]
-        thing.type = response.json()['data'][0]['attributes']["type"]
-        thing.shadow = response.json()['data'][0]['attributes']["shadow"]
-        # self.currentExperiment = response.json()[0]["currentExperiment"]
-        # self.currentPlate = response.json()[0]["currentPlate"]
-
+        try:
+            thing = self.Thing()
+            thing.id = response.json()['data'][0]['id']
+            thing.name = response.json()['data'][0]['attributes']["name"]
+            thing.type = response.json()['data'][0]['attributes']["type"]
+            thing.shadow = response.json()['data'][0]['attributes']["shadow"]
+            thing.current_experiment = response.json()['data'][0]["current_experiment"]
+            thing.current_plate = response.json()['data'][0]["current_plate"]
+        except KeyError:
+                print("some values are missing")
         print(response.json())
         return thing
 
@@ -104,18 +183,20 @@ class DatabaseInteractor:
     def update_thing_on_database(self, thing):
         url = self.endpoint + "/interaction-things/" + str(thing.id)
         headers = {"Authorization": "Bearer " + self.token}
-        data = {
-            "data": {
-                "name": thing.name,
-                "type": thing.type,
-                "shadow": thing.shadow
-            }
+        for i in vars(thing):
+            print(i, getattr(thing, i))
+        # data = {
+        #     "data": {
+        #         "name": thing.name,
+        #         "type": thing.type,
+        #         "shadow": thing.shadow
+        #     }
 
-        }
+        # }
 
-        response = requests.put(url, headers=headers, json=data)
-        print(response.json())
-        return response
+        # response = requests.put(url, headers=headers, json=data)
+        # print(response.json())
+        # return response
 
     class Plate:
             

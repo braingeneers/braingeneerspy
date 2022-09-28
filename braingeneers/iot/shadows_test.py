@@ -8,10 +8,15 @@ token = API_KEY
 # Create a shadow object
 instance = sh.DatabaseInteractor(endpoint, API_KEY)
 
-# thing = instance.Thing("BioPlateScope", "test_thing")
+thing = instance.create_interaction_thing("BioPlateScope", "full_test_thing3")
 
-# print(thing.to_json())
+print(thing)
 
+thing.add_to_shadow("barg","sparkleeness")
+
+print(thing)
+
+instance.update_thing_on_database(thing)
 # thing.add_to_shadow("fart","sparkle")
 
 # print(thing.to_json())
@@ -33,9 +38,14 @@ instance = sh.DatabaseInteractor(endpoint, API_KEY)
 # plate = instance.get_plate(10)
 # print(plate)
 # experiment = instance.create_experiment("test_experiment_obj_3", "test_description")
-experiment = instance.get_experiment(9)
-experiment.plates.append(10)
-print(experiment)
+# experiment = instance.get_experiment(9)
+# print(experiment)
+# experiment.plates.append(10)
+# experiment.plates.append(6)
+
+# instance.sync_experiment(experiment)
+# experiment = instance.get_experiment(9)
+# print(experiment)
 '''
 How do we want this to flow
 
