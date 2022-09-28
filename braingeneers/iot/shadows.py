@@ -39,14 +39,17 @@ class DatabaseInteractor:
         def __init__(self, type=None , name=None,):
                 self.id = None
                 self.attributes = {}
-                self.attributes.type = type
-                self.attributes.name = name
-                self.attributes.shadow = {}
-                self.attributes.current_experiment = None
-                self.attributes.current_plate = None
+                self.attributes["type"] = type
+                self.attributes["name"] = name
+                self.attributes["shadow"] = {}
+                self.attributes["current_experiment"] = None
+                self.attributes["current_plate"] = None
 
         def add_to_shadow(self, key, value):
-            self.shadow[key] = value
+            if self.attributes["shadow"] is None:
+                self.attributes["shadow"] = {}
+
+            self.attributes["shadow"][key] = value
 
         # def push_thing_to_database(self):
         #     pass
@@ -94,7 +97,9 @@ class DatabaseInteractor:
             }
         }
         response = requests.put(api_url, headers=headers, json=info)
-        return response.json()
+        print(response.json())
+        thing.parse_API_response(response.json()["data"])
+        return thing
 
     def create_interaction_thing(self, type, name):
         url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name
@@ -183,8 +188,7 @@ class DatabaseInteractor:
     def update_thing_on_database(self, thing):
         url = self.endpoint + "/interaction-things/" + str(thing.id)
         headers = {"Authorization": "Bearer " + self.token}
-        for i in vars(thing):
-            print(i, getattr(thing, i))
+        data = {"data": thing.attributes}
         # data = {
         #     "data": {
         #         "name": thing.name,
@@ -193,10 +197,10 @@ class DatabaseInteractor:
         #     }
 
         # }
-
-        # response = requests.put(url, headers=headers, json=data)
+        response = requests.put(url, headers=headers, json=data)
         # print(response.json())
-        # return response
+        thing.parse_API_response(response.json()['data'])
+        return thing
 
     class Plate:
             
