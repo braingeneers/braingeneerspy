@@ -23,12 +23,10 @@ thing = instance.update_thing_on_database(thing)
 print("updated thing: ", thing)
 
 experiment = instance.create_experiment("test_experiment_obj_4", "test_description")
-print(type(experiment))
-experiment = instance.Experiment()
-print(type(experiment))
-print(experiment)
-# thing = instance.add_experiment_to_thing(thing, experiment)
-# print("added experiment", thing)
+# print(type(experiment))
+
+thing = instance.add_experiment_to_thing(thing, experiment)
+print("added experiment", thing)
 # thing.add_to_shadow("fart","sparkle")
 
 # print(thing.to_json())

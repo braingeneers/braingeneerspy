@@ -361,9 +361,10 @@ class DatabaseInteractor:
     class Experiment:
         def __init__(self, name=None, description="", plates=[]):
             self.id = None
-            self.name = name
-            self.description = description
-            self.plates = plates
+            self.attributes = {}
+            self.attributes["name"] = name
+            self.attributes["description"] = description
+            self.attributes["plates"] = plates
 
         def __str__(self):
             return str(vars(self))
@@ -371,10 +372,15 @@ class DatabaseInteractor:
         def to_json(self):
             return vars(self)
 
+        def parse_API_response(self, response_data):
+            self.id = response_data['id']
+            self.attributes = response_data['attributes']
+
     def create_experiment(self, name, description):
         url = self.endpoint + "/experiments?filters[name][$eq]=" + name
         headers = {"Authorization": "Bearer " + self.token}
         response = requests.get(url, headers=headers)
+        
         if len(response.json()['data']) == 0:
             experiment = self.Experiment(name, description)
             api_url = self.endpoint+"/experiments/"
@@ -394,7 +400,9 @@ class DatabaseInteractor:
             return experiment
         else:
             print("Experiment already exists")
-            return response.json()['data'][0]
+            experiment = self.Experiment()
+            experiment.parse_API_response(response.json()['data'][0])
+            return experiment
         
     def sync_experiment(self, experiment):
         if experiment.id:
