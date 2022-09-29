@@ -73,7 +73,7 @@ class DatabaseInteractor:
                     else:
                         self.attributes[key] = []
 
-        def create(self):
+        def spawn(self):
             url = self.endpoint + "/"+self.api_object_id+"?filters[name][$eq]=" + self.attributes["name"]
             headers = {"Authorization": "Bearer " + self.token}
             response = requests.get(url, headers=headers)
@@ -95,79 +95,100 @@ class DatabaseInteractor:
                 except KeyError:
                     print("some values are missing")
 
-    class Thing(__API_object):
-        def __init__(self, endpoint, api_token):
-            super().__init__(endpoint, api_token, "interaction-things")
-            # if api_object_id is not None:
-            #     url = self.endpoint + "/interaction-things/" + str(api_object_id) + "?populate=%2A"
-            #     headers = {"Authorization": "Bearer " + self.token}
-            #     response = requests.get(url, headers=headers)
-            #     self.parse_API_response(response.json()['data'])
-
-        def update_thing_on_database(self):
-            url = self.endpoint + "/interaction-things/" + str(self.id) + "?populate=%2A"
+        def push(self):
+            url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
             headers = {"Authorization": "Bearer " + self.token}
             data = {"data": self.attributes}
             response = requests.put(url, headers=headers, json=data)
-            print(response.json())
-            print(response.status_code)
+            # print(response.json())
+            # print(response.status_code)
             self.parse_API_response(response.json()['data'])
 
+    class __Thing(__API_object):
+        def __init__(self, endpoint, api_token):
+            super().__init__(endpoint, api_token, "interaction-things")
 
+        def add_to_shadow(self, json):
+            if self.attributes["shadow"] is None:
+                self.attributes["shadow"] = json
+            else:
+                for key, value in json.items():
+                    self.attributes["shadow"][key] = value
 
+            self.push()
 
-    class Experiment(__API_object):
+        """
+        set_current_plate(self, plate):
+
+        updates the current plate of the thing and adds the plate to the list of all plates historically associated with the thing.
+        The plates list relation also updates the thing relation on the plate object itself. 
+        """
+        def set_current_plate(self, plate):
+            if self.attributes["plates"] is None:
+                self.attributes["plates"] = []
+            self.attributes["plates"].append(plate.id)
+            self.attributes["current_plate"] = plate.id
+            self.push()
+
+    class __Experiment(__API_object):
         pass
-    class Plate(__API_object):
+
+    class __Plate(__API_object):
+        def __init__(self, endpoint, api_token):
+            super().__init__(endpoint, api_token, "plates")
         pass
-    class Well(__API_object):
+
+    class __Well(__API_object):
         pass
 
     def create_interaction_thing(self, type, name):
-        thing = self.Thing(self.endpoint, self.token)
+        thing = self.__Thing(self.endpoint, self.token)
         thing.attributes["name"] = name
         thing.attributes["type"] = type
-        thing.create()
+        thing.spawn()
         return thing
-    
-    def upload_interaction_thing(self, type, name):
-        url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name
+
+    def create_plate(self, name, rows, columns):
+        url = self.endpoint + "/plates?filters[name][$eq]=" + name + "&populate=%2A"
         headers = {"Authorization": "Bearer " + self.token}
         response = requests.get(url, headers=headers)
         if len(response.json()['data']) == 0:
-            thing = self.Thing(type, name)
-            api_url = self.endpoint+"/interaction-things/"
+            plate = self.Plate(name, rows, columns)
+            api_url = self.endpoint+"/plates/"
+            image_params = {
+                "images": True,
+                "uuids": [
+                    "2022-07-11-i-connectoid-3",
+                    "2020-02-07-fluidics-imaging-2"
+                ],
+                "group_id": "C"
+            }
             info = {
                 "data": {
                     "name": name,
-                    "type": type
+                    "rows": rows,
+                    "columns": columns,
+                    "image_parameters": image_params
                 }
             }
             response = requests.post(api_url, json=info, headers={
                                     'Authorization': 'bearer ' + self.token})
-            # print(response.status_code)
-            # print(response.json())
-            if response.status_code == 200:
-                thing.id = response.json()['data']['id']
-            return thing
-        else:
-            print("thing already exists")
+            print(response.status_code)
             print(response.json())
-            try:
-                thing = self.Thing()
-                thing.parse_API_response(response.json()['data'][0])
-            except KeyError:
-                print("some values are missing")
-            return thing
+            if response.status_code == 200:
+                wells = self.__generate_wells_for_plate(response.json()['data']['id'], rows, columns)
+                plate.wells = wells
+                plate.id = response.json()['data']['id']
 
-    def add_to_shadow(self, thing, json):
-        if thing.attributes["shadow"] is None:
-            thing.attributes["shadow"] = json
+            return plate
         else:
-            for key, value in json.items():
-                thing.attributes["shadow"][key] = value
+            print("Plate already exists")
+            # print(response.json())
+            plate = self.Plate()
+            plate.parse_API_response(response.json()['data'][0])
+            return  plate
 
-        return self.update_thing_on_database(thing)
+    
 
 
     def __get_id_from_name(self, object_type, name):
@@ -179,28 +200,7 @@ class DatabaseInteractor:
         else:
             return response.json()['data'][0]['id']
 
-    """
-    add_plate_to_thing
 
-    updates the current plate of the thing and adds the plate to the list of all plates historically associated with the thing.
-    The plates list relation also updates the thing relation on the plate object itself. 
-    """
-    def add_plate_to_thing(self, thing, plate):
-        api_url = self.endpoint + "/interaction-things/" + str(thing.id) + "?populate=%2A"
-        headers = {"Authorization": "Bearer " + self.token}
-        if thing.attributes["plates"] is None:
-            thing.attributes["plates"] = []
-        thing.attributes["plates"].append(plate.id)
-        info = {
-            "data": {
-                "current_plate": plate.id,
-                "plates": thing.attributes["plates"]
-
-            }
-        }
-        response = requests.put(api_url, headers=headers, json=info)
-        thing.parse_API_response(response.json()["data"])
-        return thing
 
     """
     add_thing_to_plate
