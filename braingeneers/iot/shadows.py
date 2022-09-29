@@ -67,14 +67,14 @@ class DatabaseInteractor:
                 if type(self.attributes[key]) is dict and "data" in self.attributes[key]:
                     if self.attributes[key]["data"] is not None and len(self.attributes[key]["data"]) != 0:
                         # print("found data", self.attributes[key]["data"])
-                        list = []
+                        item_list = []
                         if type(self.attributes[key]["data"]) is list:
                             for item in self.attributes[key]["data"]:
                                 print("item", item)
                                 if "id" in item:
-                                    list.append(item["id"])
+                                    item_list.append(item["id"])
                         else:
-                            list.append(self.attributes[key]["data"]["id"])
+                            item_list.append(self.attributes[key]["data"]["id"])
 
                         self.attributes[key] = list
                     else:
