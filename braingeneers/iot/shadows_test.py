@@ -29,6 +29,7 @@ thing = instance.add_experiment_to_thing(thing, experiment)
 print("added experiment", thing)
 
 thing = instance.update_thing_on_database(thing)
+print(thing)
 # thing.add_to_shadow("fart","sparkle")
 
 # print(thing.to_json())

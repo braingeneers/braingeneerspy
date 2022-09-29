@@ -74,7 +74,7 @@ class DatabaseInteractor:
                                 if "id" in item:
                                     list.append(item["id"])
                         else:
-                            list = self.attributes[key]["data"]["id"]
+                            list.append(self.attributes[key]["data"]["id"])
 
                         self.attributes[key] = list
 
@@ -197,16 +197,20 @@ class DatabaseInteractor:
             return response.json()
 
     def update_thing_on_database(self, thing):
-        url = self.endpoint + "/interaction-things/" + str(thing.id)
+        url = self.endpoint + "/interaction-things/" + str(thing.id) + "?populate=%2A"
         headers = {"Authorization": "Bearer " + self.token}
-        data = {"data": thing.attributes}
+        for key in thing.attributes.items():
+            print(key)
+        filtered = dict(filter(lambda key: key[0] not in ["createdAt", "updatedAt", "publishedAt"], thing.attributes.items()))
+        print("filtered", filtered)
+        data = {"data": filtered}
         # data = {
         #     "data": {
-        #         "name": thing.name,
-        #         "type": thing.type,
-        #         "shadow": thing.shadow
+        #         "name": thing.attributes["name"],
+        #         "type": thing.attributes["type"],
+        #         "shadow": thing.attributes["shadow"],
+        #         "current_experiment": 10
         #     }
-
         # }
         response = requests.put(url, headers=headers, json=data)
         print(response.json())
