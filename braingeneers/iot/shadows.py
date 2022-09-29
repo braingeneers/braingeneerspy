@@ -1,3 +1,4 @@
+from ctypes.wintypes import PLARGE_INTEGER
 import requests
 # import time
 
@@ -45,12 +46,6 @@ class DatabaseInteractor:
                 self.attributes["current_experiment"] = None
                 self.attributes["current_plate"] = None
 
-        def add_to_shadow(self, key, value):
-            if self.attributes["shadow"] is None:
-                self.attributes["shadow"] = {}
-
-            self.attributes["shadow"][key] = value
-
         # def push_thing_to_database(self):
         #     pass
         def __str__(self):
@@ -80,6 +75,16 @@ class DatabaseInteractor:
                     else:
                         self.attributes[key] = []
 
+    def add_to_shadow(self, thing, json):
+        if thing.attributes["shadow"] is None:
+            thing.attributes["shadow"] = json
+        else:
+            for key, value in json.items():
+                thing.attributes["shadow"][key] = value
+
+        return self.update_thing_on_database(thing)
+
+
     def __get_id_from_name(self, object_type, name):
         url = self.endpoint + "/" + object_type + "?filters[name][$eq]=" + name
         headers = {"Authorization": "Bearer " + self.token}
@@ -98,7 +103,42 @@ class DatabaseInteractor:
             }
         }
         response = requests.put(api_url, headers=headers, json=info)
-        return response.json()
+        if response.status_code == 200:
+            thing.parse_API_response(response.json()["data"])
+            #add thing to plate
+            api_url = self.endpoint + "/plates/" + str(plate.id) + "?populate=%2A"
+            headers = {"Authorization": "Bearer " + self.token}
+            info = {
+                "data": {
+                    "interaction_things": thing.id
+                }
+            }
+            response = requests.put(api_url, headers=headers, json=info)
+            if response.status_code == 200:
+                plate.parse_API_response(response.json()["data"])
+                return thing, plate
+            else:
+                print("error adding thing to plate")
+                return thing, None
+                
+        print("error adding plate to thing")
+        return None, None
+
+    def add_thing_to_plate(self, thing, plate):
+        api_url = self.endpoint + "/plates/" + str(plate.id) + "?populate=%2A"
+        headers = {"Authorization": "Bearer " + self.token}
+        info = {
+            "data": {
+                "interaction_things": thing.id
+            }
+        }
+        response = requests.put(api_url, headers=headers, json=info)
+        if response.status_code == 200:
+            plate.parse_API_response(response.json()["data"])
+            return plate
+        else:
+            print("error adding thing to plate")
+            return Non
 
     def add_experiment_to_thing(self, thing, experiment):
         api_url = self.endpoint + "/interaction-things/" + str(thing.id) + "?populate=%2A"
@@ -239,12 +279,12 @@ class DatabaseInteractor:
                 # print(key, self.attributes[key])
                 if type(self.attributes[key]) is dict and "data" in self.attributes[key]:
                     if self.attributes[key]["data"] is not None and len(self.attributes[key]["data"]) != 0:
-                        print("found data", key, self.attributes[key]["data"])
-                        print("type", type(self.attributes[key]["data"]))
+                        # print("found data", key, self.attributes[key]["data"])
+                        # print("type", type(self.attributes[key]["data"]))
                         item_list = []
                         if type(self.attributes[key]["data"]) is list:
                             for item in self.attributes[key]["data"]:
-                                print("item", item)
+                                # print("item", item)
                                 if "id" in item:
                                     item_list.append(item["id"])
                         else:
@@ -348,7 +388,7 @@ class DatabaseInteractor:
                 }
                 response = requests.post(api_url, json=info, headers={
                                         'Authorization': 'bearer ' + self.token})
-                print(response.status_code)
+                # print(response.status_code)
                 if( response.status_code == 200):
                     wells_list.append(response.json()['data']['id'])
                 else:
