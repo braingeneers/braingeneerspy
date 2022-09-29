@@ -1,4 +1,5 @@
 from ctypes.wintypes import PLARGE_INTEGER
+from symbol import pass_stmt
 import requests
 # import time
 
@@ -7,7 +8,7 @@ class DatabaseInteractor:
     """
     This class provides methods for interacting with the Strapi Shadows database.
 
-    See documentation at: https://github.com/braingeneers/wiki/blob/main/shared/mqtt.md
+    See documentation at: ...
 
     Assumes the following:
         - The Strapi database is running at the endpoint specified in the constructor
@@ -35,8 +36,13 @@ class DatabaseInteractor:
         self.endpoint = endpoint
         self.token = api_token
     
-    class API_object:
-        def __init__(self, type=None , name=None,):
+    class __API_object:
+        """
+        This class is used to represent objects in the database as python objects
+        """
+        def __init__(self, endpoint, api_token):
+                self.endpoint = endpoint
+                self.token = api_token
                 self.id = None
                 self.attributes = {}
 
@@ -67,47 +73,14 @@ class DatabaseInteractor:
                     else:
                         self.attributes[key] = []
 
-
-    class Thing(API_object):
-
-
-        # def __init__(self, type=None , name=None,):
-        #         self.id = None
-        #         self.attributes = {}
-        #         self.attributes["type"] = type
-        #         self.attributes["name"] = name
-        #         self.attributes["shadow"] = {}
-        #         self.attributes["current_experiment"] = None
-        #         self.attributes["current_plate"] = None
-
-        # def push_thing_to_database(self):
-        #     pass
-        # def __str__(self):
-        #     return str(vars(self))
-        # #json representation of the thing
-        # def to_json(self):
-        #     return vars(self)
-
-        # def parse_API_response(self, response_data):
-        #     self.id = response_data['id']
-        #     self.attributes = response_data['attributes']
-        #     for key in self.attributes:
-        #         # print(key, self.attributes[key])
-        #         if type(self.attributes[key]) is dict and "data" in self.attributes[key]:
-        #             if self.attributes[key]["data"] is not None and len(self.attributes[key]["data"]) != 0:
-        #                 # print("found data", self.attributes[key]["data"])
-        #                 item_list = []
-        #                 if type(self.attributes[key]["data"]) is list:
-        #                     for item in self.attributes[key]["data"]:
-        #                         # print("item", item)
-        #                         if "id" in item:
-        #                             item_list.append(item["id"])
-        #                 else:
-        #                     item_list.append(self.attributes[key]["data"]["id"])
-
-        #                 self.attributes[key] = item_list
-        #             else:
-        #                 self.attributes[key] = []
+    class Thing(__API_object):
+        pass
+    class Experiment(__API_object):
+        pass
+    class Plate(__API_object):
+        pass
+    class Well(__API_object):
+        pass
 
     def add_to_shadow(self, thing, json):
         if thing.attributes["shadow"] is None:
@@ -289,60 +262,7 @@ class DatabaseInteractor:
         thing.parse_API_response(response.json()['data'])
         return thing
 
-    class Plate:
-            
-        def __init__(self, name=None, rows=1, columns=1,  description="", wells = []):
-            self.id = None
-            self.attributes = {
-                "name": name,
-                "rows": rows,
-                "columns": columns,
-                "description": description,
-                "wells": wells
-            }
-            # generate wells
-
-        #string representation of the plate
-        def __str__(self):
-            return str(vars(self))
-
-        def to_json(self):
-            return vars(self)
-                
-        def parse_API_response(self, response_data):
-            self.id = response_data['id']
-            self.attributes = response_data['attributes']
-            for key in self.attributes:
-                # print(key, self.attributes[key])
-                if type(self.attributes[key]) is dict and "data" in self.attributes[key]:
-                    if self.attributes[key]["data"] is not None and len(self.attributes[key]["data"]) != 0:
-                        # print("found data", key, self.attributes[key]["data"])
-                        # print("type", type(self.attributes[key]["data"]))
-                        item_list = []
-                        if type(self.attributes[key]["data"]) is list:
-                            for item in self.attributes[key]["data"]:
-                                # print("item", item)
-                                if "id" in item:
-                                    item_list.append(item["id"])
-                        else:
-                            item_list.append(self.attributes[key]["data"]["id"])
-
-                        self.attributes[key] = item_list
-                    else:
-                        self.attributes[key] = []
-            # return {"id": self.id, "name": self.name, "description": self.description, "wells": self.wells}
-
-
-    class Well:
-        def __init__(self, name=None, description=""):
-            self.id = None
-            self.name = name
-            self.description = description
-            self.samples = []
-
-        def to_json(self):
-            return vars(self)
-
+ 
 
     def create_plate(self, name, rows, columns):
         url = self.endpoint + "/plates?filters[name][$eq]=" + name + "&populate=%2A"
@@ -450,23 +370,7 @@ class DatabaseInteractor:
             plate.parse_API_response(response.json()['data'])
             return plate
 
-    class Experiment:
-        def __init__(self, name=None, description="", plates=[]):
-            self.id = None
-            self.attributes = {}
-            self.attributes["name"] = name
-            self.attributes["description"] = description
-            self.attributes["plates"] = plates
 
-        def __str__(self):
-            return str(vars(self))
-
-        def to_json(self):
-            return vars(self)
-
-        def parse_API_response(self, response_data):
-            self.id = response_data['id']
-            self.attributes = response_data['attributes']
 
     def create_experiment(self, name, description):
         url = self.endpoint + "/experiments?filters[name][$eq]=" + name
