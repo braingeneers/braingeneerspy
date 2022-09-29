@@ -8,28 +8,19 @@ token = API_KEY
 # Create a shadow object
 instance = sh.DatabaseInteractor(endpoint, API_KEY)
 
-thing = instance.create_interaction_thing("BioPlateScope", "full_test_thing4")
-
-print(thing)
-
-thing.add_to_shadow("barg","sparkleeness")
-
-print(thing)
-
+# thing = instance.create_interaction_thing("BioPlateScope", "full_test_thing4")
+# print(thing)
+# thing.add_to_shadow("barg","sparkleeness")
+# print(thing)
+# thing = instance.update_thing_on_database(thing)
+# print("updated thing: ", thing)
+# experiment = instance.create_experiment("test_experiment_obj_7", "test_description")
+# # print(type(experiment))
+# thing = instance.add_experiment_to_thing(thing, experiment)
+# print("added experiment", thing)
+# thing = instance.update_thing_on_database(thing)
 # print(thing)
 
-thing = instance.update_thing_on_database(thing)
-
-print("updated thing: ", thing)
-
-experiment = instance.create_experiment("test_experiment_obj_7", "test_description")
-# print(type(experiment))
-
-thing = instance.add_experiment_to_thing(thing, experiment)
-print("added experiment", thing)
-
-thing = instance.update_thing_on_database(thing)
-print(thing)
 # thing.add_to_shadow("fart","sparkle")
 
 # print(thing.to_json())
@@ -45,7 +36,8 @@ print(thing)
 # print(thing.to_json())
 # instance.update_thing_on_database(thing)
 
-# plate = instance.create_plate("test_plate_obj", 2, 4)
+plate = instance.create_plate("test_plate_obj", 2, 4)
+print(plate)
 # print(plate.to_json())
 # instance.sync_plate(plate)
 # plate = instance.get_plate(10)

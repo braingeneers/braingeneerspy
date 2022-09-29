@@ -90,7 +90,7 @@ class DatabaseInteractor:
             return response.json()['data'][0]['id']
 
     def add_plate_to_thing(self, thing, plate):
-        api_url = self.endpoint + "/interaction-things/" + str(thing.id)
+        api_url = self.endpoint + "/interaction-things/" + str(thing.id) + "?populate=%2A"
         headers = {"Authorization": "Bearer " + self.token}
         info = {
             "data": {
@@ -133,7 +133,6 @@ class DatabaseInteractor:
             # print(response.json())
             if response.status_code == 200:
                 thing.id = response.json()['data']['id']
-
             return thing
         else:
             print("thing already exists")
@@ -141,12 +140,6 @@ class DatabaseInteractor:
             try:
                 thing = self.Thing()
                 thing.parse_API_response(response.json()['data'][0])
-                # thing.id = response.json()['data'][0]['id']
-                # thing.name = response.json()['data'][0]['attributes']["name"]
-                # thing.type = response.json()['data'][0]['attributes']["type"]
-                # thing.shadow = response.json()['data'][0]['attributes']["shadow"]
-                # thing.current_experiment = response.json()['data'][0]["current_experiment"]
-                # thing.current_plate = response.json()['data'][0]["current_plate"]
             except KeyError:
                 print("some values are missing")
             return thing
@@ -201,12 +194,10 @@ class DatabaseInteractor:
     def update_thing_on_database(self, thing):
         url = self.endpoint + "/interaction-things/" + str(thing.id) + "?populate=%2A"
         headers = {"Authorization": "Bearer " + self.token}
-        for key in thing.attributes.items():
-            print(key)
-        filtered = thing.attributes
+        # filtered = thing.attributes
         # filtered = dict(filter(lambda key: key[0] not in ["createdAt", "updatedAt", "publishedAt"], thing.attributes.items()))
-        print("filtered", filtered)
-        data = {"data": filtered}
+        # print("filtered", filtered)
+        data = {"data": thing.attributes}
         # data = {
         #     "data": {
         #         "name": thing.attributes["name"],
@@ -225,12 +216,13 @@ class DatabaseInteractor:
             
         def __init__(self, name=None, rows=1, columns=1,  description="", wells = []):
             self.id = None
-            self.name = name
-            self.rows = rows
-            self.columns = columns
-            self.description = description
-            self.wells = wells
-            
+            self.attributes = {
+                "name": name,
+                "rows": rows,
+                "columns": columns,
+                "description": description,
+                "wells": wells
+            }
             # generate wells
 
         #string representation of the plate
@@ -238,12 +230,29 @@ class DatabaseInteractor:
             return str(vars(self))
 
         def to_json(self):
-            # output = "{"
-            # for key in filter(lambda a: not a.startswith('__'), dir(self)):
-            #     output += f'"{key}": {self[key]},'
-            # output += "}"
             return vars(self)
                 
+        def parse_API_response(self, response_data):
+            self.id = response_data['id']
+            self.attributes = response_data['attributes']
+            for key in self.attributes:
+                # print(key, self.attributes[key])
+                if type(self.attributes[key]) is dict and "data" in self.attributes[key]:
+                    if self.attributes[key]["data"] is not None and len(self.attributes[key]["data"]) != 0:
+                        print("found data", key, self.attributes[key]["data"])
+                        print("type", type(self.attributes[key]["data"]))
+                        item_list = []
+                        if type(self.attributes[key]["data"]) is list:
+                            for item in self.attributes[key]["data"]:
+                                print("item", item)
+                                if "id" in item:
+                                    item_list.append(item["id"])
+                        else:
+                            item_list.append(self.attributes[key]["data"]["id"])
+
+                        self.attributes[key] = item_list
+                    else:
+                        self.attributes[key] = []
             # return {"id": self.id, "name": self.name, "description": self.description, "wells": self.wells}
 
 
@@ -259,7 +268,7 @@ class DatabaseInteractor:
 
 
     def create_plate(self, name, rows, columns):
-        url = self.endpoint + "/plates?filters[name][$eq]=" + name
+        url = self.endpoint + "/plates?filters[name][$eq]=" + name + "&populate=%2A"
         headers = {"Authorization": "Bearer " + self.token}
         response = requests.get(url, headers=headers)
         if len(response.json()['data']) == 0:
@@ -293,7 +302,10 @@ class DatabaseInteractor:
             return plate
         else:
             print("Plate already exists")
-            return response.json()['data'][0]
+            # print(response.json())
+            plate = self.Plate()
+            plate.parse_API_response(response.json()['data'][0])
+            return  plate
 
     def sync_plate(self, plate):
         if plate.id:
