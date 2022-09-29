@@ -1,8 +1,4 @@
-from ctypes.wintypes import PLARGE_INTEGER
-from symbol import pass_stmt
 import requests
-# import time
-
 
 class DatabaseInteractor:
     """
@@ -47,6 +43,8 @@ class DatabaseInteractor:
                 self.attributes = {}
 
         def __str__(self):
+            var_list = filter(lambda x: not x.startswith("__"), dir(self))
+            return str({var: getattr(self, var) for var in var_list})
             return str(vars(self))
         #json representation of the thing
         def to_json(self):
@@ -74,13 +72,81 @@ class DatabaseInteractor:
                         self.attributes[key] = []
 
     class Thing(__API_object):
-        pass
+        def update_thing_on_database(self):
+            url = self.endpoint + "/interaction-things/" + str(self.id) + "?populate=%2A"
+            headers = {"Authorization": "Bearer " + self.token}
+            data = {"data": self.attributes}
+            response = requests.put(url, headers=headers, json=data)
+            print(response.json())
+            print(response.status_code)
+            self.parse_API_response(response.json()['data'])
+
+        def create(self):
+            url = self.endpoint + "/interaction-things?filters[name][$eq]=" + self.attributes["name"]
+            headers = {"Authorization": "Bearer " + self.token}
+            response = requests.get(url, headers=headers)
+            if len(response.json()['data']) == 0:
+                # thing = self.Thing(type, name)
+                api_url = self.endpoint+"/interaction-things/"
+                data = {"data": self.attributes}
+                response = requests.post(api_url, json=data, headers={
+                                        'Authorization': 'bearer ' + self.token})
+                # print(response.status_code)
+                # print(response.json())
+                if response.status_code == 200:
+                    self.id = response.json()['data']['id']
+            else:
+                print("thing already exists")
+                print(response.json())
+                try:
+                    self.parse_API_response(response.json()['data'][0])
+                except KeyError:
+                    print("some values are missing")
+
+
     class Experiment(__API_object):
         pass
     class Plate(__API_object):
         pass
     class Well(__API_object):
         pass
+
+    def create_interaction_thing(self, type, name):
+        thing = self.Thing(self.endpoint, self.token)
+        thing.attributes["name"] = name
+        thing.attributes["type"] = type
+        thing.create()
+        return thing
+    
+    def upload_interaction_thing(self, type, name):
+        url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name
+        headers = {"Authorization": "Bearer " + self.token}
+        response = requests.get(url, headers=headers)
+        if len(response.json()['data']) == 0:
+            thing = self.Thing(type, name)
+            api_url = self.endpoint+"/interaction-things/"
+            info = {
+                "data": {
+                    "name": name,
+                    "type": type
+                }
+            }
+            response = requests.post(api_url, json=info, headers={
+                                    'Authorization': 'bearer ' + self.token})
+            # print(response.status_code)
+            # print(response.json())
+            if response.status_code == 200:
+                thing.id = response.json()['data']['id']
+            return thing
+        else:
+            print("thing already exists")
+            print(response.json())
+            try:
+                thing = self.Thing()
+                thing.parse_API_response(response.json()['data'][0])
+            except KeyError:
+                print("some values are missing")
+            return thing
 
     def add_to_shadow(self, thing, json):
         if thing.attributes["shadow"] is None:
@@ -164,35 +230,7 @@ class DatabaseInteractor:
         thing.parse_API_response(response.json()["data"])
         return thing
 
-    def create_interaction_thing(self, type, name):
-        url = self.endpoint + "/interaction-things?filters[name][$eq]=" + name
-        headers = {"Authorization": "Bearer " + self.token}
-        response = requests.get(url, headers=headers)
-        if len(response.json()['data']) == 0:
-            thing = self.Thing(type, name)
-            api_url = self.endpoint+"/interaction-things/"
-            info = {
-                "data": {
-                    "name": name,
-                    "type": type
-                }
-            }
-            response = requests.post(api_url, json=info, headers={
-                                    'Authorization': 'bearer ' + self.token})
-            # print(response.status_code)
-            # print(response.json())
-            if response.status_code == 200:
-                thing.id = response.json()['data']['id']
-            return thing
-        else:
-            print("thing already exists")
-            print(response.json())
-            try:
-                thing = self.Thing()
-                thing.parse_API_response(response.json()['data'][0])
-            except KeyError:
-                print("some values are missing")
-            return thing
+
 
 
     def get_thing(self, name):
