@@ -76,7 +76,7 @@ class DatabaseInteractor:
                         else:
                             item_list.append(self.attributes[key]["data"]["id"])
 
-                        self.attributes[key] = list
+                        self.attributes[key] = item_list
                     else:
                         self.attributes[key] = []
 
