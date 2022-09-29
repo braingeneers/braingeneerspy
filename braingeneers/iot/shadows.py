@@ -128,25 +128,52 @@ class DatabaseInteractor:
 
             self.push()
 
-        """
-        set_current_plate(self, plate):
 
-        updates the current plate of the thing and adds the plate to the list of all plates historically associated with the thing.
-        The plates list relation also updates the thing relation on the plate object itself. 
-        """
         def set_current_plate(self, plate):
+            """
+            updates the current plate of the thing and adds the plate to the list of all plates historically associated with the thing.
+            The plates list relation also updates the thing relation on the plate object itself. 
+            """
+
             if self.attributes["plates"] is None:
                 self.attributes["plates"] = []
             self.attributes["plates"].append(plate.id)
             self.attributes["current_plate"] = plate.id
             self.push()
 
+        def set_current_experiment(self, experiment):
+            """
+
+            updates the current experiment of the thing
+            """
+            if self.attributes["experiments"] is None:
+                self.attributes["experiments"] = []
+            self.attributes["experiments"].append(experiment.id)
+            self.attributes["current_experiment"] = experiment.id
+            self.push()
+
     class __Experiment(__API_object):
+        def __init__(self, endpoint, api_token):
+            super().__init__(endpoint, api_token, "experiments")
         pass
 
     class __Plate(__API_object):
         def __init__(self, endpoint, api_token):
             super().__init__(endpoint, api_token, "plates")
+
+
+
+        def add_thing(self, thing):
+            """
+            add_thing_to_plate
+
+            adds the thing to the list of things associated with the plate. also updates the plate relation on the thing object itself.
+            does not effect current_plate value of thing
+            """
+            if self.attributes["things"] is None:
+                self.attributes["things"] = []
+            self.attributes["things"].append(thing.id)
+            self.push()
 
     class __Well(__API_object):
         def __init__(self, endpoint, api_token):
@@ -187,81 +214,6 @@ class DatabaseInteractor:
 
         plate.pull()
         return plate
-
-        # def __generate_wells_for_plate(self, plate_id, rows, columns):
-        #     api_url = self.endpoint+"/wells/"
-        #     wells_list = []
-        #     for i in range(1, rows+1):
-        #         for j in range(1, columns+1):
-        #             info = {
-        #                 "data": {
-        #                     "name": str(i) + str(j),
-        #                     "position_index": str(i) + str(j),
-        #                     "plate": plate_id
-        #                 }
-        #             }
-        #             response = requests.post(api_url, json=info, headers={
-        #                                     'Authorization': 'bearer ' + self.token})
-        #             # print(response.status_code)
-        #             if( response.status_code == 200):
-        #                 wells_list.append(response.json()['data']['id'])
-        #             else:
-        #                 print("Failed to create well")
-        #             # print(response.json())
-        #     return wells_list
-
-        #     if response.status_code == 200:
-        #         wells = self.__generate_wells_for_plate(response.json()['data']['id'], rows, columns)
-        #         plate.wells = wells
-        #         plate.id = response.json()['data']['id']
-
-        #     return plate
-        # else:
-        #     print("Plate already exists")
-        #     # print(response.json())
-        #     plate = self.Plate()
-        #     plate.parse_API_response(response.json()['data'][0])
-        #     return  plate
-
-    
-
-
-    def __get_id_from_name(self, object_type, name):
-        url = self.endpoint + "/" + object_type + "?filters[name][$eq]=" + name
-        headers = {"Authorization": "Bearer " + self.token}
-        response = requests.get(url, headers=headers)
-        if len(response.json()['data']) == 0:
-            return None
-        else:
-            return response.json()['data'][0]['id']
-
-
-
-    """
-    add_thing_to_plate
-
-    adds the thing to the list of things associated with the plate. also updates the plate relation on the thing object itself.
-    does not effect current_plate value
-    """
-    def add_thing_to_plate(self, thing, plate):
-        api_url = self.endpoint + "/plates/" + str(plate.id) + "?populate=%2A"
-        headers = {"Authorization": "Bearer " + self.token}
-        if plate.attributes["interaction_things"] is None:
-            plate.attributes["interaction_things"] = []
-
-        plate.attributes["interaction_things"].append(thing.id)
-        info = {
-            "data": {
-                "interaction_things": plate.attributes["interaction_things"]
-            }
-        }
-        response = requests.put(api_url, headers=headers, json=info)
-        if response.status_code == 200:
-            plate.parse_API_response(response.json()["data"])
-            return plate
-        else:
-            print("error adding thing to plate")
-            return None
 
     def add_experiment_to_thing(self, thing, experiment):
         api_url = self.endpoint + "/interaction-things/" + str(thing.id) + "?populate=%2A"
