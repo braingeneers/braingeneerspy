@@ -77,6 +77,8 @@ class DatabaseInteractor:
                             list.append(self.attributes[key]["data"]["id"])
 
                         self.attributes[key] = list
+                    else:
+                        self.attributes[key] = []
 
     def __get_id_from_name(self, object_type, name):
         url = self.endpoint + "/" + object_type + "?filters[name][$eq]=" + name
@@ -201,7 +203,8 @@ class DatabaseInteractor:
         headers = {"Authorization": "Bearer " + self.token}
         for key in thing.attributes.items():
             print(key)
-        filtered = dict(filter(lambda key: key[0] not in ["createdAt", "updatedAt", "publishedAt"], thing.attributes.items()))
+        filtered = thing.attributes
+        # filtered = dict(filter(lambda key: key[0] not in ["createdAt", "updatedAt", "publishedAt"], thing.attributes.items()))
         print("filtered", filtered)
         data = {"data": filtered}
         # data = {

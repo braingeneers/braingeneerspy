@@ -22,7 +22,7 @@ thing = instance.update_thing_on_database(thing)
 
 print("updated thing: ", thing)
 
-experiment = instance.create_experiment("test_experiment_obj_4", "test_description")
+experiment = instance.create_experiment("test_experiment_obj_7", "test_description")
 # print(type(experiment))
 
 thing = instance.add_experiment_to_thing(thing, experiment)
