@@ -93,7 +93,7 @@ class DatabaseInteractor:
                 print(self.api_object_id + " object already exists")
                 # print(response.json())
                 try:
-                    print("parse API response", response.json()['data'][0])
+                    # print("parse API response", response.json()['data'][0])
                     self.parse_API_response(response.json()['data'][0])
                 except KeyError:
                     print("some values are missing")
@@ -176,18 +176,17 @@ class DatabaseInteractor:
         plate.attributes["image_params"] = image_params
         plate.spawn()
 
+        if len(plate.attributes["wells"]) == 0 or plate.attributes["wells"] is None:
+            for i in range(1, rows+1):
+                for j in range(1, columns+1):
+                    well = self.__Well(self.endpoint, self.token)
+                    well.attributes["name"] = plate.attributes["name"]+"_well_"+str(i)+str(j)
+                    well.attributes["position_index"] = str(i) + str(j)
+                    well.attributes["plate"] = plate.id
+                    well.spawn()
+
+        plate.pull()
         return plate
-
-        # if plate.attributes["wells"] is None:
-        #     for i in range(1, rows+1):
-        #         for j in range(1, columns+1):
-        #             well = self.__Well(self.endpoint, self.token)
-        #             well.attributes["name"] = plate.attributes["name"]+"_well_"+str(i)+str(j)
-        #             well.attributes["position_index"] = str(i) + str(j)
-        #             well.attributes["plate"] = plate.id
-        #             well.spawn()
-
-        # plate.pull()
 
         # def __generate_wells_for_plate(self, plate_id, rows, columns):
         #     api_url = self.endpoint+"/wells/"
