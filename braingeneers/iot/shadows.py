@@ -34,20 +34,12 @@ class DatabaseInteractor:
     def __init__(self, endpoint, api_token) -> None:
         self.endpoint = endpoint
         self.token = api_token
-
-    class Thing:
-
+    
+    class API_object:
         def __init__(self, type=None , name=None,):
                 self.id = None
                 self.attributes = {}
-                self.attributes["type"] = type
-                self.attributes["name"] = name
-                self.attributes["shadow"] = {}
-                self.attributes["current_experiment"] = None
-                self.attributes["current_plate"] = None
 
-        # def push_thing_to_database(self):
-        #     pass
         def __str__(self):
             return str(vars(self))
         #json representation of the thing
@@ -75,6 +67,48 @@ class DatabaseInteractor:
                     else:
                         self.attributes[key] = []
 
+
+    class Thing(API_object):
+
+
+        # def __init__(self, type=None , name=None,):
+        #         self.id = None
+        #         self.attributes = {}
+        #         self.attributes["type"] = type
+        #         self.attributes["name"] = name
+        #         self.attributes["shadow"] = {}
+        #         self.attributes["current_experiment"] = None
+        #         self.attributes["current_plate"] = None
+
+        # def push_thing_to_database(self):
+        #     pass
+        # def __str__(self):
+        #     return str(vars(self))
+        # #json representation of the thing
+        # def to_json(self):
+        #     return vars(self)
+
+        # def parse_API_response(self, response_data):
+        #     self.id = response_data['id']
+        #     self.attributes = response_data['attributes']
+        #     for key in self.attributes:
+        #         # print(key, self.attributes[key])
+        #         if type(self.attributes[key]) is dict and "data" in self.attributes[key]:
+        #             if self.attributes[key]["data"] is not None and len(self.attributes[key]["data"]) != 0:
+        #                 # print("found data", self.attributes[key]["data"])
+        #                 item_list = []
+        #                 if type(self.attributes[key]["data"]) is list:
+        #                     for item in self.attributes[key]["data"]:
+        #                         # print("item", item)
+        #                         if "id" in item:
+        #                             item_list.append(item["id"])
+        #                 else:
+        #                     item_list.append(self.attributes[key]["data"]["id"])
+
+        #                 self.attributes[key] = item_list
+        #             else:
+        #                 self.attributes[key] = []
+
     def add_to_shadow(self, thing, json):
         if thing.attributes["shadow"] is None:
             thing.attributes["shadow"] = json
@@ -94,42 +128,45 @@ class DatabaseInteractor:
         else:
             return response.json()['data'][0]['id']
 
+    """
+    add_plate_to_thing
+
+    updates the current plate of the thing and adds the plate to the list of all plates historically associated with the thing.
+    The plates list relation also updates the thing relation on the plate object itself. 
+    """
     def add_plate_to_thing(self, thing, plate):
         api_url = self.endpoint + "/interaction-things/" + str(thing.id) + "?populate=%2A"
         headers = {"Authorization": "Bearer " + self.token}
+        if thing.attributes["plates"] is None:
+            thing.attributes["plates"] = []
+        thing.attributes["plates"].append(plate.id)
         info = {
             "data": {
-                "current_plate": plate.id
+                "current_plate": plate.id,
+                "plates": thing.attributes["plates"]
+
             }
         }
         response = requests.put(api_url, headers=headers, json=info)
-        if response.status_code == 200:
-            thing.parse_API_response(response.json()["data"])
-            #add thing to plate
-            api_url = self.endpoint + "/plates/" + str(plate.id) + "?populate=%2A"
-            headers = {"Authorization": "Bearer " + self.token}
-            info = {
-                "data": {
-                    "interaction_things": thing.id
-                }
-            }
-            response = requests.put(api_url, headers=headers, json=info)
-            if response.status_code == 200:
-                plate.parse_API_response(response.json()["data"])
-                return thing, plate
-            else:
-                print("error adding thing to plate")
-                return thing, None
-                
-        print("error adding plate to thing")
-        return None, None
+        thing.parse_API_response(response.json()["data"])
+        return thing
 
+    """
+    add_thing_to_plate
+
+    adds the thing to the list of things associated with the plate. also updates the plate relation on the thing object itself.
+    does not effect current_plate value
+    """
     def add_thing_to_plate(self, thing, plate):
         api_url = self.endpoint + "/plates/" + str(plate.id) + "?populate=%2A"
         headers = {"Authorization": "Bearer " + self.token}
+        if plate.attributes["interaction_things"] is None:
+            plate.attributes["interaction_things"] = []
+
+        plate.attributes["interaction_things"].append(thing.id)
         info = {
             "data": {
-                "interaction_things": thing.id
+                "interaction_things": plate.attributes["interaction_things"]
             }
         }
         response = requests.put(api_url, headers=headers, json=info)
@@ -138,7 +175,7 @@ class DatabaseInteractor:
             return plate
         else:
             print("error adding thing to plate")
-            return Non
+            return None
 
     def add_experiment_to_thing(self, thing, experiment):
         api_url = self.endpoint + "/interaction-things/" + str(thing.id) + "?populate=%2A"
@@ -396,6 +433,10 @@ class DatabaseInteractor:
                 # print(response.json())
         return wells_list
 
+    def pull_plate(self, plate):
+        plate = self.get_plate(plate.id)
+        return plate
+
     def get_plate(self, plate_id):
         url = self.endpoint + "/plates/" + str(plate_id) + "?populate=%2A"
         headers = {"Authorization": "Bearer " + self.token}
@@ -406,27 +447,7 @@ class DatabaseInteractor:
         else:
             print("Plate exists")
             plate = self.Plate()
-            attributes = response.json()['data']['attributes']
-            for key in attributes:
-                # print(key, attributes[key])
-                # if attributes[key] is type dict:
-                if type(attributes[key]) is dict and "data" in attributes[key]:
-                    if len(attributes[key]["data"]) != 0:
-                        list = []
-                        for item in attributes[key]["data"]:
-                            if "id" in item:
-                                list.append(item["id"])
-
-                        # print(list)
-                        # print(attributes[key]["data"])
-                        setattr(plate, key, list)
-                else:
-                    setattr(plate, key, attributes[key])
-                    # print(attributes[key])
-                    # print("is dict")
-                    # plate[key] = attributes[key]
-                # plate[key] = response.json()['data'][key]
-            plate.id = response.json()['data']['id']
+            plate.parse_API_response(response.json()['data'])
             return plate
 
     class Experiment:
