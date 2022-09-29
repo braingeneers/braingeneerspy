@@ -36,19 +36,21 @@ class DatabaseInteractor:
         """
         This class is used to represent objects in the database as python objects
         """
-        def __init__(self, endpoint, api_token):
+        def __init__(self, endpoint, api_token, api_object_id):
                 self.endpoint = endpoint
                 self.token = api_token
                 self.id = None
                 self.attributes = {}
+                self.api_object_id = api_object_id
 
         def __str__(self):
-            var_list = filter(lambda x: x not in ["endpoint", "token"], vars(self))
+            var_list = filter(lambda x: x not in ["endpoint", "token", "api_object_id"], vars(self))
             return str({var: getattr(self, var) for var in var_list})
             # return str(vars(self))
         #json representation of the thing
         def to_json(self):
-            return vars(self)
+            var_list = filter(lambda x: x not in ["endpoint", "token", "api_object_id"], vars(self))
+            return {var: getattr(self, var) for var in var_list}
 
         def parse_API_response(self, response_data):
             self.id = response_data['id']
@@ -71,7 +73,37 @@ class DatabaseInteractor:
                     else:
                         self.attributes[key] = []
 
+        def create(self):
+            url = self.endpoint + "/"+self.api_object_id+"?filters[name][$eq]=" + self.attributes["name"]
+            headers = {"Authorization": "Bearer " + self.token}
+            response = requests.get(url, headers=headers)
+            if len(response.json()['data']) == 0:
+                # thing = self.Thing(type, name)
+                api_url = self.endpoint+"/"+self.api_object_id+"/"
+                data = {"data": self.attributes}
+                response = requests.post(api_url, json=data, headers={
+                                        'Authorization': 'bearer ' + self.token})
+                # print(response.status_code)
+                # print(response.json())
+                if response.status_code == 200:
+                    self.id = response.json()['data']['id']
+            else:
+                print(self.api_object_id + " object already exists")
+                # print(response.json())
+                try:
+                    self.parse_API_response(response.json()['data'][0])
+                except KeyError:
+                    print("some values are missing")
+
     class Thing(__API_object):
+        def __init__(self, endpoint, api_token):
+            super().__init__(endpoint, api_token, "interaction-things")
+            # if api_object_id is not None:
+            #     url = self.endpoint + "/interaction-things/" + str(api_object_id) + "?populate=%2A"
+            #     headers = {"Authorization": "Bearer " + self.token}
+            #     response = requests.get(url, headers=headers)
+            #     self.parse_API_response(response.json()['data'])
+
         def update_thing_on_database(self):
             url = self.endpoint + "/interaction-things/" + str(self.id) + "?populate=%2A"
             headers = {"Authorization": "Bearer " + self.token}
@@ -81,27 +113,7 @@ class DatabaseInteractor:
             print(response.status_code)
             self.parse_API_response(response.json()['data'])
 
-        def create(self):
-            url = self.endpoint + "/interaction-things?filters[name][$eq]=" + self.attributes["name"]
-            headers = {"Authorization": "Bearer " + self.token}
-            response = requests.get(url, headers=headers)
-            if len(response.json()['data']) == 0:
-                # thing = self.Thing(type, name)
-                api_url = self.endpoint+"/interaction-things/"
-                data = {"data": self.attributes}
-                response = requests.post(api_url, json=data, headers={
-                                        'Authorization': 'bearer ' + self.token})
-                # print(response.status_code)
-                # print(response.json())
-                if response.status_code == 200:
-                    self.id = response.json()['data']['id']
-            else:
-                print("thing already exists")
-                print(response.json())
-                try:
-                    self.parse_API_response(response.json()['data'][0])
-                except KeyError:
-                    print("some values are missing")
+
 
 
     class Experiment(__API_object):
