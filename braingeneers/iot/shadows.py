@@ -70,7 +70,7 @@ class DatabaseInteractor:
                         item_list = []
                         if type(self.attributes[key]["data"]) is list:
                             for item in self.attributes[key]["data"]:
-                                print("item", item)
+                                # print("item", item)
                                 if "id" in item:
                                     item_list.append(item["id"])
                         else:
