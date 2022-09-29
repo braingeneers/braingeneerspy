@@ -10,7 +10,18 @@ instance = sh.DatabaseInteractor(endpoint, API_KEY)
 
 thing = instance.create_interaction_thing("BioPlateScope", "full_test_thing6")
 print(thing)
-# shadow_add = {"boobbbobob" : "gnarpants"}
+# thing.attributes["name"] = "name_change_test"
+thing.push()
+print(thing)
+shadow_add = {"boobbbobob" : "gnarpants", "barf" : "gnar", "gwar":{"hello":"world"}}
+thing.add_to_shadow(shadow_add)
+
+plate = instance.create_plate("testy_plate_obj_6", 2, 4)
+
+print(plate)
+# plate.pull()
+# print(plate)
+
 # thing = instance.add_to_shadow(thing, shadow_add)
 # print("updated thing: ", thing)
 # experiment = instance.create_experiment("test_experiment_obj_7", "test_description")
@@ -19,7 +30,7 @@ print(thing)
 # print("added experiment", thing)
 # thing = instance.update_thing_on_database(thing)
 # print(thing)
-# plate = instance.create_plate("test_plate_obj_1", 2, 4)
+
 # thing = instance.add_plate_to_thing(thing, plate)
 # plate = instance.get_plate(plate.id)
 # print(thing)
