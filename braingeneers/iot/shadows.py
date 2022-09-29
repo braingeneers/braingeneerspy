@@ -43,9 +43,9 @@ class DatabaseInteractor:
                 self.attributes = {}
 
         def __str__(self):
-            var_list = filter(lambda x: not x.startswith("__"), dir(self))
+            var_list = filter(lambda x: x not in ["endpoint", "token"], vars(self))
             return str({var: getattr(self, var) for var in var_list})
-            return str(vars(self))
+            # return str(vars(self))
         #json representation of the thing
         def to_json(self):
             return vars(self)
