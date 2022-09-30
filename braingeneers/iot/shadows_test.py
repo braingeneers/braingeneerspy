@@ -6,19 +6,19 @@ endpoint = "http://braingeneers.gi.ucsc.edu:1337/api"
 
 token = API_KEY
 # Create a shadow object
-instance = sh.DatabaseInteractor(endpoint, API_KEY)
+instance = sh.DatabaseInteractor()
 
-thing = instance.create_interaction_thing("BioPlateScope", "full_test_thing6")
-print(thing)
-# thing.attributes["name"] = "name_change_test"
-thing.push()
-print(thing)
-shadow_add = {"boobbbobob" : "gnarpants", "barf" : "gnar", "gwar":{"hello":"world"}}
-thing.add_to_shadow(shadow_add)
+# thing = instance.create_interaction_thing("BioPlateScope", "full_test_thing6")
+# print(thing)
+# # thing.attributes["name"] = "name_change_test"
+# thing.push()
+# print(thing)
+# shadow_add = {"boobbbobob" : "gnarpants", "barf" : "gnar", "gwar":{"hello":"world"}}
+# thing.add_to_shadow(shadow_add)
 
-plate = instance.create_plate("testy_plate_obj_6", 2, 4)
+# plate = instance.create_plate("testy_plate_obj_6", 2, 4)
 
-print(plate)
+# print(plate)
 # plate.pull()
 # print(plate)
 

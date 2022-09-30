@@ -1,4 +1,10 @@
 import requests
+import configparser
+import os
+import io
+from typing import Union
+
+
 
 class DatabaseInteractor:
     """
@@ -18,19 +24,34 @@ class DatabaseInteractor:
         list_devices(**filters)  # list connected devices, filter by one or more state variables.
         create_device(device_name: str, device_type: str)  # create a new device if it doesn't already exist
 
-        #
-        # Get/set/update/subscribe to device state variables
-        #
-        # todo:
-            get_device_state(device_name: str)  # returns the device shadow file as a dictionary.
-            update_device_state(device: str, device_state: dict)  # updates one or more state variables for a registered device.
-            set_device_state(device_name: str, state: dict)  # saves the shadow file, a dict that is JSON serializable.
-            subscribe_device_state_change(device: str, device_state_keys: List[str], callback: Callable)  # subscribe to notifications when a device state changes.
-
     """
-    def __init__(self, endpoint, api_token) -> None:
-        self.endpoint = endpoint
-        self.token = api_token
+    def __init__(self , credentials: Union[str, io.IOBase] = None) -> None:
+        # self.endpoint = endpoint
+        # self.token = api_token
+
+        if credentials is None:
+            credentials = os.path.expanduser('~/.aws/credentials')  # default credentials location
+
+        if isinstance(credentials, str):
+            with open(credentials, 'r') as f:
+                self._credentials = f.read()
+        else:
+            assert hasattr(credentials, 'read'), 'credentials parameter must be a filename string or file-like object.'
+            self._credentials = credentials.read()
+
+        config = configparser.ConfigParser()
+        config.read_file(io.StringIO(self._credentials))
+        assert 'strapi' in config, 'Your AWS credentials file is missing a section [strapi], ' \
+                                    'you may have the wrong version of the credentials file.'
+        assert 'endpoint' in config['strapi'], 'Your AWS credentials file is malformed, ' \
+                                                'endpoint was not found under the [strapi] section.'
+        assert 'api_key' in config['strapi'], 'Your AWS credentials file is malformed, ' \
+                                                'api_key was not found under the [strapi] section.'
+
+        self.endpoint = config['strapi']['endpoint']
+        self.token = config['strapi']['api_key']
+        print(self.endpoint)
+        # ['strapi']['endpoint']
     
     class __API_object:
         """
@@ -179,7 +200,12 @@ class DatabaseInteractor:
     class __Experiment(__API_object):
         def __init__(self, endpoint, api_token):
             super().__init__(endpoint, api_token, "experiments")
-        pass
+
+        def add_plate(self, plate):
+            if self.attributes["plates"] is None:
+                self.attributes["plates"] = []
+            self.attributes["plates"].append(plate.id)
+            self.push()
 
     class __Plate(__API_object):
         def __init__(self, endpoint, api_token):
@@ -201,6 +227,10 @@ class DatabaseInteractor:
         def __init__(self, endpoint, api_token):
             super().__init__(endpoint, api_token, "wells")
         pass
+
+    class __Sample(__API_object):
+        def __init__(self, endpoint, api_token):
+            super().__init__(endpoint, api_token, "samples")
 
     def create_interaction_thing(self, type, name):
         thing = self.__Thing(self.endpoint, self.token)
