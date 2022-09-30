@@ -46,13 +46,15 @@ class DatabaseInteractor:
         def __str__(self):
             var_list = filter(lambda x: x not in ["endpoint", "token", "api_object_id"], vars(self))
             return str({var: getattr(self, var) for var in var_list})
-            # return str(vars(self))
-        #json representation of the thing
+
         def to_json(self):
             var_list = filter(lambda x: x not in ["endpoint", "token", "api_object_id"], vars(self))
             return {var: getattr(self, var) for var in var_list}
 
         def parse_API_response(self, response_data):
+            """
+            parses the response from the API and updates the python object
+            """
             self.id = response_data['id']
             self.attributes = response_data['attributes']
             for key in self.attributes:
@@ -74,6 +76,9 @@ class DatabaseInteractor:
                         self.attributes[key] = []
 
         def spawn(self):
+            """
+            creates a new object in the database
+            """
             url = self.endpoint + "/"+self.api_object_id+"?filters[name][$eq]=" + self.attributes["name"] + "&populate=%2A"
             headers = {"Authorization": "Bearer " + self.token}
             response = requests.get(url, headers=headers)
@@ -99,6 +104,9 @@ class DatabaseInteractor:
                     print("some values are missing")
 
         def push(self):
+            """
+            updates the database with the current state of the object
+            """
             url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
             headers = {"Authorization": "Bearer " + self.token}
             data = {"data": self.attributes}
@@ -108,6 +116,9 @@ class DatabaseInteractor:
             self.parse_API_response(response.json()['data'])
 
         def pull(self):
+            """
+            updates object with the latest data from the database
+            """
             url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
             headers = {"Authorization": "Bearer " + self.token}
             response = requests.get(url, headers=headers)
@@ -115,8 +126,13 @@ class DatabaseInteractor:
             # print(response.status_code)
             self.parse_API_response(response.json()['data'])
 
-        def list_objects(self, object_type):
-            url = self.endpoint + "/"+ object_type +"?populate=%2A"
+        def list_objects(self, api_object_id):
+            """
+            when you need a list of the objects in the database
+
+            useful for populating dropdown lists in plotly dash
+            """
+            url = self.endpoint + "/"+  api_object_id +"?populate=%2A"
             headers = {"Authorization": "Bearer " + self.token}
             response = requests.get(url, headers=headers)
             # print(response.json())
