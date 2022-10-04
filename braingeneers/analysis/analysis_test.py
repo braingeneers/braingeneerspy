@@ -519,6 +519,21 @@ class AnalysisTest(unittest.TestCase):
         self.assertAll(sd2.raw_time == np.arange(11))
         self.assertAll(sd2.raw_data == sd.raw_data[:,20:31])
 
+    def test_isi_rate(self):
+        # Calculate the firing rate of a single neuron using the inverse ISI.
+
+        # For a neuron that fires at a constant rate, any sample time should
+        # give you exactly the correct rate, here 1 kHz.
+        spikes = np.arange(10)
+        when = np.random.rand(1000) * 12 - 1
+        self.assertAll(ba.analysis._resampled_isi(spikes, when) == 1)
+
+        # Also check that the rate is correctly calculated for some varying
+        # examples.
+        sd = ba.SpikeData([[0, 1/k, 10+1/k] for k in np.arange(1, 100)])
+        self.assertAll(sd.resampled_isi(0).round(2) == np.arange(1, 100))
+        self.assertAll(sd.resampled_isi(10).round(2) == 0.1)
+
     def test_isi_methods(self):
         # Try creating an ISI histogram to make sure it works. If all
         # spikes are accounted for, the 100 spikes turn into 99 ISIs.
