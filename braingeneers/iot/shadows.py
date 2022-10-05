@@ -13,16 +13,12 @@ class DatabaseInteractor:
     See documentation at: ...
 
     Assumes the following:
-        - The Strapi database is running at the endpoint specified in the constructor
-        - User has an API key for the Strapi database
-
+        - ~/.aws/credentials file exists and contains a section [strapi] with the following keys:
+            - endpoint: the URL of the Strapi server
+            - api_key: the API key for the Strapi server
+        
     Public functions:
 
-        #
-        # List and register IoT devices
-        #
-        list_devices(**filters)  # list connected devices, filter by one or more state variables.
-        create_device(device_name: str, device_type: str)  # create a new device if it doesn't already exist
 
     """
     def __init__(self , credentials: Union[str, io.IOBase] = None) -> None:
@@ -50,8 +46,6 @@ class DatabaseInteractor:
 
         self.endpoint = config['strapi']['endpoint']
         self.token = config['strapi']['api_key']
-        print(self.endpoint)
-        # ['strapi']['endpoint']
     
     class __API_object:
         """
