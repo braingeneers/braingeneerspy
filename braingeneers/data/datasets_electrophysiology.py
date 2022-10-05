@@ -646,13 +646,25 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
     with smart_open.open(datafile, 'rb') as file:
         with h5py.File(file, 'r', libver='latest', rdcc_nbytes=2 ** 25) as h5file:
             # know that there are 1028 channels which all record and make 'num_frames'
-            sig = h5file['sig']
-            # make dataset of chosen frames
+            lsb = np.float32(h5file['settings']['lsb'][0]*1000) #1000 for uv to mv
+            
+            dataset = h5file['sig']
             if channels is not None:
-                dataset = sig[channels, start:frame_end]
+                sorted_channels = np.sort(channels) 
+                undo_sort_channels = np.argsort(np.argsort(channels))
+                dataset = dataset[sorted_channels, start:frame_end]
             else:
-                dataset = sig[:, start:frame_end]
-    dataset = dataset.astype(np.float32)
+                dataset = dataset[:, start:frame_end]
+    
+    # dataset = (np.array(dataset, dtype=np.float32) - 512.0)*lsb
+    #dataset = np.array(dataset)
+    # make dataset of chosen frames
+
+
+    dataset = dataset.astype(np.float32) - 512
+    if channels is not None:
+        # Unsort data
+        dataset = dataset[undo_sort_channels,:]
     return dataset
 
 
@@ -714,8 +726,9 @@ def load_stims_maxwell(uuid:str, metadata_ephys_exp:dict):
     try:
         with smart_open.open(stim_path, 'rb') as f:
             # read the csv into dataframe
-            df = pd.read_csv(f, header=0, index_col=0)
+            df = pd.read_csv(f, header=0)#, index_col=0)
         return df
+        
     except FileNotFoundError:
         print(f'\tThere seems to be no stim log file for this experiment! :(')
         return None
