@@ -39,7 +39,7 @@ python -m pip install --force-reinstall git+https://github.com/braingeneers/brai
 ```
 
 ### macOS installation note:
-if install fails with ```"no matches found: git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]```
+if install fails with ```no matches found: git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]```
 wrap quotes around the github address like so 
 
 ```
