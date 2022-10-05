@@ -226,7 +226,7 @@ class SpikeData():
         train = [ts for i,ts in enumerate(self.train) if cond(i)]
         neuron_data = {k: [v for i,v in enumerate(vs) if cond(i)]
                        for k,vs in self.neuron_data.items()}
-        return self.__class__(train, length=self.length, N=len(train),
+        return SpikeData(train, length=self.length, N=len(train),
                               neuron_data=neuron_data,
                               metadata=self.metadata,
                               raw_time=self.raw_time,
@@ -266,11 +266,30 @@ class SpikeData():
 
         # Subset and propagate the raw data.
         rawmask = (self.raw_time >= lower) & (self.raw_time <= end)
-        return self.__class__(train, length=end - start, N=self.N,
+        return SpikeData(train, length=end - start, N=self.N,
                               neuron_data=self.neuron_data,
                               metadata=self.metadata,
                               raw_time=self.raw_time[rawmask] - start,
                               raw_data=self.raw_data[:, rawmask])
+
+    def __getitem__(self, key):
+        '''
+        Overloads the [] operator to allow for slicing of the spikeData object.
+        Uses the subtime method to slice the spikeData object.
+        '''
+        #print(start, stop, fs)
+        
+        if isinstance(key, slice):
+            return self.subtime(key.start, key.stop)
+        #print(start, stop, fs)
+        if start is None:
+            start = 0
+        if stop is None:
+            stop = self.length
+        
+        return self.subtime(start, stop)
+
+
 
     def sparse_raster(self, bin_size=20):
         '''
@@ -492,7 +511,8 @@ class ThresholdedSpikeData(SpikeData):
     '''
     def __init__(self, raw_data, fs_Hz=20000, threshold_sigma=5,
                  filter_order=3, filter_lo_Hz=300, filter_hi_Hz=6000,
-                 filter_step_size_s=10):
+                 time_step_size_s=10, do_filter = True, hysteresis = True,
+                 direction = 'both'):
         '''
         :param raw_data: [channels, time] array of raw ephys data
         :param fs_Hz: sampling frequency of raw data in Hz
@@ -502,24 +522,64 @@ class ThresholdedSpikeData(SpikeData):
         :param filter_step_size_s: size of chunks to filter in seconds
         '''
         # Filter the data.
-        data = filter(raw_data, fs_Hz, filter_order, filter_lo_Hz,
-                            filter_hi_Hz, filter_step_size_s)
-        
+        if do_filter:
+            data = filter(raw_data, fs_Hz, filter_order, filter_lo_Hz,
+                                filter_hi_Hz, time_step_size_s)
+        else:
+            # This is bad form
+            data = raw_data
 
 
         threshold = threshold_sigma * np.std(data, axis=1, keepdims=True)
-        raster = (data > threshold) | (data < -threshold)
 
-        idces, t_idces = np.nonzero(raster)
-        times_ms = t_idces / fs_Hz * 1000
+        if direction == 'both':
+            raster = (data > threshold) | (data < -threshold)
+        elif direction == 'up':
+            raster = data > threshold
+        elif direction == 'down':
+            raster = data < -threshold
 
-        super().__init__(idces, times_ms)
+        if hysteresis:
+            raster = np.diff(np.array(raster, dtype=int), axis=1) == 1
+        
+            
+
+
+        self.idces, t_idces = np.nonzero(raster)
+        
+        self.times_ms = t_idces / fs_Hz * 1000
+
+        self.N = data.shape[0]
+        fs_ms = fs_Hz / 1000
+        self.length = data.shape[1]/fs_ms
+
+        # If no spikes were found, we can't do anything else.
+        if len(self.idces) == 0:
+            self.has_spikes = False
+        else:
+            self.has_spikes = True
+
+        # change this to be an instance of the parent class instead
+        #super().__init__(idces, times_ms, **kwargs)
+
+
+    def to_spikeData(self, N = None, length = None):
+        if self.has_spikes:
+            if N is None:
+                N = self.N
+            if length is None:
+                length = self.length
+            return SpikeData(self.idces, self.times_ms, N=N, length=length)
+        else:
+            return None
+        
+
 
 
 def filter(raw_data, fs_Hz=20000, filter_order=3,
                 filter_lo_Hz=300, filter_hi_Hz=6000,
                 time_step_size_s=10, channel_step_size = 100,
-                verbose = 0):
+                verbose = 0, zi = None, return_zi = False):
     '''
     Filter the raw data using a bandpass filter.
 
@@ -531,7 +591,10 @@ def filter(raw_data, fs_Hz=20000, filter_order=3,
     :param filter_step_size_s: size of chunks to filter in seconds
     :param channel_step_size: number of channels to filter at once
     :param verbose: verbosity level
+    :param zi: initial conditions for the filter
+    :param return_zi: whether to return the final filter conditions
 
+    :return: filtered data
     '''
     
 
@@ -543,9 +606,11 @@ def filter(raw_data, fs_Hz=20000, filter_order=3,
     b, a = signal.butter(fs=fs_Hz, btype='bandpass', #output='sos',
                         N=filter_order, Wn=[filter_lo_Hz, filter_hi_Hz])
 
-    # Filter initial state
-    zi = signal.lfilter_zi(b, a)
-    zi = np.vstack([zi*raw_data[ch,0] for ch in range(raw_data.shape[0])])
+    if zi is None:
+        # Filter initial state
+        zi = signal.lfilter_zi(b, a)
+        zi = np.vstack([zi*raw_data[ch,0] for ch in range(raw_data.shape[0])])
+    
 
     # Step through the data in chunks and filter it
     for ch_start in range(0, raw_data.shape[0], channel_step_size):
@@ -561,7 +626,7 @@ def filter(raw_data, fs_Hz=20000, filter_order=3,
                     b, a, raw_data[ch_start:ch_end, t_start:t_end], 
                     axis=1, zi=zi[ch_start:ch_end,:])
     
-    return data
+    return data if not return_zi else (data, zi)
 
 
         # # Step through the data in chunks, filtering each one.
