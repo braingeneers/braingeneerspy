@@ -503,6 +503,40 @@ class SpikeData():
         return DCCResult(dcc=dcc, p_size=p_size, p_duration=p_dur)
 
 
+    def latencies(self, times, window_ms = 100):
+        '''
+        Given a sorted list of times, compute the latencies from that time to 
+        each spike in the train within a window
+
+        :param times: list of times
+        :param window_ms: window in ms
+
+        :return: 2d list, each row is a list of latencies
+                        from a time to each spike in the train
+        '''
+        latencies = []
+        for train in self.train:
+            cur_latencies = np.hstack([train[(train >= time) & (train <= time + window_ms)] - time
+                                     for time in times])
+            latencies.append(cur_latencies)
+
+        return latencies
+
+    
+    def latencies_to_index(self, i, window_ms = 100):
+        '''
+        Given an index, compute latencies using self.latencies()
+
+        :param i: index of the unit
+        :param window_ms: window in ms
+
+        :return: 2d list, each row is a list of latencies per neuron
+        '''
+        
+        return self.latencies(self.train[i], window_ms)
+        
+
+
 
 class ThresholdedSpikeData(SpikeData):
     '''
