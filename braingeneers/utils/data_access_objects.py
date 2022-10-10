@@ -1,4 +1,11 @@
 import heapq
+import numpy as np
+from scipy import sparse, stats, signal
+import itertools
+from collections import namedtuple
+import powerlaw
+import os
+import contextlib
 
 
 class SpikeData:
