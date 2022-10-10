@@ -789,7 +789,7 @@ def load_phy_local(path: str):
 def read_phy_files(path: str, fs=20000):
     """
     :param path: a s3 or local path to a zip of phy files. 
-    :return: analysis.SpikeData class with a list of spike time lists and neuron_data. 
+    :return: SpikeData class with a list of spike time lists and neuron_data.
              neuron_data = {new_cluster_id:[channel_id, (chan_pos_x, chan_pos_y), 
                              [chan_template], {channel_id:cluster_templates}]}
     """
@@ -870,7 +870,7 @@ def read_phy_files(path: str, fs=20000):
     neuron_data = dict(zip(new_clusters,
                        zip(best_channels, chan_pos, chan_template, cluster_templates)))
     neuron_dict = {0: neuron_data}
-    spikedata = analysis.SpikeData(list(cluster_spikes["spikeTimes"]),
+    spikedata = SpikeData(list(cluster_spikes["spikeTimes"]),
                                    neuron_data=neuron_dict)
     return spikedata
 
