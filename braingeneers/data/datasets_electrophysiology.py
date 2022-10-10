@@ -12,7 +12,7 @@ from collections import namedtuple
 import datetime
 import time
 from braingeneers.utils import s3wrangler
-from braingeneers import analysis
+from braingeneers.utils.data_access_objects import SpikeData, ThresholdedSpikeData
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Tuple, Union, Iterable, Iterator
 import io
@@ -23,7 +23,6 @@ import itertools
 import posixpath
 import zipfile
 import pandas as pd
-
 
 
 # todo implement hengenlab metadata generator
