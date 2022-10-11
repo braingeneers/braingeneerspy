@@ -21,7 +21,7 @@ class DatabaseInteractor:
 
 
     """
-    def __init__(self , credentials: Union[str, io.IOBase] = None) -> None:
+    def __init__(self , credentials: Union[str, io.IOBase] = None, overwrite_endpoint = None, overwrite_api_key = None) -> None:
         # self.endpoint = endpoint
         # self.token = api_token
 
@@ -46,6 +46,10 @@ class DatabaseInteractor:
 
         self.endpoint = config['strapi']['endpoint']
         self.token = config['strapi']['api_key']
+        if overwrite_endpoint:
+            self.endpoint = overwrite_endpoint
+        if overwrite_api_key:
+            self.token = overwrite_api_key
     
     class __API_object:
         """
@@ -184,6 +188,8 @@ class DatabaseInteractor:
                 self.attributes["plates"] = []
             self.attributes["plates"].append(plate.id)
             self.attributes["current_plate"] = plate.id
+
+            plate.add_thing(self)
             self.push()
 
         def set_current_experiment(self, experiment):
@@ -218,17 +224,23 @@ class DatabaseInteractor:
             adds the thing to the list of things associated with the plate. also updates the plate relation on the thing object itself.
             does not effect current_plate value of thing
             """
-            if self.attributes["things"] is None:
-                self.attributes["things"] = []
-            self.attributes["things"].append(thing.id)
+            if self.attributes["interaction_things"] is None:
+                self.attributes["interaction_things"] = []
+            self.attributes["interaction_things"].append(thing.id)
             self.push()
 
         def add_uuid_to_image_params(self, uuid):
-            if self.attributes["image_params"] is None:
-                self.attributes["image_params"] = {}
-            if self.attributes["image_params"]["uuids"] is None:
-                self.attributes["image_params"]["uuids"] = []
-            self.attributes["image_params"]["uuids"].append(uuid)
+            if self.attributes["image_parameters"] is None:
+                self.attributes["image_parameters"] = {}
+
+            # if attributes["image_parameters] has attribute uuid" and it is not none
+            if "uuids" not in self.attributes["image_parameters"] or self.attributes["image_parameters"]["uuids"] is None:
+                self.attributes["image_parameters"]["uuids"] = {}
+            for key, value in uuid.items():
+                print(key)
+                print(value)
+                self.attributes["image_parameters"]["uuids"][key] = value
+
             self.push()
 
     class __Well(__API_object):
@@ -289,7 +301,7 @@ class DatabaseInteractor:
         value = { uuid : group_id }
         if thing.attributes["current_plate"]:
             plate = self.__Plate(self.endpoint, self.token)
-            plate.id = thing.attributes["current_plate"]
+            plate.id = thing.attributes["current_plate"][0]
             plate.pull()
             plate.add_uuid_to_image_params(value)
         else: 
