@@ -167,6 +167,12 @@ class DatabaseInteractor:
 
             self.push()
 
+        def add_uuid_to_shadow(self, uuid):
+            if self.attributes["shadow"] is None:
+                self.attributes["shadow"] = {}
+            self.attributes["shadow"]["uuid"] = uuid
+            self.push()            
+
 
         def set_current_plate(self, plate):
             """
@@ -217,11 +223,18 @@ class DatabaseInteractor:
             self.attributes["things"].append(thing.id)
             self.push()
 
+        def add_uuid_to_image_params(self, uuid):
+            if self.attributes["image_params"] is None:
+                self.attributes["image_params"] = {}
+            if self.attributes["image_params"]["uuids"] is None:
+                self.attributes["image_params"]["uuids"] = []
+            self.attributes["image_params"]["uuids"].append(uuid)
+            self.push()
+
     class __Well(__API_object):
         def __init__(self, endpoint, api_token):
             super().__init__(endpoint, api_token, "wells")
-        pass
-
+        
     class __Sample(__API_object):
         def __init__(self, endpoint, api_token):
             super().__init__(endpoint, api_token, "samples")
@@ -239,12 +252,12 @@ class DatabaseInteractor:
         plate.attributes["rows"] = rows
         plate.attributes["columns"] = columns
         image_params = {
-            "images": True,
-            "uuids": [
-                "2022-07-11-i-connectoid-3",
-                "2020-02-07-fluidics-imaging-2"
-            ],
-            "group_id": "C"
+            # "images": True,
+            # "uuids": [
+            #     "2022-07-11-i-connectoid-3",
+            #     "2020-02-07-fluidics-imaging-2"
+            # ],
+            # "group_id": "C"
         }
         plate.attributes["image_params"] = image_params
         plate.spawn()
@@ -260,6 +273,7 @@ class DatabaseInteractor:
 
         plate.pull()
         return plate
+    
  
     def create_experiment(self, name, description):
         experiment = self.__Experiment(self.endpoint, self.token)
@@ -268,3 +282,19 @@ class DatabaseInteractor:
         experiment.spawn()
         return experiment
         
+
+    def start_image_capture(self, thing, uuid):
+        thing.add_uuid_to_shadow(uuid)
+        group_id = thing.attributes["shadow"]["group_id"]
+        value = { uuid : group_id }
+        if thing.attributes["current_plate"]:
+            plate = self.__Plate(self.endpoint, self.token)
+            plate.id = thing.attributes["current_plate"]
+            plate.pull()
+            plate.add_uuid_to_image_params(value)
+        else: 
+            #raise exception
+            raise Exception("no plate associated with thing")
+
+
+
