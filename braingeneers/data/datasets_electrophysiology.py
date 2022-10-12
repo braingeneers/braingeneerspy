@@ -12,6 +12,7 @@ from collections import namedtuple
 import datetime
 import time
 from braingeneers.utils import s3wrangler
+from braingeneers.utils.data_access_objects import SpikeData, ThresholdedSpikeData
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Tuple, Union, Iterable, Iterator
 import io
@@ -20,6 +21,8 @@ from collections import OrderedDict
 import sortedcontainers
 import itertools
 import posixpath
+import zipfile
+import pandas as pd
 
 
 # todo implement hengenlab metadata generator
@@ -591,18 +594,19 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
     """
     # TODO: Check the length and see if there are enough blocks to even support it
     # NOTE: Blocks (right now) are worthless to me
+
+    experiment_stem = posixpath.basename(metadata['ephys_experiments'][experiment_name]['blocks'][0]['path'])
+
     if length == -1:
         print(
-            f"Loading file Maxwell, UUID {batch_uuid}, {experiment_name}, frame {start} to end of file....")
+            f"Loading file Maxwell, UUID {batch_uuid}, {experiment_name}: {experiment_stem}, frame {start} to end of file....")
     else:
         print(
-            f"Loading file Maxwell, UUID {batch_uuid}, {experiment_name}, frame {start} to {start + length}....")
+            f"Loading file Maxwell, UUID {batch_uuid}, {experiment_name}: {experiment_stem}, frame {start} to {start + length}....")
     # get datafile
 
     filename = metadata['ephys_experiments'][experiment_name]['blocks'][0]['path'].split('/')[-1]
-    # TODO: if the file is meant to be local, should account for that and load a local file instead.
-    #  Check that startswith() call.
-    datafile = '{}/{}/original/data/{}'.format(get_archive_url(), batch_uuid, filename) \
+    datafile = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original', 'data', filename) \
         if braingeneers.get_default_endpoint().startswith('http') \
         else f'{os.getcwd()}/ephys/{batch_uuid}/original/data/{filename}'
 
@@ -646,20 +650,95 @@ def load_data_maxwell(metadata, batch_uuid, experiment_name, channels, start, le
     with smart_open.open(datafile, 'rb') as file:
         with h5py.File(file, 'r', libver='latest', rdcc_nbytes=2 ** 25) as h5file:
             # know that there are 1028 channels which all record and make 'num_frames'
-            sig = h5file['sig']
-            # make dataset of chosen frames
+            lsb = np.float32(h5file['settings']['lsb'][0]*1000) #1000 for uv to mv
+
+            dataset = h5file['sig']
             if channels is not None:
-                dataset = sig[channels, start:frame_end]
+                sorted_channels = np.sort(channels)
+                undo_sort_channels = np.argsort(np.argsort(channels))
+                dataset = dataset[sorted_channels, start:frame_end]
             else:
-                dataset = sig[:, start:frame_end]
-    dataset = dataset.astype(np.float32)
-    print('Dataset loaded.')
+                dataset = dataset[:, start:frame_end]
+
+    # dataset = (np.array(dataset, dtype=np.float32) - 512.0)*lsb
+    #dataset = np.array(dataset)
+    # make dataset of chosen frames
+
+
+    dataset = dataset.astype(np.float32) - 512
+    if channels is not None:
+        # Unsort data
+        dataset = dataset[undo_sort_channels,:]
     return dataset
 
 
 def load_data_hengenlab(metadata: dict, batch_uuid: str, experiment_num: int,
                         channels: Iterable[int], offset: int, length: int):
     pass  # todo
+
+
+def load_mapping_maxwell(uuid:str, metadata_ephys_exp:dict):
+    '''
+    Loads the mapping of maxwell array from hdf5 file
+
+    :param uuid: uuid of the experiment
+        UUID of batch of experiments
+    :param metadata_ephys_exp: metadata of the experiment for one recording
+        This must look like metadata['ephys_experiments']['experiment1']
+        from the normal metadata loading function
+    :return: mapping of maxwell array as a dataframe
+    '''
+    exp_path = metadata_ephys_exp['blocks'][0]['path']
+    exp_filename = posixpath.basename(exp_path)
+    DATA_PATH = 'original/data/'
+
+    file_path = posixpath.join(get_basepath(),
+            'ephys',uuid, DATA_PATH, exp_filename)
+
+    print('Loading mapping from UUID: {}, experiment: {}'.format(uuid, exp_filename))
+
+    with smart_open.open(file_path, 'rb') as f:
+        with h5py.File(f, 'r') as h5:
+            mapping = np.array(h5['mapping']) #ch, elec, x, y
+            mapping = pd.DataFrame(mapping)
+    return mapping
+
+
+def load_stims_maxwell(uuid:str, metadata_ephys_exp:dict):
+    '''
+    Loads the stim log files for a given experiment.
+
+    :param uuid: uuid of the experiment
+        UUID of batch of experiments
+    :param metadata_ephys_exp: metadata of the experiment for one recording
+        This must look like metadata['ephys_experiments']['experiment1']
+        from the normal metadata loading function
+    :return: dataframe of stim logs
+    '''
+    exp_path = metadata_ephys_exp['blocks'][0]['path']
+    # This is gross, we have to split off the .raw.h5, requiring 2 splits
+    exp_stem = os.path.splitext(posixpath.basename(exp_path))[0]
+    exp_stem = os.path.splitext(exp_stem)[0]
+    exp_stim_log = exp_stem + 'log.csv'
+    DATA_PATH = 'original/data/'
+
+
+    stim_path = posixpath.join(get_basepath(), 'ephys', uuid, DATA_PATH,
+                                exp_stim_log)
+
+    print('Loading stim log from UUID: {}, log: {}'.format(uuid, exp_stim_log))
+    try:
+        with smart_open.open(stim_path, 'rb') as f:
+            # read the csv into dataframe
+            df = pd.read_csv(f, header=0)#, index_col=0)
+        return df
+
+    except FileNotFoundError:
+        print(f'\tThere seems to be no stim log file for this experiment! :(')
+        return None
+    except OSError:
+        print(f'\tThere seems to be no stim log file (on s3) for this experiment! :(')
+        return None
 
 
 def compute_milliseconds(num_frames, sampling_rate):
@@ -673,6 +752,132 @@ def compute_milliseconds(num_frames, sampling_rate):
         A string detailing how many ms of recording are there
     """
     return f'{(num_frames / sampling_rate) * 1000} ms of total recording'
+
+
+def load_phy_s3(batch_uuid: str, dataset_name: str, type='default', fs=20000):
+    """
+    Load the spike times, channels and templates from phy numpy files after spike sorting.
+    :param batch_uuid: the UUID of the dataset.
+    :param dataset_name: name of the dataset. Because an UUID can have multiple datasets.
+    :param type: 'default' spike sorting output or 'curated' output.
+    :param fs: sample rate of MaxWell recording.
+    """
+    # TODO: update metadata after sorting to allow loading by experiment_id
+    base_path = 's3://braingeneers/' \
+        if braingeneers.get_default_endpoint().startswith('http') \
+        else braingeneers.get_default_endpoint()
+    if type == 'curated':
+        dataset = dataset_name + '_curated.zip'
+    else:
+        dataset = dataset_name + '_phy.zip'
+    phy_full_path = \
+        posixpath.join(base_path, 'ephys', batch_uuid, 'derived/kilosort2', dataset)
+    spikeData = read_phy_files(phy_full_path)
+    return spikeData
+
+def load_phy_local(path: str):
+    """
+    Load phy files from a local folder or a zip.
+    If the input is a directory, a zip file will be created under the current folder.
+    :param path: A folder directory or a file directory.
+    :return: a spikeData object.
+    """
+    if os.path.isfile(path):
+        assert path[-3:] == 'zip', "'path' must be a zip file path or a folder path."
+        spikeData = read_phy_files(path)
+    elif os.path.isdir(path):
+        zip_file = shutil.make_archive('phy_files', 'zip', path)
+        spikeData = read_phy_files(zip_file)
+    return spikeData
+
+
+def read_phy_files(path: str, fs=20000):
+    """
+    :param path: a s3 or local path to a zip of phy files.
+    :return: SpikeData class with a list of spike time lists and neuron_data.
+             neuron_data = {new_cluster_id:[channel_id, (chan_pos_x, chan_pos_y),
+                             [chan_template], {channel_id:cluster_templates}]}
+    """
+    try:
+        if path[:2] == 's3' and path[-3:] == 'zip':
+            f = smart_open.open(path, 'rb')
+        elif os.path.isfile(path) and path[-3:] == 'zip':
+            f = path
+    except ValueError:
+        print("Input must be a zip file path.")
+
+    with zipfile.ZipFile(f, 'r') as f_zip:
+        assert 'params.py' in f_zip.namelist(), "Wrong spike sorting output."
+        if 'cluster_info.tsv' in f_zip.namelist():
+            cluster_info = pd.read_csv(f_zip.open('cluster_info.tsv'), sep='\t')
+            groups = list(cluster_info['group'])
+            cluster_ids = list(cluster_info['cluster_id'])
+            ch = list(cluster_info['ch'])
+            labeled_clusters = []
+            best_channels = []
+            for i in range(len(groups)):
+                if groups[i] != 'noise':
+                    labeled_clusters.append(cluster_ids[i])
+                    best_channels.append(ch[i])
+            clusters = np.load(f_zip.open('spike_clusters.npy'))
+            templates = np.load(f_zip.open('templates.npy'))
+            channels = np.load(f_zip.open('channel_map.npy'))
+        else:
+            clusters = np.load(f_zip.open('spike_clusters.npy'))
+            templates = np.load(f_zip.open('templates.npy'))
+            channels = np.load(f_zip.open('channel_map.npy'))
+            labeled_clusters = np.unique(clusters)
+            best_channels = [channels[np.argmax(np.ptp(templates[i], axis=0))][0]
+                             for i in labeled_clusters]
+
+        spike_templates = np.load(f_zip.open('spike_templates.npy'))
+        spike_times = np.load(f_zip.open('spike_times.npy')) / fs * 1e3
+        positions = np.load(f_zip.open('channel_positions.npy'))
+
+    if isinstance(channels[0], np.ndarray):
+        channels = np.asarray(list(itertools.chain.from_iterable(channels)))
+    if isinstance(clusters[0], np.ndarray):
+        clusters = list(itertools.chain.from_iterable(clusters))
+    if isinstance(spike_times[0], np.ndarray):
+        spike_times = list(itertools.chain.from_iterable(spike_times))
+    if isinstance(spike_templates[0], np.ndarray):
+        spike_templates = np.asarray(list(itertools.chain.from_iterable(spike_templates)))
+
+    df = pd.DataFrame({"clusters": clusters, "spikeTimes": spike_times})
+    cluster_spikes = df.groupby("clusters").agg({"spikeTimes": lambda x: list(x)})
+    cluster_spikes = cluster_spikes[cluster_spikes.index.isin(labeled_clusters)]
+
+    labeled_clusters = np.asarray(labeled_clusters)
+    if max(labeled_clusters) >= templates.shape[0]:   # units can be split or merged during curation
+        ind = np.where(labeled_clusters >= templates.shape[0])[0]
+        for i in ind:
+            spike_ids = np.nonzero(np.in1d(clusters, labeled_clusters[i]))[0]
+            original_cluster = np.unique((spike_templates[spike_ids]))[0] # to simplify the process,
+            # take the first original cluster for the merged clusters because merge happens when
+            # two clusters templates are similar
+            labeled_clusters[i] = original_cluster
+
+    chan_indices = np.searchsorted(channels, best_channels)
+    cluster_indices = np.searchsorted(np.unique(spike_templates), labeled_clusters)
+    chan_template = templates[cluster_indices, :, chan_indices]
+
+    cluster_templates = []
+    for i in cluster_indices:
+        nbgh_chans = np.nonzero(templates[i].any(0))[0]
+        nbgh_temps = np.transpose(templates[i][:, templates[i].any(0)])
+        nbgh_dict = dict(zip(channels[nbgh_chans], nbgh_temps))
+        cluster_templates.append(nbgh_dict)
+
+    chan_pos = positions[chan_indices]
+
+    # re-assign cluster id
+    new_clusters = np.arange(len(labeled_clusters))
+    neuron_data = dict(zip(new_clusters,
+                       zip(best_channels, chan_pos, chan_template, cluster_templates)))
+    neuron_dict = {0: neuron_data}
+    spikedata = SpikeData(list(cluster_spikes["spikeTimes"]),
+                                   neuron_data=neuron_dict)
+    return spikedata
 
 
 def load_spikes(batch_uuid, experiment_num):

@@ -83,9 +83,10 @@ class AnalysisTest(unittest.TestCase):
         sd5 = ba.SpikeData(*sd.idces_times())
         self.assertSpikeDataEqual(sd, sd5)
 
-        # Test 'NEST SpikeRecorder' constructor.
+        # Test 'NEST SpikeRecorder' constructor, passing in an arange to
+        # take the place of the NodeCollection you would usually use.
         recorder = DerpSpikeRecorder(idces, times)
-        sd6 = ba.SpikeData(recorder)
+        sd6 = ba.SpikeData(recorder, np.arange(5))
         self.assertSpikeDataEqual(sd, sd6)
 
         # Test subset() constructor.
@@ -93,6 +94,15 @@ class AnalysisTest(unittest.TestCase):
         sdsub = sd.subset(idces)
         for i,j in enumerate(idces):
             self.assertAll(sdsub.train[i] == sd.train[j])
+
+        # Make sure you can subset by neuron_data, not just raw index.
+        sdsub = sd6.subset([4,5])
+        sdsub2 = sd6.subset([4,5], by='nest_id')
+        self.assertSpikeDataEqual(sdsub, sdsub2)
+
+        # Make sure the previous is actually using neuron_data.
+        sdsub3 = sd6.subset([3,4,5], by='nest_id').subset([4,5], by='nest_id')
+        self.assertSpikeDataEqual(sdsub, sdsub3)
 
         # Test subtime() constructor idempotence.
         sdtimefull = sd.subtime(0, 100)
@@ -508,6 +518,21 @@ class AnalysisTest(unittest.TestCase):
         sd2 = sd.subtime(20, 30)
         self.assertAll(sd2.raw_time == np.arange(11))
         self.assertAll(sd2.raw_data == sd.raw_data[:,20:31])
+
+    def test_isi_rate(self):
+        # Calculate the firing rate of a single neuron using the inverse ISI.
+
+        # For a neuron that fires at a constant rate, any sample time should
+        # give you exactly the correct rate, here 1 kHz.
+        spikes = np.arange(10)
+        when = np.random.rand(1000) * 12 - 1
+        self.assertAll(ba.analysis._resampled_isi(spikes, when) == 1)
+
+        # Also check that the rate is correctly calculated for some varying
+        # examples.
+        sd = ba.SpikeData([[0, 1/k, 10+1/k] for k in np.arange(1, 100)])
+        self.assertAll(sd.resampled_isi(0).round(2) == np.arange(1, 100))
+        self.assertAll(sd.resampled_isi(10).round(2) == 0.1)
 
     def test_isi_methods(self):
         # Try creating an ISI histogram to make sure it works. If all

@@ -5,7 +5,7 @@ through Pip, all of the Python code and utilities that we develop as
 part of the Braingeneers project. There are five subpackages:
   * `braingeneers.analysis` code for data analysis.
 
-  * `braingeneers.data` all code for basic data access.
+  * `braingeneers.data` all code for basic data access .
     * `braingeneers.data.datasets_electrophysiology` contains methods which load and manipulate ephys data.
     * `braingeneers.data.datasets_fluidics` contains methods which load and manipulate fluidics data.
     * `braingeneers.data.datasets_imaging` contains methods which load and manipulate imaging data.
@@ -36,6 +36,18 @@ python -m pip install --force-reinstall git+https://github.com/braingeneers/brai
 
 # Minimum install (no optional dependencies, good for Raspberry PI builds).
 python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git
+```
+
+### macOS installation note:
+if install fails with ```no matches found: git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]```
+wrap quotes around the github address like so 
+
+```
+# Typical install (includes `iot`, `analysis`, and `data` access functions, skips `ml`, and lab-specific dependencies): 
+python -m pip install --force-reinstall 'git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,analysis]'
+
+# Full install (all optional dependencies included).
+python -m pip install --force-reinstall 'git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]'
 ```
 
 ### Optional dependency organization
