@@ -325,3 +325,6 @@ class DatabaseInteractor:
 
     def list_BioPlateScopes(self):
         return self.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope")
+
+    def list_devices_by_type(self, thingTypeName):
+        return self.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]="+thingTypeName)
