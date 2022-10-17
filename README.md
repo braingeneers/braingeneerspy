@@ -38,6 +38,18 @@ python -m pip install --force-reinstall git+https://github.com/braingeneers/brai
 python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git
 ```
 
+### macOS installation note:
+if install fails with ```no matches found: git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]```
+wrap quotes around the github address like so 
+
+```
+# Typical install (includes `iot`, `analysis`, and `data` access functions, skips `ml`, and lab-specific dependencies): 
+python -m pip install --force-reinstall 'git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,analysis]'
+
+# Full install (all optional dependencies included).
+python -m pip install --force-reinstall 'git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]'
+```
+
 ### Optional dependency organization
 
 Dependencies are organized into optional groups of requirements. You can install all dependencies with `all`, 
