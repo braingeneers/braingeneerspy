@@ -328,3 +328,9 @@ class DatabaseInteractor:
 
     def list_devices_by_type(self, thingTypeName):
         return self.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]="+thingTypeName)
+
+    def get_device_state(self, thing_id):
+        thing = self.__Thing(self.endpoint, self.token)
+        thing.id = thing_id
+        thing.pull()
+        return thing.attributes["shadow"]

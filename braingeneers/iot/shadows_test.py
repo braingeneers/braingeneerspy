@@ -36,33 +36,33 @@ token = API_KEY
 instance = sh.DatabaseInteractor()
 # print(json.dumps(instance.list_objects("interaction-things", "?filters[type][$eq]=BioPlateScope"), indent=4))
 # print(instance.list_experiments())
-print(instance.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope"))
+# print(instance.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope"))
 
-# thing1 = instance.create_interaction_thing("BioPlateScope", "StreamTest")
-# thing2 = instance.create_interaction_thing("BioPlateScope", "Evee")
-# experiment1 = instance.create_experiment("Feed-Frequency-06-26-2022","Feed frequency experiment")
-# experiment2 = instance.create_experiment("Connectoids-06-26-2022","Feed frequency experiment")
-# uuids1 = {"uuids":
-#             {
-#                 "2022-06-26-i-feed-frequency-4": "G",
-#                 "2022-06-28-i-feed-frequency-5": "G"
-#             }
-# }
-# uuids2 = {"uuids":
-#             {
-#                 "2022-06-28-i-connectoid" : "C",
-#                 "2022-06-28-i-connectoid-2":"C",
-#                 "2022-06-29-i-connectoids":"C",
-#                 "2022-06-29-i-connectoid-2":"C",
-#                 "2022-07-11-i-connectoid-3":"C"
-#             }
-# }
-# plate1 = instance.create_plate("Fluidic-24-well-06-26-2022",4,6,uuids1)
-# plate2 = instance.create_plate("Connectoid-plate-06-26-2022",4,6,uuids2)
-# experiment1.add_plate(plate1)
-# experiment2.add_plate(plate2)
-# thing1.set_current_experiment(experiment1)
-# thing2.set_current_experiment(experiment2)
-# thing1.set_current_plate(plate1)
-# thing2.set_current_plate(plate2)
+thing1 = instance.create_interaction_thing("BioPlateScope", "StreamTest")
+thing2 = instance.create_interaction_thing("BioPlateScope", "Evee")
+experiment1 = instance.create_experiment("Feed-Frequency-06-26-2022","Feed frequency experiment")
+experiment2 = instance.create_experiment("Connectoids-06-26-2022","Feed frequency experiment")
+uuids1 = {"uuids":
+            {
+                "2022-06-26-i-feed-frequency-4": "G",
+                "2022-06-28-i-feed-frequency-5": "G"
+            }
+}
+uuids2 = {"uuids":
+            {
+                "2022-06-28-i-connectoid" : "C",
+                "2022-06-28-i-connectoid-2":"C",
+                "2022-06-29-i-connectoids":"C",
+                "2022-06-29-i-connectoid-2":"C",
+                "2022-07-11-i-connectoid-3":"C"
+            }
+}
+plate1 = instance.create_plate("Fluidic-24-well-06-26-2022",4,6,uuids1)
+plate2 = instance.create_plate("Connectoid-plate-06-26-2022",4,6,uuids2)
+experiment1.add_plate(plate1)
+experiment2.add_plate(plate2)
+thing1.set_current_experiment(experiment1)
+thing2.set_current_experiment(experiment2)
+thing1.set_current_plate(plate1)
+thing2.set_current_plate(plate2)
 
