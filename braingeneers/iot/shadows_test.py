@@ -27,126 +27,40 @@ import shadows as sh
 
 from credentials import API_KEY
 
-endpoint = "http://localhost:1337/api"
-Stream_shadow ={
-    "welcome": "aws-iot",
-    "params": {
-        "interval": 1,
-        "stack_size": 15,
-        "stack_offset": 750,
-        "step_size": 50,
-        "camera_params": "-t 4000 -awb off -awbg 1,1 -o",
-        "light_mode": "Above"
-    },
-    "connected": 1659472053691,
-    "timestamp": "2022-07-27T17:49:40",
-    "uuid": "2022-07-11-i-connectoid-3",
-    "time": {
-        "elapsed": 680368,
-        "seconds": 680.368,
-        "minutes": 11.339466666666667
-    },
-    "active_cameras": [
-        "11",
-        "13",
-        "14",
-        "15",
-        "16",
-        "21",
-        "22",
-        "23",
-        "24",
-        "25",
-        "26",
-        "31",
-        "32",
-        "33",
-        "34",
-        "35",
-        "36",
-        "41",
-        "42",
-        "44",
-        "45",
-        "46"
-    ],
-    "num_cameras": 22,
-    "last-upload": "2022-01-17T23:19:09",
-    "experiment-state": "stopped",
-    "group-id": "C"
-}
+# endpoint = "http://localhost:1337/api"
 
 token = API_KEY
 # Create a shadow object
-instance = sh.DatabaseInteractor(overwrite_endpoint=endpoint, overwrite_api_key=token)
-print(instance.endpoint)
-thing = instance.create_interaction_thing("BioPlateScope", "full_test_thing6")
-print(thing)
+# instance = sh.DatabaseInteractor(overwrite_endpoint=endpoint, overwrite_api_key=token)
+instance = sh.DatabaseInteractor()
+# print(instance.list_objects("interaction-tgs"))
+print(instance.list_experiments())
 
-thing2 = instance.create_interaction_thing("BioPlateScope", "Evee")
-thing2.add_to_shadow(Stream_shadow)
-# # thing.attributes["name"] = "name_change_test"
-# thing.push()
-# print(thing)
-# shadow_add = {"boobbbobob" : "gnarpants", "barf" : "gnar", "gwar":{"hello":"world"}}
-thing = instance.create_interaction_thing("BioPlateScope", "full_test_thing6")
-thing.add_to_shadow({"group-id": "C"})
-
-plate = instance.create_plate("testy_plate_obj_6", 2, 4)
-
-print(plate)
-# plate.pull()
-# print(plate)
-thing.set_current_plate(plate)
-print(thing)
-print(plate)
-
-instance.start_image_capture(thing, "test_uuuid_3")
-plate.pull()
-print(plate)
-# thing = instance.add_to_shadow(thing, shadow_add)
-# print("updated thing: ", thing)
-# experiment = instance.create_experiment("test_experiment_obj_7", "test_description")
-# # print(type(experiment))
-# thing = instance.add_experiment_to_thing(thing, experiment)
-# print("added experiment", thing)
-# thing = instance.update_thing_on_database(thing)
-# print(thing)
-
-# thing = instance.add_plate_to_thing(thing, plate)
-# plate = instance.get_plate(plate.id)
-# print(thing)
-# print(plate)
-# print(type(plate))
-# print(type(thing))
-# print(type(experiment))
-# thing.add_to_shadow("fart","sparkle")
-
-# print(thing.to_json())
-
-# thing.add_to_shadow("barg","sparkleeness")
-# thing.add_to_shadow("barg",{"nuts":"sparkle"})
-# print(thing.to_json())
-# print(instance.create_interaction_thing("test_thingy", "BioPlateScope", "test_description", {"test_key": "test_value"}))
-
-# thing = instance.get_thing_from_database("Forky")
-# print(thing.to_json())
-# thing.add_to_shadow("fartt","sparklettt")
-# print(thing.to_json())
-# instance.update_thing_on_database(thing)
-
-
-# print(plate.to_json())
-# instance.sync_plate(plate)
-# plate = instance.get_plate(10)
-# print(plate)
-# experiment = instance.create_experiment("test_experiment_obj_3", "test_description")
-# experiment = instance.get_experiment(9)
-# print(experiment)
-# experiment.plates.append(10)
-# experiment.plates.append(6)
-
-# instance.sync_experiment(experiment)
-# experiment = instance.get_experiment(9)
-# print(experiment)
+# thing1 = instance.create_interaction_thing("BioPlateScope", "StreamTest")
+# thing2 = instance.create_interaction_thing("BioPlateScope", "Evee")
+# experiment1 = instance.create_experiment("Feed-Frequency-06-26-2022","Feed frequency experiment")
+# experiment2 = instance.create_experiment("Connectoids-06-26-2022","Feed frequency experiment")
+# uuids1 = {"uuids":
+#             {
+#                 "2022-06-26-i-feed-frequency-4": "G",
+#                 "2022-06-28-i-feed-frequency-5": "G"
+#             }
+# }
+# uuids2 = {"uuids":
+#             {
+#                 "2022-06-28-i-connectoid" : "C",
+#                 "2022-06-28-i-connectoid-2":"C",
+#                 "2022-06-29-i-connectoids":"C",
+#                 "2022-06-29-i-connectoid-2":"C",
+#                 "2022-07-11-i-connectoid-3":"C"
+#             }
+# }
+# plate1 = instance.create_plate("Fluidic-24-well-06-26-2022",4,6,uuids1)
+# plate2 = instance.create_plate("Connectoid-plate-06-26-2022",4,6,uuids2)
+# experiment1.add_plate(plate1)
+# experiment2.add_plate(plate2)
+# thing1.set_current_experiment(experiment1)
+# thing2.set_current_experiment(experiment2)
+# thing1.set_current_plate(plate1)
+# thing2.set_current_plate(plate2)
 

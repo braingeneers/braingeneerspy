@@ -145,19 +145,6 @@ class DatabaseInteractor:
             # print(response.status_code)
             self.parse_API_response(response.json()['data'])
 
-        def list_objects(self, api_object_id):
-            """
-            when you need a list of the objects in the database
-
-            useful for populating dropdown lists in plotly dash
-            """
-            url = self.endpoint + "/"+  api_object_id +"?populate=%2A"
-            headers = {"Authorization": "Bearer " + self.token}
-            response = requests.get(url, headers=headers)
-            # print(response.json())
-            # print(response.status_code)
-            return response.json()['data']
-
     class __Thing(__API_object):
         def __init__(self, endpoint, api_token):
             super().__init__(endpoint, api_token, "interaction-things")
@@ -197,9 +184,9 @@ class DatabaseInteractor:
 
             updates the current experiment of the thing
             """
-            if self.attributes["experiments"] is None:
-                self.attributes["experiments"] = []
-            self.attributes["experiments"].append(experiment.id)
+            # if self.attributes["experiments"] is None:
+            #     self.attributes["experiments"] = []
+            # self.attributes["experiments"].append(experiment.id)
             self.attributes["current_experiment"] = experiment.id
             self.push()
 
@@ -208,10 +195,9 @@ class DatabaseInteractor:
             super().__init__(endpoint, api_token, "experiments")
 
         def add_plate(self, plate):
-            if self.attributes["plates"] is None:
-                self.attributes["plates"] = []
-            self.attributes["plates"].append(plate.id)
-            self.push()
+            # Bidirectional relations have an owner and a related object, plate owns this relation
+            plate.add_experiment(self)
+            self.pull()
 
     class __Plate(__API_object):
         def __init__(self, endpoint, api_token):
@@ -237,10 +223,14 @@ class DatabaseInteractor:
             if "uuids" not in self.attributes["image_parameters"] or self.attributes["image_parameters"]["uuids"] is None:
                 self.attributes["image_parameters"]["uuids"] = {}
             for key, value in uuid.items():
-                print(key)
-                print(value)
                 self.attributes["image_parameters"]["uuids"][key] = value
 
+            self.push()
+        
+        def add_experiment(self, experiment):
+            if self.attributes["experiments"] is None:
+                self.attributes["experiments"] = []
+            self.attributes["experiments"].append(experiment.id)
             self.push()
 
     class __Well(__API_object):
@@ -258,20 +248,12 @@ class DatabaseInteractor:
         thing.spawn()
         return thing
 
-    def create_plate(self, name, rows, columns):
+    def create_plate(self, name, rows, columns, image_params = {}):
         plate = self.__Plate(self.endpoint, self.token)
         plate.attributes["name"] = name
         plate.attributes["rows"] = rows
         plate.attributes["columns"] = columns
-        image_params = {
-            # "images": True,
-            # "uuids": [
-            #     "2022-07-11-i-connectoid-3",
-            #     "2020-02-07-fluidics-imaging-2"
-            # ],
-            # "group_id": "C"
-        }
-        plate.attributes["image_params"] = image_params
+        plate.attributes["image_parameters"] = image_params
         plate.spawn()
 
         if len(plate.attributes["wells"]) == 0 or plate.attributes["wells"] is None:
@@ -297,7 +279,7 @@ class DatabaseInteractor:
 
     def start_image_capture(self, thing, uuid):
         thing.add_uuid_to_shadow(uuid)
-        group_id = thing.attributes["shadow"]["group_id"]
+        group_id = thing.attributes["shadow"]["group-id"]
         value = { uuid : group_id }
         if thing.attributes["current_plate"]:
             plate = self.__Plate(self.endpoint, self.token)
@@ -309,4 +291,25 @@ class DatabaseInteractor:
             raise Exception("no plate associated with thing")
 
 
+    # a method that returns a list of all experiments by name
+    def list_objects(self, api_object_id):
+        """
+        when you need a list of the objects in the database
+
+        useful for populating dropdown lists in plotly dash
+        """
+        url = self.endpoint + "/"+  api_object_id +"?populate=%2A"
+        headers = {"Authorization": "Bearer " + self.token}
+        response = requests.get(url, headers=headers)
+        # print(response.json())
+        # print(response.status_code)
+        return response.json()['data']
+
+    def list_experiments(self):
+        response = self.list_objects("experiments")
+        output = []
+        for i in response:
+            # print(i["attributes"]["name"])
+            output.append(i["attributes"]["name"])
+        return output
 
