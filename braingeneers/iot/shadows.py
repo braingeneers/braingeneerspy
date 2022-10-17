@@ -292,18 +292,28 @@ class DatabaseInteractor:
 
 
     # a method that returns a list of all experiments by name
-    def list_objects(self, api_object_id):
+    def list_objects(self, api_object_id, filter = "?"):
         """
         when you need a list of the objects in the database
 
         useful for populating dropdown lists in plotly dash
         """
-        url = self.endpoint + "/"+  api_object_id +"?populate=%2A"
+        url = self.endpoint + "/"+  api_object_id + filter +"&populate=%2A"
         headers = {"Authorization": "Bearer " + self.token}
         response = requests.get(url, headers=headers)
         # print(response.json())
         # print(response.status_code)
         return response.json()['data']
+
+    def list_objects_with_name_and_id(self, api_object_id, filter = "?"):
+        """
+        when you need a list of the objects in the database
+
+        returns a list of dictionaries with the name and id of each object
+
+        """
+        response = self.list_objects(api_object_id, filter)
+        return [{"label": x["attributes"]["name"], "value": x["id"]} for x in response]
 
     def list_experiments(self):
         response = self.list_objects("experiments")
@@ -313,3 +323,5 @@ class DatabaseInteractor:
             output.append(i["attributes"]["name"])
         return output
 
+    def list_BioPlateScopes(self):
+        return self.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope")

@@ -24,6 +24,7 @@ Starting an image run
 
 
 import shadows as sh
+import json
 
 from credentials import API_KEY
 
@@ -33,8 +34,9 @@ token = API_KEY
 # Create a shadow object
 # instance = sh.DatabaseInteractor(overwrite_endpoint=endpoint, overwrite_api_key=token)
 instance = sh.DatabaseInteractor()
-# print(instance.list_objects("interaction-tgs"))
-print(instance.list_experiments())
+# print(json.dumps(instance.list_objects("interaction-things", "?filters[type][$eq]=BioPlateScope"), indent=4))
+# print(instance.list_experiments())
+print(instance.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope"))
 
 # thing1 = instance.create_interaction_thing("BioPlateScope", "StreamTest")
 # thing2 = instance.create_interaction_thing("BioPlateScope", "Evee")
