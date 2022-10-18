@@ -334,3 +334,39 @@ class DatabaseInteractor:
         thing.id = thing_id
         thing.pull()
         return thing.attributes["shadow"]
+
+
+
+    """
+    Getters for objects from their id numbers
+    """
+
+    def get_device(self, thing_id):
+        thing = self.__Thing(self.endpoint, self.token)
+        thing.id = thing_id
+        thing.pull()
+        return thing
+    
+    def get_plate(self, plate_id):
+        plate = self.__Plate(self.endpoint, self.token)
+        plate.id = plate_id
+        plate.pull()
+        return plate
+
+    def get_experiment(self, experiment_id):
+        experiment = self.__Experiment(self.endpoint, self.token)
+        experiment.id = experiment_id
+        experiment.pull()
+        return experiment
+
+    def get_sample(self, sample_id):
+        sample = self.__Sample(self.endpoint, self.token)
+        sample.id = sample_id
+        sample.pull()
+        return sample
+
+    def get_well(self, well_id):
+        well = self.__Well(self.endpoint, self.token)
+        well.id = well_id
+        well.pull()
+        return well
