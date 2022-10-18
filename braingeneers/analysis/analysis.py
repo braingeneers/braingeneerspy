@@ -6,10 +6,96 @@ from collections import namedtuple
 import powerlaw
 import os
 import contextlib
+import zipFile
 from braingeneers.utils.data_access_objects import SpikeData, ThresholdedSpikeData
+import braingeneers.utils.smart_open_braingeneers as smart_open
+import pandas as pd
 
 
 DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
+    
+ 
+def read_phy_files(path: str, fs=20000):
+    """
+    :param path: a s3 or local path to a zip of phy files. 
+    :return: SpikeData class with a list of spike time lists and neuron_data.
+             neuron_data = {new_cluster_id:[channel_id, (chan_pos_x, chan_pos_y), 
+                             [chan_template], {channel_id:cluster_templates}]}
+    """
+    assert path[-3:] == 'zip', 'Only zip files supported!'
+    with smart_open.open(path, 'rb') as f:
+        with zipfile.ZipFile(f, 'r') as f_zip:
+            assert 'params.py' in f_zip.namelist(), "Wrong spike sorting output."
+            if 'cluster_info.tsv' in f_zip.namelist():
+                cluster_info = pd.read_csv(f_zip.open('cluster_info.tsv'), sep='\t')
+                groups = list(cluster_info['group'])
+                cluster_ids = list(cluster_info['cluster_id'])
+                ch = list(cluster_info['ch'])
+                labeled_clusters = []
+                best_channels = []
+                for i in range(len(groups)):
+                    if groups[i] != 'noise':
+                        labeled_clusters.append(cluster_ids[i])
+                        best_channels.append(ch[i])
+                clusters = np.load(f_zip.open('spike_clusters.npy'))
+                templates = np.load(f_zip.open('templates.npy')) 
+                channels = np.load(f_zip.open('channel_map.npy'))
+            else:
+                clusters = np.load(f_zip.open('spike_clusters.npy'))
+                templates = np.load(f_zip.open('templates.npy'))  
+                channels = np.load(f_zip.open('channel_map.npy'))
+                labeled_clusters = np.unique(clusters)
+                best_channels = [channels[np.argmax(np.ptp(templates[i], axis=0))][0]
+                                 for i in labeled_clusters]
+
+            spike_templates = np.load(f_zip.open('spike_templates.npy'))
+            spike_times = np.load(f_zip.open('spike_times.npy')) / fs * 1e3    # in ms
+            positions = np.load(f_zip.open('channel_positions.npy'))
+
+    if isinstance(channels[0], np.ndarray):
+        channels = np.asarray(list(itertools.chain.from_iterable(channels)))
+    if isinstance(clusters[0], np.ndarray):
+        clusters = list(itertools.chain.from_iterable(clusters))
+    if isinstance(spike_times[0], np.ndarray):
+        spike_times = list(itertools.chain.from_iterable(spike_times))
+    if isinstance(spike_templates[0], np.ndarray):
+        spike_templates = np.asarray(list(itertools.chain.from_iterable(spike_templates)))
+
+    df = pd.DataFrame({"clusters": clusters, "spikeTimes": spike_times})
+    cluster_spikes = df.groupby("clusters").agg({"spikeTimes": lambda x: list(x)})
+    cluster_spikes = cluster_spikes[cluster_spikes.index.isin(labeled_clusters)]
+    
+    labeled_clusters = np.asarray(labeled_clusters)
+    if max(labeled_clusters) >= templates.shape[0]:   # units can be split or merged during curation
+        ind = np.where(labeled_clusters >= templates.shape[0])[0]
+        for i in ind:
+            spike_ids = np.nonzero(np.in1d(clusters, labeled_clusters[i]))[0]
+            original_cluster = np.unique((spike_templates[spike_ids]))[0] # This process is simplified to
+            # take the first original cluster for the merged clusters because merge happens when
+            # two clusters' template are similar
+            labeled_clusters[i] = original_cluster
+    
+    chan_indices = np.searchsorted(channels, best_channels)
+    cluster_indices = np.searchsorted(np.unique(spike_templates), labeled_clusters)
+    chan_template = templates[cluster_indices, :, chan_indices]
+
+    cluster_templates = []
+    for i in cluster_indices:
+        nbgh_chans = np.nonzero(templates[i].any(0))[0]
+        nbgh_temps = np.transpose(templates[i][:, templates[i].any(0)])
+        nbgh_dict = dict(zip(channels[nbgh_chans], nbgh_temps))
+        cluster_templates.append(nbgh_dict)
+
+    chan_pos = positions[chan_indices]
+
+    # re-assign cluster id
+    new_clusters = np.arange(len(labeled_clusters))
+    neuron_data = dict(zip(new_clusters,
+                       zip(best_channels, chan_pos, chan_template, cluster_templates)))
+    neuron_dict = {0: neuron_data}
+    spikedata = SpikeData(list(cluster_spikes["spikeTimes"]),
+                                   neuron_data=neuron_dict)
+    return spikedata
 
 
 def filter(raw_data, fs_Hz=20000, filter_order=3,
