@@ -6,7 +6,7 @@ from collections import namedtuple
 import powerlaw
 import os
 import contextlib
-import zipFile
+import zipfile
 import braingeneers.utils.smart_open_braingeneers as smart_open
 import pandas as pd
 
