@@ -289,6 +289,23 @@ class SpikeData():
         
         return self.subtime(start, stop)
 
+    
+    def append(self, spikeData, offset=0):
+        '''Appends a spikeData object to the current object
+        
+        :param: spikeData: spikeData object to append
+        '''
+        train = ([np.hstack([tr1, tr2 + self.length + offset]) for tr1, tr2 in zip(self.train,spikeData.train)])
+        raw_data = np.concatenate((self.raw_data, spikeData.raw_data), axis=1)
+        raw_time = np.concatenate((self.raw_time, spikeData.raw_time))
+        length = self.length + spikeData.length + offset
+        assert self.N + spikeData.N, 'Number of neurons must be the same'
+        #metadata = self.metadata + spikeData.metadata
+        #neuron_data = self.neuron_data + spikeData.neuron_data
+        return SpikeData(train, length=length, N=self.N,
+            neuron_data=self.neuron_data,
+            raw_time=raw_time, raw_data=raw_data)
+
 
 
     def sparse_raster(self, bin_size=20):
