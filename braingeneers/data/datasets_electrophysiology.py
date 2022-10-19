@@ -30,6 +30,7 @@ import pandas as pd
 # todo implement load_data for hengenlab
 # todo update existing datasets metadata json files on S3
 
+# todo: david replace this with common utils
 
 def get_basepath():
     """ For S3 or local file access, this returns either s3://braingeneers or the local path up to ephys/UUID/... """
@@ -98,6 +99,21 @@ def load_experiment(batch_uuid, experiment_num):
     except OSError:
         raise OSError('Are you sure experiment number ' + str(experiment_num) + ' exists?')
 
+
+def list_uuids():
+    """
+    List all UUIDs in the archive
+    Returns
+    -------
+    uuids : list
+        List of UUIDs
+    """
+    # return common_utils.file_list('ephys/')
+    if braingeneers.get_default_endpoint().startswith('http'):
+        return [s.split('/')[-2] for s in s3wrangler.list_directories('s3://braingeneers' + '/ephys/')]
+    else:
+        # list file locally
+        return os.listdir(braingeneers.get_default_endpoint() + '/ephys/')
 
 def load_metadata(batch_uuid: str) -> dict:
     """
@@ -673,7 +689,7 @@ def load_data_hengenlab(metadata: dict, batch_uuid: str, experiment_num: int,
     pass  # todo
 
 
-def load_mapping_maxwell(uuid:str, metadata_ephys_exp:dict):
+def load_mapping_maxwell(uuid:str, metadata_ephys_exp:dict, channels:list=None):
     '''
     Loads the mapping of maxwell array from hdf5 file
     
@@ -697,8 +713,10 @@ def load_mapping_maxwell(uuid:str, metadata_ephys_exp:dict):
         with h5py.File(f, 'r') as h5:
             mapping = np.array(h5['mapping']) #ch, elec, x, y
             mapping = pd.DataFrame(mapping)
-    return mapping
-
+    if channels is not None:
+        return mapping[mapping['channel'].isin(channels)]
+    else:
+        return mapping
 
 def load_stims_maxwell(uuid:str, metadata_ephys_exp:dict):
     '''
