@@ -20,6 +20,7 @@ from collections import OrderedDict
 import sortedcontainers
 import itertools
 import posixpath
+import pandas as pd
 
 
 # todo implement hengenlab metadata generator
