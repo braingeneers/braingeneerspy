@@ -271,52 +271,12 @@ def main(uuid: str, experiment: Union[str, int], outputLocation: str, details: L
     datafig = plt.figure(figsize=(16, 2 * len(chans) + 2))
     plot_raw_and_filtered(figure=datafig, uuid=uuid, experiment=experiment, channels=chans, raw_dataset=dataset,
                           filt_dataset=filt_dataset, datalen=datalen)
-    # create chan x 1 subfigs
-    # subfigs = datafig.subfigures(nrows=len(chans), ncols=1)
-    # for index in range(len(chans)):
-    #     subfigs[index].suptitle(f'Channel {chans[index]}')
-    #
-    #     # create 1x2 subplots per subfig
-    #     axs = subfigs[index].subplots(nrows=1, ncols=2, subplot_kw={'anchor': 'SW'},
-    #                                   gridspec_kw={'wspace': 0.15})
-    #     for ax in axs:
-    #         ax.tick_params(bottom=True, labelbottom=True, left=True, labelleft=True, right=False, labelright=False,
-    #                        top=False, labeltop=False)
-    #
-    #     raw_plot = dataset[index]
-    #     filt_plot = filt_dataset[index]
-    #     rawtime = np.arange(np.size(raw_plot)) / fsemg
-    #     filtime = np.arange(np.size(filt_plot)) / fsemg
-    #     axs[0].plot(rawtime, (raw_plot - np.nanmean(raw_plot)) / np.nanstd(raw_plot))
-    #     axs[0].set_xlim(0, datalen)
-    #     # plot filtered data in middle
-    #     axs[1].plot(filtime, (filt_plot - np.nanmean(filt_plot)) / np.nanstd(filt_plot))
-    #     axs[1].set_xlim(0, np.shape(filt_dataset)[1])
+
     datapoints_filename = f'Raw_and_filtered_data_{uuid}_{experiment}_chan_{"-".join(map(str, chans))}.png'
     # spectro_filename = f'Spectrogram_{uuid}_{experiment}_chan_{"-".join(map(str, chans))}.png'
     with open(datapoints_filename, 'wb') as dfig:
         plt.savefig(dfig, format='png')
-    # if not spectro:
-    #     for index in range(len(chans)):
-    #         subfigs[index].suptitle(f'Channel {chans[index]}')
-    #
-    #         # create 1x2 subplots per subfig
-    #         axs = subfigs[index].subplots(nrows=1, ncols=2, subplot_kw={'anchor': 'SW'},
-    #                                       gridspec_kw={'wspace': 0.15})
-    #         for ax in axs:
-    #             ax.tick_params(bottom=True, labelbottom=True, left=True, labelleft=True, right=False, labelright=False,
-    #                            top=False, labeltop=False)
-    #
-    #         raw_plot = dataset[index]
-    #         filt_plot = filt_dataset[index]
-    #         realtime = np.arange(np.size(raw_plot)) / fsemg
-    #         axs[0].plot(realtime, (raw_plot - np.nanmean(raw_plot)) / np.nanstd(raw_plot))
-    #         axs[0].set_xlim(0, datalen)
-    #         # plot filtered data in middle
-    #         axs[1].plot(realtime, (filt_plot - np.nanmean(filt_plot)) / np.nanstd(filt_plot))
-    #         axs[1].set_xlim(0, datalen)
 
-    # here, assume that the data is long enough to do spectrogram with
     if spect:
         specfig = plt.figure(figsize=(16, 2 * len(chans) + 2))
         # fs = fs / fsd
@@ -325,62 +285,7 @@ def main(uuid: str, experiment: Union[str, int], outputLocation: str, details: L
         # filt_dataset = np.hstack(filt_dataset)
         make_spectrogram(figure=specfig, uuid=uuid, channels=chans, filt_dataset=filt_dataset,
                          experiment=experiment, datalen=datalen, fs=fsd)
-        # spectro_subfigs = specfig.subfigures(nrows=len(chans), ncols=1)
-        # for index in range(len(chans)):
-        #     subfigs[index].suptitle(f'Channel {chans[index]}')
-        #     # spectro_subfigs[index].suptitle(f'Channel {chans[index]}')
-        #     # axs now needs 4 columns, but axs2 still is just 1x1
-        #     # axs = subfigs[index].subplots(nrows=1, ncols=4) This line is not the issue, the issue is savefig
-        #     axs = subfigs[index].subplots(nrows=1, ncols=2)
-        #     # axs2 = spectro_subfigs[index].subplots(nrows=1, ncols=1)
-        #
-        #     for ax in axs:
-        #         ax.tick_params(bottom=True, labelbottom=True, left=True, labelleft=True, right=False, labelright=False,
-        #                        top=False, labeltop=False)
-        #     # axs2.tick_params(bottom=True, labelbottom=True, left=True, labelleft=True, right=False,
-        #     #                     labelright=False,
-        #     #                     top=False, labeltop=False)
-        #
-        #     raw_plot = dataset[index]
-        #     filt_plot = filt_dataset[index]
-        #     realtime = np.arange(np.size(raw_plot)) / fsemg
-        #     axs[0].plot(realtime, (raw_plot - np.nanmean(raw_plot)) / np.nanstd(raw_plot))
-        #     axs[0].set_xlim(0, datalen)
-        #     # plot filtered data in middle
-        #     axs[1].plot(realtime, (filt_plot - np.nanmean(filt_plot)) / np.nanstd(filt_plot))
-        #     axs[1].set_xlim(0, datalen)
 
-        # raw_plot_1 = dataset[index][:20000]  # 1 second
-        # raw_plot_10 = dataset[index][:200000]  # 10 seconds
-        # filt_plot = filt_dataset[index]
-        # filt_plot_1 = filt_plot[:20000]
-        # filt_plot_10 = filt_plot[:200000]
-        #
-        # realtime_1 = np.arange(np.size(raw_plot_1)) / fsemg
-        # realtime_10 = np.arange(np.size(raw_plot_10)) / fsemg
-        # axs[0].plot(realtime_1, (raw_plot_1 - np.nanmean(raw_plot_1)) / np.nanstd(raw_plot_1))
-        # axs[0].set_xlim(0, 20000)
-        # # plot filtered data in middle
-        # axs[1].plot(realtime_1, (filt_plot_1 - np.nanmean(filt_plot_1)) / np.nanstd(filt_plot_1))
-        # axs[1].set_xlim(0, 20000)
-        #
-        # axs[2].plot(realtime_10, (raw_plot_10 - np.nanmean(raw_plot_10)) / np.nanstd(raw_plot_10))
-        # axs[2].set_xlim(0, 200000)
-        #
-        # axs[3].plot(realtime_10, (filt_plot_10 - np.nanmean(filt_plot_10)) / np.nanstd(filt_plot_10))
-        # axs[3].set_xlim(0, 200000)
-        # plot
-        # for spectrogram
-        # freq, times, spec = ssig.spectrogram(filt_plot, fs, window='hamming', nperseg=1000, noverlap=1000 - 1,
-        #                                      mode='psd')
-        # fmax = 64
-        # fmin = 1
-        # x_mesh, y_mesh = np.meshgrid(times, freq[(freq <= fmax) & (freq >= fmin)])
-        # axs2.pcolormesh(x_mesh, y_mesh, np.log10(spec[(freq <= fmax) & (freq >= fmin)]), cmap='jet',
-        #                    shading='auto')
-
-    # with open(spectro_filename, 'wb') as sfig:
-    #     plt.savefig(sfig, format='png')
     # then, if it's meant to be on s3, awswrangle it up there.
     if outputLocation == 's3':
         # Check if file exists
