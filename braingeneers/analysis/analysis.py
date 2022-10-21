@@ -12,13 +12,13 @@ import pandas as pd
 
 
 DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
-    
- 
+
+
 def read_phy_files(path: str, fs=20000):
     """
-    :param path: a s3 or local path to a zip of phy files. 
+    :param path: a s3 or local path to a zip of phy files.
     :return: SpikeData class with a list of spike time lists and neuron_data.
-             neuron_data = {new_cluster_id:[channel_id, (chan_pos_x, chan_pos_y), 
+             neuron_data = {new_cluster_id:[channel_id, (chan_pos_x, chan_pos_y),
                              [chan_template], {channel_id:cluster_templates}]}
     """
     assert path[-3:] == 'zip', 'Only zip files supported!'
@@ -37,11 +37,11 @@ def read_phy_files(path: str, fs=20000):
                         labeled_clusters.append(cluster_ids[i])
                         best_channels.append(ch[i])
                 clusters = np.load(f_zip.open('spike_clusters.npy'))
-                templates = np.load(f_zip.open('templates.npy')) 
+                templates = np.load(f_zip.open('templates.npy'))
                 channels = np.load(f_zip.open('channel_map.npy'))
             else:
                 clusters = np.load(f_zip.open('spike_clusters.npy'))
-                templates = np.load(f_zip.open('templates.npy'))  
+                templates = np.load(f_zip.open('templates.npy'))
                 channels = np.load(f_zip.open('channel_map.npy'))
                 labeled_clusters = np.unique(clusters)
                 best_channels = [channels[np.argmax(np.ptp(templates[i], axis=0))][0]
@@ -63,7 +63,7 @@ def read_phy_files(path: str, fs=20000):
     df = pd.DataFrame({"clusters": clusters, "spikeTimes": spike_times})
     cluster_spikes = df.groupby("clusters").agg({"spikeTimes": lambda x: list(x)})
     cluster_spikes = cluster_spikes[cluster_spikes.index.isin(labeled_clusters)]
-    
+
     labeled_clusters = np.asarray(labeled_clusters)
     if max(labeled_clusters) >= templates.shape[0]:   # units can be split or merged during curation
         ind = np.where(labeled_clusters >= templates.shape[0])[0]
@@ -73,7 +73,7 @@ def read_phy_files(path: str, fs=20000):
             # take the first original cluster for the merged clusters because merge happens when
             # two clusters' template are similar
             labeled_clusters[i] = original_cluster
-    
+
     chan_indices = np.searchsorted(channels, best_channels)
     cluster_indices = np.searchsorted(np.unique(spike_templates), labeled_clusters)
     chan_template = templates[cluster_indices, :, chan_indices]
@@ -146,7 +146,7 @@ class SpikeData:
                 try:
                     N = arg2
                     cells = np.arange(N) + 1
-                except ValueError:
+                except (TypeError, ValueError):
                     cells = np.array(arg2)
                     N = cells.max()
                 cellrev = np.zeros(N + 1, int)
@@ -280,13 +280,14 @@ class SpikeData:
         else:
             raise ValueError(f'Unknown unit {unit} (try Hz or kHz)')
 
-    def resampled_isi(self, times, sigma_ms):
+    def resampled_isi(self, times, sigma_ms=10.0):
         '''
         Calculate firing rate at the given times by interpolating the
         inverse ISI, considered valid in between any two spikes. If any
         neuron has only one spike, the rate is assumed to be zero.
         '''
-        return np.array([_resampled_isi(t, times, sigma_ms) for t in self.train])
+        return np.array([_resampled_isi(t, times, sigma_ms)
+                         for t in self.train])
 
     def subset(self, units, by=None):
         '''
@@ -370,10 +371,10 @@ class SpikeData:
 
         return self.subtime(start, stop)
 
-    
+
     def append(self, spikeData, offset=0):
         '''Appends a spikeData object to the current object
-        
+
         :param: spikeData: spikeData object to append
         '''
         train = ([np.hstack([tr1, tr2 + self.length + offset]) for tr1, tr2 in zip(self.train,spikeData.train)])
@@ -620,7 +621,7 @@ class SpikeData:
 
         return self.latencies(self.train[i], window_ms)
 
-    
+
 def filter(raw_data, fs_Hz=20000, filter_order=3,
                 filter_lo_Hz=300, filter_hi_Hz=6000,
                 time_step_size_s=10, channel_step_size = 100,
@@ -641,11 +642,11 @@ def filter(raw_data, fs_Hz=20000, filter_order=3,
 
     :return: filtered data
     '''
-    
+
 
     time_step_size = int(time_step_size_s * fs_Hz)
     data = np.zeros_like(raw_data)
-    
+
 
     # Get filter params
     b, a = signal.butter(fs=fs_Hz, btype='bandpass', #output='sos',
@@ -655,22 +656,21 @@ def filter(raw_data, fs_Hz=20000, filter_order=3,
         # Filter initial state
         zi = signal.lfilter_zi(b, a)
         zi = np.vstack([zi*np.mean(raw_data[ch,:5]) for ch in range(raw_data.shape[0])])
-    
 
     # Step through the data in chunks and filter it
     for ch_start in range(0, raw_data.shape[0], channel_step_size):
         ch_end = min(ch_start + channel_step_size, raw_data.shape[0])
-        
+
         if verbose:
             print(f'Filtering channels {ch_start} to {ch_end}')
 
         for t_start in range(0, raw_data.shape[1], time_step_size):
             t_end = min(t_start + time_step_size, raw_data.shape[1])
-            
+
             data[ch_start:ch_end, t_start:t_end], zi[ch_start:ch_end,:] = signal.lfilter(
-                    b, a, raw_data[ch_start:ch_end, t_start:t_end], 
+                    b, a, raw_data[ch_start:ch_end, t_start:t_end],
                     axis=1, zi=zi[ch_start:ch_end,:])
-    
+
     return data if not return_zi else (data, zi)
 
 
@@ -678,7 +678,7 @@ def filter(raw_data, fs_Hz=20000, filter_order=3,
         # for f_step in np.arange(filter_step_size, raw_data.shape[1],
         #                         filter_step_size):
         #     # Filter one chunk of data.
-            
+
         #     print('filtering')
         #     y, zi = signal.lfilter(b, a,
         #                 raw_data[:, f_step-filter_step_size:f_step], zi=zi)
@@ -693,9 +693,9 @@ def filter(raw_data, fs_Hz=20000, filter_order=3,
         #                     raw_data[:, f_step:], zi=zi)
         #         # Save the filtered chunk.
         #         data[:, f_step:] = y
-            
 
-def _resampled_isi(spikes, times, sigma_ms=10.0):
+
+def _resampled_isi(spikes, times, sigma_ms):
     '''
     Calculate the firing rate of a spike train at specific times, based on
     the reciprocal inter-spike interval. It is assumed to have been sampled
@@ -709,8 +709,10 @@ def _resampled_isi(spikes, times, sigma_ms=10.0):
     else:
         x = 0.5*(spikes[:-1] + spikes[1:])
         y = 1/np.diff(spikes)
-        fr = interpolate.interp1d(x, y, kind='linear', fill_value=0,
-                                  bounds_error=False)(times)
+        fr = np.interp(times, x, y)
+        if len(np.atleast_1d(fr)) < 2:
+            return fr
+
         dt_ms = times[1] - times[0]
         sigma = sigma_ms / dt_ms
         if sigma > 0:

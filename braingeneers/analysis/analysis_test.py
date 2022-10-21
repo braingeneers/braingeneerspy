@@ -11,7 +11,7 @@ class DerpSpikeRecorder:
     def __init__(self, idces, times):
         self.events = dict(senders=idces, times=times)
     def __getattr__(self, attr):
-        return self.__dict__[attr]
+        return self.events[attr]
     def __iter__(self):
         yield self
 
@@ -526,7 +526,8 @@ class AnalysisTest(unittest.TestCase):
         # give you exactly the correct rate, here 1 kHz.
         spikes = np.arange(10)
         when = np.random.rand(1000) * 12 - 1
-        self.assertAll(ba.analysis._resampled_isi(spikes, when) == 1)
+        self.assertAll(ba.analysis._resampled_isi(spikes, when,
+                                                  sigma_ms=0.0) == 1)
 
         # Also check that the rate is correctly calculated for some varying
         # examples.
