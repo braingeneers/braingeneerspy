@@ -7,8 +7,6 @@ import powerlaw
 import os
 import contextlib
 import zipfile
-import braingeneers.utils.smart_open_braingeneers as smart_open
-import pandas as pd
 
 
 DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
@@ -22,6 +20,7 @@ def read_phy_files(path: str, fs=20000):
                              [chan_template], {channel_id:cluster_templates}]}
     """
     assert path[-3:] == 'zip', 'Only zip files supported!'
+    import braingeneers.utils.smart_open_braingeneers as smart_open
     with smart_open.open(path, 'rb') as f:
         with zipfile.ZipFile(f, 'r') as f_zip:
             assert 'params.py' in f_zip.namelist(), "Wrong spike sorting output."
