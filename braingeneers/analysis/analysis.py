@@ -1,6 +1,6 @@
 import heapq
 import numpy as np
-from scipy import sparse, stats, signal
+from scipy import sparse, stats, signal, interpolate, ndimage
 import itertools
 from collections import namedtuple
 import powerlaw
@@ -280,13 +280,13 @@ class SpikeData:
         else:
             raise ValueError(f'Unknown unit {unit} (try Hz or kHz)')
 
-    def resampled_isi(self, times):
+    def resampled_isi(self, times, sigma_ms):
         '''
         Calculate firing rate at the given times by interpolating the
         inverse ISI, considered valid in between any two spikes. If any
         neuron has only one spike, the rate is assumed to be zero.
         '''
-        return np.array([_resampled_isi(t, times) for t in self.train])
+        return np.array([_resampled_isi(t, times, sigma_ms) for t in self.train])
 
     def subset(self, units, by=None):
         '''
@@ -695,11 +695,12 @@ def filter(raw_data, fs_Hz=20000, filter_order=3,
         #         data[:, f_step:] = y
             
 
-def _resampled_isi(spikes, times):
+def _resampled_isi(spikes, times, sigma_ms=10.0):
     '''
     Calculate the firing rate of a spike train at specific times, based on
     the reciprocal inter-spike interval. It is assumed to have been sampled
-    halfway between any two given spikes, and then linearly interpolated.
+    halfway between any two given spikes, interpolated, and then smoothed by
+    a Gaussian kernel with the given width.
     '''
     if len(spikes) == 0:
         return np.zeros_like(times)
@@ -708,7 +709,14 @@ def _resampled_isi(spikes, times):
     else:
         x = 0.5*(spikes[:-1] + spikes[1:])
         y = 1/np.diff(spikes)
-        return np.interp(times, x, y)
+        fr = interpolate.interp1d(x, y, kind='linear', fill_value=0,
+                                  bounds_error=False)(times)
+        dt_ms = times[1] - times[0]
+        sigma = sigma_ms / dt_ms
+        if sigma > 0:
+            return ndimage.gaussian_filter1d(fr, sigma)
+        else:
+            return fr
 
 
 def _p_and_alpha(data, N_surrogate=1000, pval_truncated=0.0):

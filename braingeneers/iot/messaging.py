@@ -58,7 +58,7 @@ class MessageBroker:
         #
         # Publish/subscribe to data streams (can be large chunks of data)
         #
-        publish_data_stream(stream_name: str, data: dict, stream_size: int)  # publish large data to a stream.
+        publish_data_stream(stream_name: str, data: dict, stream_range: int)  # publish large data to a stream.
         subscribe_data_stream(stream_name: str, callback: Callable)  # subscribe to data on a raw data stream.
         poll_data_stream(stream_name: str, last_update_timestamp: str)  # returns a list of (time_str, data_dict) tuples since the last time stamp, non blocking. It's preferrable to use subscribe_data_stream unless polling is required, see function docs.
 

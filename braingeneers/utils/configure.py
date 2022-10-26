@@ -5,7 +5,7 @@ from typing import List, Tuple, Union, Iterable, Iterator
 import re
 import itertools
 import importlib
-import distutils
+import distutils.util
 
 
 """
@@ -31,13 +31,15 @@ DEPENDENCIES = {
         'requests',
         'numpy',
         'tenacity',
-        'sortedcontainers',
-        'boto3',  # if version conflicts occur revert to above version
+        # 'sortedcontainers',
+        'boto3',
     ],
     'data': [
         'h5py',
-        'smart_open>=5.1.0',
+        'smart_open @ git+https://github.com/davidparks21/smart_open.git@develop',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
         'awswrangler',
+        'pandas',
+        'nptyping',
     ],
     # Specific dependency groups allow unnecessary (and often large) dependencies to be skipped
     # add dependency groups here, changes will be dynamically added to setup(...)
@@ -57,8 +59,7 @@ DEPENDENCIES = {
         'scikit-learn',
     ],
     'hengenlab': [
-        'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git',
-        'sahara_work @ git+https://github.com/hengenlab/sahara_work.git',
+        'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git',  # channel mapping information
     ],
 }
 
@@ -73,7 +74,7 @@ def get_default_endpoint() -> str:
     return CURRENT_ENDPOINT
 
 
-def set_default_endpoint(endpoint: str = None) -> None:
+def set_default_endpoint(endpoint: str = None, verify_ssl_cert: bool = True) -> None:
     """
     Sets the default S3 endpoint and (re)configures braingeneers.utils.smart_open and
     braingeneers.utils.s3wrangler to utilize the new endpoint. This endpoint may also be set
@@ -86,6 +87,8 @@ def set_default_endpoint(endpoint: str = None) -> None:
 
     :param endpoint: S3 or local-path endpoint as shown in examples above, if None will look for ENDPOINT
         environment variable, then default to DEFAULT_ENDPOINT if not found.
+    :param verify_ssl_cert: advanced option, should be True (default) unless there's a specific reason to disable
+        it. An example use case: when using a proxy server this must be disabled.
     """
     # lazy loading of imports is necessary so that we don't import these classes with braingeneers root
     # these imports can cause SSL warning messages for some users, so it's especially important to avoid
@@ -99,7 +102,9 @@ def set_default_endpoint(endpoint: str = None) -> None:
 
     # smart_open
     if endpoint.startswith('http'):
-        transport_params = {'client': boto3.Session().client('s3', endpoint_url=endpoint)}
+        transport_params = {
+            'client': boto3.Session().client('s3', endpoint_url=endpoint, verify=verify_ssl_cert),
+        }
         _open = functools.partial(smart_open.open, transport_params=transport_params)
     else:
         _open = smart_open.open

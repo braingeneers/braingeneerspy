@@ -1,10 +1,12 @@
 import unittest
-
 import braingeneers
 import braingeneers.data.datasets_electrophysiology as ephys
 import json
 from braingeneers import skip_unittest_if_offline
-import braingeneers.utils.smart_open_braingeneers as smart_open
+# import braingeneers.utils.smart_open_braingeneers as smart_open
+import smart_open
+import boto3
+import numpy as np
 
 
 class MaxwellReaderTests(unittest.TestCase):
@@ -71,7 +73,7 @@ class AxionReaderTests(unittest.TestCase):
         self.assertEqual(metadata['uuid'], self.batch_uuid)
         self.assertEqual(len(metadata), 6)
 
-        self.assertEqual(experiment0['hardware'], 'Axion BioSystems')
+        self.assertEqual(experiment0['hardware'], 'Axion')
         self.assertEqual(experiment0['name'], 'A1')
         self.assertEqual(experiment0['notes'], '')
         self.assertEqual(experiment0['num_channels'], 384)  # 6 well, 64 channel per well
@@ -174,7 +176,7 @@ class AxionReaderTests(unittest.TestCase):
         :return:
         """
         metadata = ephys.load_metadata('2021-09-23-e-MR-89-0526-drug-3hr')
-        data = ephys.load_data(metadata=metadata, experiment='D2', offset=0, length=450000, channels=[0, 2, 6, 7])
+        ephys.load_data(metadata=metadata, experiment='D2', offset=0, length=450000, channels=[0, 2, 6, 7])
         self.assertTrue('No exception, no problem.')
 
 
@@ -182,25 +184,92 @@ class HengenlabReaderTests(unittest.TestCase):
     batch_uuid = '2020-04-12-e-hengenlab-caf26'
 
     @skip_unittest_if_offline
+    def test_online_load_data_hengenlab_across_data_files(self):
+        metadata = ephys.load_metadata(batch_uuid=self.batch_uuid)
+
+        # Read across 2 data files
+        data = ephys.load_data(
+            metadata=metadata,
+            experiment='experiment1',
+            offset=7500000 - 2,
+            length=4,
+            dtype='int16',
+        )
+
+        self.assertEqual((192, 4), data.shape)
+        self.assertEqual([-1072, -1128, -1112, -1108], data[1, :].tolist())  # manually checked values using ntk without applying gain
+        self.assertEqual(np.int16, data.dtype)
+
+    @skip_unittest_if_offline
+    def test_online_load_data_hengenlab_select_channels(self):
+        metadata = ephys.load_metadata(batch_uuid=self.batch_uuid)
+
+        # Read across 2 data files
+        data = ephys.load_data(
+            metadata=metadata,
+            experiment='experiment1',
+            offset=7500000 - 2,
+            length=4,
+            channels=[0, 1],
+            dtype='int16',
+        )
+
+        self.assertEqual([-1072, -1128, -1112, -1108], data[1, :].tolist())  # manually checked values using ntk without applying gain
+        self.assertEqual((2, 4), data.shape)
+        self.assertEqual(np.int16, data.dtype)
+
+    @skip_unittest_if_offline
+    def test_online_load_data_hengenlab_float32(self):
+        metadata = ephys.load_metadata(batch_uuid=self.batch_uuid)
+
+        # Read across 2 data files
+        data = ephys.load_data(
+            metadata=metadata,
+            experiment='experiment1',
+            offset=7500000 - 2,
+            length=4,
+            dtype='float32',
+        )
+
+        gain = np.float64(0.19073486328125)
+        expected_raw = [-1072, -1128, -1112, -1108]
+        expected_float32 = np.array(expected_raw, dtype=np.int16) * gain
+
+        # this can't be checked with ntk easily because ntk also applies an odd int16 scaling of the data
+        self.assertTrue(np.all(expected_float32 == data[1, :]))
+        self.assertEqual((192, 4), data.shape)
+        self.assertEqual(np.float32, data.dtype)
+
+    @skip_unittest_if_offline
     def test_online_generate_metadata(self):
         metadata = ephys.generate_metadata_hengenlab(
             batch_uuid=self.batch_uuid,
             dataset_name='CAF26',
+            save=False,
         )
 
-        self.assertEqual(metadata['issue'], '')
-        self.assertEqual(metadata['notes'], '')
-        self.assertEqual(metadata['timestamp'], '2020-08-07T14:00:15')
+        # top level items
         self.assertEqual(metadata['uuid'], '2020-04-12-e-hengenlab-caf26')
+        self.assertEqual(metadata['timestamp'], '2020-08-07T14:00:15')
+        self.assertEqual(metadata['issue'], '')
+        self.assertEqual(metadata['headstage_types'], ['EAB50chmap_00', 'APT_PCB', 'APT_PCB'])
+
+        # notes
+        self.assertEqual(metadata['notes']['biology']['sample_type'], 'mouse')
+        self.assertEqual(metadata['notes']['biology']['dataset_name'], 'CAF26')
+        self.assertEqual(metadata['notes']['biology']['birthday'], '2020-02-20T07:30:00')
+        self.assertEqual(metadata['notes']['biology']['genotype'], 'wt')
+
+        # ephys_experiments
         self.assertEqual(len(metadata['ephys_experiments']), 1)
+        self.assertTrue(isinstance(metadata['ephys_experiments'], list))
 
         experiment = metadata['ephys_experiments'][0]
         self.assertEqual(experiment['name'], 'experiment1')
-        self.assertEqual(experiment['hardware'], 'Hengenlab eCube')
-        self.assertEqual(experiment['notes'], '')
+        self.assertEqual(experiment['hardware'], 'Hengenlab')
         self.assertEqual(experiment['num_channels'], 192)
         self.assertEqual(experiment['sample_rate'], 25000)
-        self.assertEqual(experiment['voltage_scaling_factor'], 'TODO')
+        self.assertEqual(experiment['voltage_scaling_factor'], 0.19073486328125)
         self.assertEqual(experiment['timestamp'], '2020-08-07T14:00:15')
         self.assertEqual(experiment['units'], '\u00b5V')
         self.assertEqual(experiment['version'], '1.0.0')
@@ -210,9 +279,7 @@ class HengenlabReaderTests(unittest.TestCase):
         self.assertEqual(block1['num_frames'], 7500000)
         self.assertEqual(block1['path'], 'original/experiment1/Headstages_192_Channels_int16_2020-08-07_14-05-16.bin')
         self.assertEqual(block1['timestamp'], '2020-08-07T14:05:16')
-        self.assertEqual(block1['ecube_time'], None)  # todo
-
-        self.fail()
+        self.assertEqual(block1['ecube_time'], 301061600050)
 
 
 if __name__ == '__main__':
