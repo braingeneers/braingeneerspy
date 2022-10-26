@@ -654,7 +654,7 @@ def filter(raw_data, fs_Hz=20000, filter_order=3,
     if zi is None:
         # Filter initial state
         zi = signal.lfilter_zi(b, a)
-        zi = np.vstack([zi*raw_data[ch,0] for ch in range(raw_data.shape[0])])
+        zi = np.vstack([zi*np.mean(raw_data[ch,:5]) for ch in range(raw_data.shape[0])])
     
 
     # Step through the data in chunks and filter it
