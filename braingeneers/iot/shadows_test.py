@@ -29,13 +29,15 @@ import json
 from credentials import API_KEY
 
 # endpoint = "http://localhost:1337/api"
+endpoint = "http://braingeneers.gi.ucsc.edu:1337/api"
+ENPOINT = http://braingeneers.gi.ucsc.edu:1337/api
 
 token = API_KEY
 # Create a shadow object
-# instance = sh.DatabaseInteractor(overwrite_endpoint=endpoint, overwrite_api_key=token)
-instance = sh.DatabaseInteractor()
-print(json.dumps(instance.get_device_state(13), indent=4))
-# print(instance.list_experiments())
+instance = sh.DatabaseInteractor(overwrite_endpoint = ENDPOINT)
+# instance = sh.DatabaseInteractor()
+# print(json.dumps(instance.get_device_state(13), indent=4))
+print(instance.list_experiments())
 # print(instance.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope"))
 
 # thing1 = instance.create_interaction_thing("BioPlateScope", "StreamTest")
