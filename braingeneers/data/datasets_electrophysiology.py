@@ -911,12 +911,15 @@ def load_gpio_maxwell(dataset_path, fs=20000):
     with smart_open.open(dataset_path, 'rb') as f:
         with h5py.File(f, 'r') as dataset:
             assert 'bits' in dataset.keys(), 'No GPIO event in the dataset!'
-            bits_dataframe = [dataset['bits'][i][0] for i in range(len(dataset['bits']))]  
+            bits_dataset = list(dataset['bits'])
+            bits_dataframe = [bits_dataset[i][0] for i in range(len(bits_dataset))]  
             rec_startframe = dataset['sig'][-1, 0] << 16 | dataset['sig'][-2, 0]
-
-    stim_pairs = (np.array(bits_dataframe) - rec_startframe).reshape(len(bits_dataframe) // 2, 2)
-    stim_pairs = stim_pairs / fs
-    return stim_pairs
+    if len(bits_dataframe) % 2 == 0:
+        stim_pairs = (np.array(bits_dataframe) - rec_startframe).reshape(len(bits_dataframe) // 2, 2)
+        return stim_pairs / fs
+    else:
+        print("Odd number of GPIO events can't be paired. Here returns all the events.")
+        return (np.array(bits_dataframe) - rec_startframe)/fs
 
 
 
