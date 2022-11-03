@@ -30,8 +30,7 @@ REDIS_PORT = 6379
 logger = logging.getLogger()
 logger.level = logging.INFO
 
-MQTT_ENDPOINT = 'braingeneers.gi.ucsc.edu'
-port = 1883
+
 
 
 class CallableQueue(queue.Queue):
@@ -118,11 +117,17 @@ class MessageBroker:
                                                 'profile-id is missing from the [braingeneers-mqtt] section.'
         assert 'profile-key' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
                                                 'profile-key was not found under the [braingeneers-mqtt] section.'
+        assert 'endpoint' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
+                                                'endpoint was not found under the [braingeneers-mqtt] section.'
+        assert 'port' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
+                                                'port was not found under the [braingeneers-mqtt] section.'
 
         self.certs_temp_dir = None
         self._mqtt_connection = None
         self._mqtt_profile_id = config['braingeneers-mqtt']['profile-id']
         self._mqtt_profile_key = config['braingeneers-mqtt']['profile-key']
+        self._mqtt_endpoint = config['braingeneers-mqtt']['endpoint']
+        self._mqtt_port = int(config['braingeneers-mqtt']['port'])
         self._boto_iot_client = None
         self._boto_iot_data_client = None
         self._redis_client = None
@@ -504,7 +509,7 @@ class MessageBroker:
             self._mqtt_connection = mqtt_client.Client(client_id)
             self._mqtt_connection.username_pw_set(self._mqtt_profile_id, self._mqtt_profile_key)
             self._mqtt_connection.on_connect = on_connect
-            self._mqtt_connection.connect(MQTT_ENDPOINT, port)
+            self._mqtt_connection.connect(self._mqtt_endpoint, self._mqtt_port)
             self._mqtt_connection.loop_start()
             
     
