@@ -141,8 +141,11 @@ class DatabaseInteractor:
             url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
             headers = {"Authorization": "Bearer " + self.token}
             response = requests.get(url, headers=headers)
+            if len(response.json()['data']) == 0:
+                raise Exception("Object not found")
             # print(response.json())
             # print(response.status_code)
+
             self.parse_API_response(response.json()['data'])
 
         def get_by_name(self, name):
@@ -359,11 +362,18 @@ class DatabaseInteractor:
     Getters for objects from their id numbers
     """
 
-    def get_device(self, thing_id):
-        thing = self.__Thing(self.endpoint, self.token)
-        thing.id = thing_id
-        thing.pull()
-        return thing
+    def get_device(self, thing_id= None, name = None):
+        if thing_id is None and name is None:
+            raise Exception("must provide either thing_id or name")
+        if name:
+            thing = self.__Thing(self.endpoint, self.token)
+            thing.get_by_name(name)
+            return thing
+        else:
+            thing = self.__Thing(self.endpoint, self.token)
+            thing.id = thing_id
+            thing.pull()
+            return thing
     
     def get_plate(self, plate_id):
         plate = self.__Plate(self.endpoint, self.token)

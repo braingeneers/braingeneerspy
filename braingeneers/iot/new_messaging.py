@@ -251,212 +251,67 @@ class MessageBroker:
 
         return callback
 
+    def list_devices_by_type(self, thingTypeName) -> List[str]:
+        """
+        Lists devices, filtered by thingtype. Returns
+        a list of device names in string format along with the device id in the database.
 
-    # def publish_data_stream(self, stream_name: str, data: Dict[Union[str, bytes], bytes], stream_size: int) -> None:
-    #     """
-    #     Publish (potentially large) data to a stream.
+        Example usage:
+        list_devices_by_type("BioPlateScope")
 
-    #     :param stream_name: string name of the stream.
-    #     :param data: a dictionary of data, may contain large data, keys are string or bytes and values must bytes type.
-    #     :param stream_size: the maximum published data points to keep on the stream (technically approximate for efficiency)
-    #     :return:
-    #     """
-    #     data_bytes_type = {k.encode('utf-8') if isinstance(k, str) else k: v for k, v in data.items()}
+        This is a wrapper for the function located in the shadows interface, provided here for legacy compatibility.
 
-    #     self.redis_client.xadd(
-    #         name=stream_name,
-    #         fields=data_bytes_type,
-    #         maxlen=stream_size,
-    #         approximate=True
-    #     )
-
-#     def subscribe_data_stream(self, stream_name: (str, List[str]), callback: Callable,
-#                               include_existing_stream_data: bool = True) -> Callable:
-#         """
-#         Data streams are intended for streaming larger chunks of data vs. small messages.
-
-#         Subscribes to all new data on one or more stream(s). callback is a function with signature
-
-#           def mycallback(stream_name:str, data: Dict[bytes, bytes])
-
-#         data is a BLOBs (binary data). uuid_timestamp is the update time (note: not a standard unix timestamp format)
-
-#         This function asynchronously calls callback each time new data is available. If you prefer to poll for
-#         new data use the `poll_data_stream` function instead. Note that if you subscribe to a stream
-#         multiple times you will get multiple callbacks, this function should only be called once.
-
-#         To poll for updates instead of receiving an asynchronous push use the following example:
-
-#             client = MqttClient('test')  # device named test
-#             q = messaging.CallableQueue()  # a queue.Queue object that stores (stream_name, data) tuples
-#             client.subscribe_data_stream('test', q)  # subscribe to all topics under test
-#             topic, message = q.get()
-#             print(f'Topic {topic} received message {message}')  # Print message
-
-#         :param stream_name: name of the data stream, see standard naming convention documentation at:
-#             https://github.com/braingeneers/redis
-#         :param callback: a self defined function with signature defined above.
-#         :param include_existing_stream_data: sends all data in the stream if True (default), otherwise
-#             only sends new data on the stream after the subscribe_data_stream function was called.
-#         :return: the original callable, this is returned for convenience sake only, it's not altered in any way.
-#         """
-#         stream_names = [stream_name] if isinstance(stream_name, str) else stream_name
-
-#         for stream_name in stream_names:
-#             if stream_name in self._subscribed_data_streams:
-#                 raise AttributeError(f'Stream {stream_name} is already subscribed, can\'t '
-#                                      f'subscribe to the same stream twice.')
-
-#         logging.debug(f'Subscribing to data stream {stream_name} using callback {callback}')
-#         t = threading.Thread(
-#             target=self._redis_xread_thread,
-#             args=(stream_names, callback, include_existing_stream_data)
-#         )
-#         t.name = f'redis_listener_{stream_name}'
-#         t.daemon = True
-#         self._subscribed_data_streams.add(stream_name)
-#         t.start()
-#         return callback
-
-#     def poll_data_streams(self, stream_names_to_timestamps_dict: dict, count: int = -1) \
-#             -> List[List[Union[bytes, List[Tuple[bytes, Dict[bytes, bytes]]]]]]:
-#         """
-#         subscribe_data_stream is preferred to poll_data_stream in most cases, this function is included for specific
-#         uses cases when maintaining an open connection is infeasible, such as with individual worker processes. It's
-#         recommended to use subscribe_data_stream unless you have a specific reason to use poll_data_stream.
-
-#         :param stream_names_to_timestamps_dict: dictionary of {stream_name: last_update_timestamp} for 1 or more streams.
-#             The last timestamp received in the previous call, will be a string. Use '-' to
-#             get all available data on the stream, subsequent calls should use the timestamp received in
-#             the previous call.
-#         :param count: maximum number of entries to return, -1 for as many as are available.
-#         :return: a list of (last_update_timestamp, data_dict) pairs. Empty list if no data is available
-#             after waiting block_ms milliseconds or block_ms is None.
-#         """
-#         # update timestamps to be exclusive (required for a pre Redis 6.2 version only)
-#         streams_exclusive = {k: self._update_timestamp_exclusive(v) for k, v in stream_names_to_timestamps_dict.items()}
-
-#         result = self.redis_client.xread(streams=streams_exclusive, count=count if count >= 1 else None)
-#         return result
-
-#     def list_devices_by_type(self, **filters) -> List[str]:
-#         """
-#         Lists devices, filtered by one or more keyword arguments. Returns
-#         a list of device names in string format.
+        """
         
-#         request keyword list syntax:
-        
-#         response = client.list_things(
-#             nextToken='string',
-#             maxResults=123,
-#             attributeName='string',
-#             attributeValue='string',
-#             thingTypeName='string',
-#             usePrefixAttributeValue=True|False
-#         )
-
-#         Example usage:
-#         list_devices_by_type() 
-#         list_devices_by_type(thingTypeName="picroscope")
-#         list_devices_by_type(maxResults=10, thingTypeName="picroscope")
-
-#         :param filters:
-#         :return: a list of device names that match the filtering criteria.
-#         """
-        
-#         response = self.boto_iot_client.list_things(**filters)
-#         ret_val = [thing['thingName'] for thing in response['things']]
-#         return ret_val
+        return self.shadow_interface.list_devices_by_type(thingTypeName)
     
-#     def list_devices(self, **filters) -> List[str]:
-#         """
-#         Lists active/connected devices, filtered by one or more state variables. Returns
-#         a list of device names in string format.
 
-#         This function supports both exact matches and ranges. You can specify multiple conditions
-#         which are joined by a logical AND.
 
-#         The function doesn't currently support OR conditions which
-#         are technically possible to do through the underlying client API and omitted for simplicity and
-#         lack of a use case.
+    def get_device_state(self, device_name: str) -> dict:
+        """
+        Get a dictionary of the devices state. State is a dict of key:value pairs.
+        :param device_name: The devices name, example: "marvin"
+        :return: a dictionary of {key: value, ...} state key: value pairs.
 
-#         Example usage:
-#           list_devices()  # list all connected devices
-#           list_devices(sample_rate=25000)  # list connected devices with sample_rate of 25,000
-#           list_devices(sample_rate=(12500, 25000)  # list devices with a sample rate between 12,500 and 25,000 inclusive
-#           list_devices(sample_rate=(12500, 25000), num_channels=32)  # list devices within the range of sample_rates
-#                                                                      # and state variable num_channels set to 32.
+        wrapper for function in shadows interface, provided here for legacy compatibility.
+        """
 
-#         :param filters:
-#         :return: a list of device names that match the filtering criteria.
-#         """
-#         query_string = 'connectivity.connected:true'  # always query for connected devices
-#         for k, v in filters.items():
-#             if isinstance(v, (tuple, list)):
-#                 assert len(v) == 2, f'One or two values expected for filter {k}, found {v}'
-#                 query_string = f'{query_string}'
-#             else:
-#                 query_string = f'{query_string} AND shadow.{k}:{v}'
+        return self.shadow_interface.get_device_state_by_name(device_name)
 
-#         response = self.boto_iot_client.search_index(queryString=query_string)
-#         ret_val = [thing['thingName'] for thing in response['things']]
-#         return ret_val
 
-#     def get_device_state(self, device_name: str) -> dict:
-#         """
-#         Get a dictionary of the devices state. State is a dict of key:value pairs.
-#         :param device_name: The devices name, example: "marvin"
-#         :return: a dictionary of {key: value, ...} state key: value pairs.
-#         """
-#         try:
-#             response = self.boto_iot_data_client.get_thing_shadow(thingName=device_name)
-#             assert response['ResponseMetadata']['HTTPStatusCode'] == 200
-#             shadow = json.loads(response['payload'].read())
-#             shadow_reported = shadow['state']['reported']
-#         except self.boto_iot_data_client.exceptions.ResourceNotFoundException:
-#             shadow_reported = {}
-#         return shadow_reported
+    def update_device_state(self, device_name: str, state: dict) -> None:
+        """
+        Update the state of a device. State is a dict of key:value pairs.
+        :param device_name: The devices name, example: "marvin"
+        :param state: a dictionary of {key: value, ...} state key: value pairs.
 
-#     def update_device_state(self, device_name: str, device_state: dict) -> None:
-#         """
-#         Updates a subset (or all) of a devices state variables as defined in the device_state dict.
+        wrapper for function in shadows interface, provided here for legacy compatibility.
+        """
 
-#         :param device_name: device name
-#         :param device_state: a dictionary of one or more device states to update or create
-#         """
-#         # Construct shadow file
-#         shadow = {
-#             'state': {
-#                 'reported': device_state
-#             }
-#         }
+        thing = self.shadow_interface.get_device(name=device_name)
+        thing.add_to_shadow(state)
 
-#         # Submit update to AWS
-#         self.boto_iot_data_client.update_thing_shadow(
-#             thingName=device_name,
-#             payload=json.dumps(shadow).encode('utf-8')
-#         )
 
-#     def delete_device_state(self, device_name: str, device_state_keys: List[str] = None) -> None:
-#         """
-#         Delete one or more state variables.
+    def delete_device_state(self, device_name: str, device_state_keys: List[str] = None) -> None:
+        """
+        Delete one or more state variables.
 
-#         :param device_name: device name
-#         :param device_state_keys: a List of one or more state variables to delete. None to delete all.
-#         :return:
-#         """
-#         if device_state_keys is None:
-#             # Delete the whole shadow file
-#             try:
-#                 self.boto_iot_data_client.delete_thing_shadow(thingName=device_name)
-#             except self.boto_iot_data_client.exceptions.ResourceNotFoundException:
-#                 pass  # ResourceNotFoundException thrown when no shadow file exits, the desired state anyway.
-#         else:
-#             # Delete specific keys from the shadow file
-#             state = self.get_device_state(device_name)
-#             for key in device_state_keys:
-#                 state[key] = None
-#             self.update_device_state(device_name=device_name, device_state=state)
+        :param device_name: device name
+        :param device_state_keys: a List of one or more state variables to delete. None to delete all.
+        :return:
+        """
+        thing = self.shadow_interface.get_device(name=device_name)
+        if device_state_keys is None:
+            thing.attributes["shadow"] = {}
+            # Delete the whole shadow file
+        else:
+            # Delete specific keys from the shadow file
+            state = self.get_device_state(device_name)
+            for key in device_state_keys:
+                state.pop(key,None)
+
+            thing.attributes["shadow"] = state
+            thing.push()
 
 #     def subscribe_device_state_change(self, device_name: str, device_state_keys: List[str], callback: Callable) -> None:
 #         """
