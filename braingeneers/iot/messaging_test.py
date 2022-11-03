@@ -2,13 +2,13 @@
 import datetime
 import time
 import unittest.mock
-# import braingeneers.iot.messaging as messaging
+import braingeneers.iot.messaging as messaging
 import messaging
 import threading
 import uuid
 import warnings
 import functools
-import shadows as sh
+import braingeneers.iot.shadows as sh
 
 class TestBraingeneersMessageBroker(unittest.TestCase):
     def setUp(self) -> None:
