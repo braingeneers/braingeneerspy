@@ -117,8 +117,20 @@ class MessageBroker:
             assert hasattr(credentials, 'read'), 'credentials parameter must be a filename string or file-like object.'
             self._credentials = credentials.read()
 
+        config = configparser.ConfigParser()
+        config.read_file(io.StringIO(self._credentials))
+
+        assert 'braingeneers-mqtt' in config, 'Your AWS credentials file is missing a section [braingeneers-mqtt], ' \
+                                    'you may have the wrong version of the credentials file.'
+        assert 'profile-id' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
+                                                'endpoint was not found under the [strapi] section.'
+        assert 'profile_key' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
+                                                'api_key was not found under the [strapi] section.'
+
         self.certs_temp_dir = None
         self._mqtt_connection = None
+        self._mqtt_profile_id = config['braingeneers-mqtt']['profile-id']
+        self._mqtt_profile_key = config['braingeneers-mqtt']['profile-key']
         self._boto_iot_client = None
         self._boto_iot_data_client = None
         self._redis_client = None
@@ -156,24 +168,12 @@ class MessageBroker:
             client_id = f'braingeneerspy-{random.randint(0, 1000)}'
 
             self._mqtt_connection = mqtt_client.Client(client_id)
-            self._mqtt_connection.username_pw_set(username, password)
+            self._mqtt_connection.username_pw_set(self._mqtt_profile_id, self._mqtt_profile_key)
             self._mqtt_connection.on_connect = on_connect
             self._mqtt_connection.connect(MQTT_ENDPOINT, port)
+            self._mqtt_connection.loop_start()
             
-            
-            
-            # mqtt_connection_builder.websockets_with_default_aws_signing(
-            #     endpoint=MQTT_ENDPOINT,
-            #     client_bootstrap=client_bootstrap,
-            #     region=AWS_REGION,
-            #     credentials_provider=credentials_provider,
-            #     ca_filepath=f'{self.certs_temp_dir.name}/AmazonRootCA1.pem',
-            #     on_connection_interrupted=self._on_connection_interrupted,
-            #     on_connection_resumed=self._on_connection_resumed,
-            #     client_id=self.name,
-            #     clean_session=False,
-            #     keep_alive_secs=6
-            # )
+    
                 
         return self._mqtt_connection
 
@@ -248,10 +248,13 @@ class MessageBroker:
         :return: the original callable, this is returned for convenience sake only, it's not altered in any way.
         """
         def on_message(client, userdata, msg):
-            print(f"Received `{msg.payload.decode()}` from `{msg.topic}` topic")
-        print("im here")
+            # this modifies callback for compatibility with code written for the AWS SDK
+            callback(msg.topic, json.loads(msg.payload.decode()))
+
         self.mqtt_connection.subscribe(topic)
         self.mqtt_connection.on_message = on_message
+
+        return callback
 
 
 #     def publish_data_stream(self, stream_name: str, data: Dict[Union[str, bytes], bytes], stream_size: int) -> None:

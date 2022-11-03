@@ -7,6 +7,7 @@ import threading
 import uuid
 import warnings
 import functools
+import json
 # import awscrt
 
 
@@ -29,6 +30,13 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
     def test_publish_subscribe_message(self):
         """ Uses a custom callback to test publish subscribe messages """
         message_received_barrier = threading.Barrier(2, timeout=5)
+
+        # def unittest_subscriber(client, userdata, msg):
+        #     self.assertEqual(msg.topic, 'test/unittest')
+        #     # parse the message into a dictionary object
+        #     message = json.loads(msg.payload.decode('utf-8'))
+        #     self.assertEqual(messae, {'test': 'true'})
+        #     message_received_barrier.wait()  # synchronize between threads
 
         def unittest_subscriber(topic, message):
             self.assertEqual(topic, 'test/unittest')
@@ -164,19 +172,21 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    mb = messaging.MessageBroker('unittest')
+    # mb = messaging.MessageBroker('unittest')
     # print(TestBraingeneersMessageBroker('setUp'))
-    # unittest.main()
+    unittest.main()
 
 
-    message_received_barrier = threading.Barrier(2, timeout=5)
-    def on_message(client, userdata, msg):
-        print(f"Received `{msg.payload.decode()}` from `{msg.topic}` topic")
+    # message_received_barrier = threading.Barrier(2, timeout=5)
+    # # def on_message(client, userdata, msg):
+    # #     print(f"Received `{msg.payload.decode()}` from `{msg.topic}` topic")
+    # def on_message(topic, msg):
+    #     print(f"Received `{msg}` from `{topic}` topic")
 
-    mb.subscribe_message('test/unittest', on_message)
-    mb.publish_message('test/unittest', message="booooof")
+    # mb.subscribe_message('test/unittest', on_message)
+    # mb.publish_message('test/unittest', message="booooof")
 
-    message_received_barrier.wait()  # will throw BrokenBarrierError if timeout
+    # message_received_barrier.wait()  # will throw BrokenBarrierError if timeout
     # print(mb_test_device.publish_message('test/unittest', message={'test': 'true'}))
 
 #     # awscrt.io.init_logging(awscrt.io.LogLevel.Trace, 'stderr')
