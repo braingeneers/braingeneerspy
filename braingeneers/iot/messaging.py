@@ -17,6 +17,9 @@ from typing import Callable, Tuple, List, Dict, Union
 import random
 import json
 
+import shadows as sh
+from paho.mqtt import client as mqtt_client
+
 
 
 AWS_REGION = 'us-west-2'
@@ -27,7 +30,7 @@ REDIS_PORT = 6379
 logger = logging.getLogger()
 logger.level = logging.INFO
 
-NEW_MQTT_ENDPOINT = 'braingeneers.gi.ucsc.edu'
+MQTT_ENDPOINT = 'braingeneers.gi.ucsc.edu'
 port = 1883
 
 
@@ -492,7 +495,7 @@ class MessageBroker:
             def on_connect(client, userdata, flags, rc):
                 if rc == 0:
                     print("Connected to MQTT Broker!")
-                    logger.info('MQTT connected: ', rc)
+                    logger.info('MQTT connected: client:' + str(client) + ' userdata:' + str(userdata) + ' flags:' + str(flags) + ' rc:' + str(rc))
                 else:
                     print("Failed to connect, return code %d\n", rc)
 
