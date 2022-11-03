@@ -145,6 +145,19 @@ class DatabaseInteractor:
             # print(response.status_code)
             self.parse_API_response(response.json()['data'])
 
+        def get_by_name(self, name):
+            """
+            gets the object from the database by name
+            """
+            url = self.endpoint + "/"+self.api_object_id+"?filters[name][$eq]=" + name + "&populate=%2A"
+            headers = {"Authorization": "Bearer " + self.token}
+            response = requests.get(url, headers=headers)
+            if len(response.json()['data']) == 0:
+                # raise Exception("No object with name " + name + " found")
+                raise Exception("no " + self.api_object_id + " object with name " + name)
+            else:
+                self.parse_API_response(response.json()['data'][0])
+
     class __Thing(__API_object):
         def __init__(self, endpoint, api_token):
             super().__init__(endpoint, api_token, "interaction-things")
@@ -333,6 +346,11 @@ class DatabaseInteractor:
         thing = self.__Thing(self.endpoint, self.token)
         thing.id = thing_id
         thing.pull()
+        return thing.attributes["shadow"]
+
+    def get_device_state_by_name(self, thing_name):
+        thing = self.__Thing(self.endpoint, self.token)
+        thing.get_by_name(thing_name)
         return thing.attributes["shadow"]
 
 

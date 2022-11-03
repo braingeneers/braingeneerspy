@@ -35,11 +35,6 @@ logger.level = logging.INFO
 
 MQTT_ENDPOINT = 'braingeneers.gi.ucsc.edu'
 port = 1883
-topic = "python/mqtt"
-# client_id = f'braingeneerspy-{random.randint(0, 1000)}'
-# username = 'braingeneers'
-# password = '24#%e@hedB73'
-
 
 
 class CallableQueue(queue.Queue):
@@ -145,7 +140,7 @@ class MessageBroker:
         """ Lazy initialization of mqtt connection. """
         if self._mqtt_connection is None:
             '''
-            root certs only required for https connection our current mqtt broker does not have this
+            root certs only required for https connection our current mqtt broker does not have this yet
             '''
             # with TemporaryEnvironment('AWS_PROFILE', AWS_PROFILE):
             #     # write the aws root cert to a temp location, doing this to avoid
@@ -207,12 +202,12 @@ class MessageBroker:
         result = self.mqtt_connection.publish(
             topic,
             payload,
-            # qos=awscrt.mqtt.QoS.AT_LEAST_ONCE
+            qos=1
         )
         return result
         
 
-    def subscribe_message(self, topic: str, callback: Callable, timeout_sec: float = 10) -> \
+    def subscribe_message(self, topic: str, callback: Callable) -> \
             Union[Callable, CallableQueue]:
         """
         Subscribes to receive messages on a given topic. When providing a topic you will be
@@ -251,29 +246,29 @@ class MessageBroker:
             # this modifies callback for compatibility with code written for the AWS SDK
             callback(msg.topic, json.loads(msg.payload.decode()))
 
-        self.mqtt_connection.subscribe(topic)
+        self.mqtt_connection.subscribe(topic, qos=1)
         self.mqtt_connection.on_message = on_message
 
         return callback
 
 
-#     def publish_data_stream(self, stream_name: str, data: Dict[Union[str, bytes], bytes], stream_size: int) -> None:
-#         """
-#         Publish (potentially large) data to a stream.
+    # def publish_data_stream(self, stream_name: str, data: Dict[Union[str, bytes], bytes], stream_size: int) -> None:
+    #     """
+    #     Publish (potentially large) data to a stream.
 
-#         :param stream_name: string name of the stream.
-#         :param data: a dictionary of data, may contain large data, keys are string or bytes and values must bytes type.
-#         :param stream_size: the maximum published data points to keep on the stream (technically approximate for efficiency)
-#         :return:
-#         """
-#         data_bytes_type = {k.encode('utf-8') if isinstance(k, str) else k: v for k, v in data.items()}
+    #     :param stream_name: string name of the stream.
+    #     :param data: a dictionary of data, may contain large data, keys are string or bytes and values must bytes type.
+    #     :param stream_size: the maximum published data points to keep on the stream (technically approximate for efficiency)
+    #     :return:
+    #     """
+    #     data_bytes_type = {k.encode('utf-8') if isinstance(k, str) else k: v for k, v in data.items()}
 
-#         self.redis_client.xadd(
-#             name=stream_name,
-#             fields=data_bytes_type,
-#             maxlen=stream_size,
-#             approximate=True
-#         )
+    #     self.redis_client.xadd(
+    #         name=stream_name,
+    #         fields=data_bytes_type,
+    #         maxlen=stream_size,
+    #         approximate=True
+    #     )
 
 #     def subscribe_data_stream(self, stream_name: (str, List[str]), callback: Callable,
 #                               include_existing_stream_data: bool = True) -> Callable:

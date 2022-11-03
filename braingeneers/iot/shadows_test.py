@@ -38,6 +38,7 @@ token = API_KEY
 instance = sh.DatabaseInteractor()
 # print(json.dumps(instance.get_device_state(13), indent=4))
 print(instance.list_experiments())
+print(instance.get_device_state_by_name("Evee"))
 # print(instance.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope"))
 
 # thing1 = instance.create_interaction_thing("BioPlateScope", "StreamTest")
