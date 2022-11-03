@@ -1,10 +1,10 @@
 """ A simplified MQTT client for Braingeneers specific connections """
 # import boto3
-import awsiot
+# import awsiot
 # import awsiot.mqtt_connection_builder
-import awscrt
-import awscrt.auth
-import redis
+# import awscrt
+# import awscrt.auth
+# import redis
 import tempfile
 import functools
 import json
@@ -18,7 +18,8 @@ import queue
 import uuid
 from typing import Callable, Tuple, List, Dict, Union
 import random
-from braingeneers.iot import shadows as sh
+# from braingeneers.iot import shadows as sh
+import shadows as sh
 from paho.mqtt import client as mqtt_client
 
 
@@ -151,7 +152,7 @@ class MessageBroker:
                     logger.info('MQTT connected: ', rc)
                 else:
                     print("Failed to connect, return code %d\n", rc)
-                    
+
             client_id = f'braingeneerspy-{random.randint(0, 1000)}'
 
             self._mqtt_connection = mqtt_client.Client(client_id)
@@ -203,55 +204,55 @@ class MessageBroker:
         :param message: a message in dictionary/list format, JSON serializable, or a JSON string. May be None.
         """
         payload = json.dumps(message) if not isinstance(message, str) else message
-        publish_future, packet_id = self.mqtt_connection.publish(
-            topic=topic,
-            payload=payload,
+        result = self.mqtt_connection.publish(
+            topic,
+            payload,
             # qos=awscrt.mqtt.QoS.AT_LEAST_ONCE
         )
-        publish_future.result()
+        return result
+        
 
-#     def subscribe_message(self, topic: str, callback: Callable, timeout_sec: float = 10) -> \
-#             Union[Callable, CallableQueue]:
-#         """
-#         Subscribes to receive messages on a given topic. When providing a topic you will be
-#         subscribing to all messages on that topic and any sub topic. For example, subscribing to
-#         '/devices' would get messages on all devices, subscribing on 'devices/ephys' would subscribe
-#         to all messages on all ephys devices, and 'devices/ephys/marvin' would subscribe to messages
-#         to the marvin ephys device only.
+    def subscribe_message(self, topic: str, callback: Callable, timeout_sec: float = 10) -> \
+            Union[Callable, CallableQueue]:
+        """
+        Subscribes to receive messages on a given topic. When providing a topic you will be
+        subscribing to all messages on that topic and any sub topic. For example, subscribing to
+        '/devices' would get messages on all devices, subscribing on 'devices/ephys' would subscribe
+        to all messages on all ephys devices, and 'devices/ephys/marvin' would subscribe to messages
+        to the marvin ephys device only.
 
-#         Note that callbacks to your function `callable` will be made in a separate thread.
+        Note that callbacks to your function `callable` will be made in a separate thread.
 
-#         Example:
-#             def my_callback(topic: str, message: dict):
-#                 print(f'Received message {message} on topic {topic}')  # Print message
+        Example:
+            def my_callback(topic: str, message: dict):
+                print(f'Received message {message} on topic {topic}')  # Print message
 
-#             mb = MessageBroker('test')  # device named test
-#             mb.subscribe('test', my_callback)  # subscribe to all topics under test
+            mb = MessageBroker('test')  # device named test
+            mb.subscribe('test', my_callback)  # subscribe to all topics under test
 
-#         Polling messages instead of subscribing to push:
-#             You can poll for new messages instead of subscribing to push notifications (which happen
-#             in a separate thread) using the following example:
+        Polling messages instead of subscribing to push:
+            You can poll for new messages instead of subscribing to push notifications (which happen
+            in a separate thread) using the following example:
 
-#             mb = MessageBroker('test')  # device named test
-#             q = messaging.CallableQueue()  # a queue.Queue object that stores (topic, message) tuples
-#             mb.subscribe_message('test', q)  # subscribe to all topics under test
-#             topic, message = q.get()
-#             print(f'Topic {topic} received message {message}')  # Print message
+            mb = MessageBroker('test')  # device named test
+            q = messaging.CallableQueue()  # a queue.Queue object that stores (topic, message) tuples
+            mb.subscribe_message('test', q)  # subscribe to all topics under test
+            topic, message = q.get()
+            print(f'Topic {topic} received message {message}')  # Print message
 
-#         :param topic: an MQTT topic as documented at
-#             https://github.com/braingeneers/wiki/blob/main/shared/mqtt.md
-#         :param callback: a function with the signature mycallbackfunction(topic: str, message),
-#             where message is a JSON object serialized to python format.
-#         :param timeout_sec: number of seconds to wait to verify connection successful.
-#         :return: the original callable, this is returned for convenience sake only, it's not altered in any way.
-#         """
-#         subscribe_future, packet_id = self.mqtt_connection.subscribe(
-#             topic=topic,
-#             callback=functools.partial(self._callback_handler, callback=callback),
-#             qos=awscrt.mqtt.QoS.AT_LEAST_ONCE,
-#         )
-#         subscribe_future.result(timeout=timeout_sec)
-#         return callback
+        :param topic: an MQTT topic as documented at
+            https://github.com/braingeneers/wiki/blob/main/shared/mqtt.md
+        :param callback: a function with the signature mycallbackfunction(topic: str, message),
+            where message is a JSON object serialized to python format.
+        :param timeout_sec: number of seconds to wait to verify connection successful.
+        :return: the original callable, this is returned for convenience sake only, it's not altered in any way.
+        """
+        def on_message(client, userdata, msg):
+            print(f"Received `{msg.payload.decode()}` from `{msg.topic}` topic")
+        print("im here")
+        self.mqtt_connection.subscribe(topic)
+        self.mqtt_connection.on_message = on_message
+
 
 #     def publish_data_stream(self, stream_name: str, data: Dict[Union[str, bytes], bytes], stream_size: int) -> None:
 #         """
