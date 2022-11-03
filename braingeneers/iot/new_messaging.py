@@ -37,8 +37,8 @@ MQTT_ENDPOINT = 'braingeneers.gi.ucsc.edu'
 port = 1883
 topic = "python/mqtt"
 # client_id = f'braingeneerspy-{random.randint(0, 1000)}'
-username = 'braingeneers'
-password = '24#%e@hedB73'
+# username = 'braingeneers'
+# password = '24#%e@hedB73'
 
 
 
@@ -123,9 +123,9 @@ class MessageBroker:
         assert 'braingeneers-mqtt' in config, 'Your AWS credentials file is missing a section [braingeneers-mqtt], ' \
                                     'you may have the wrong version of the credentials file.'
         assert 'profile-id' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
-                                                'endpoint was not found under the [strapi] section.'
-        assert 'profile_key' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
-                                                'api_key was not found under the [strapi] section.'
+                                                'profile-id is missing from the [braingeneers-mqtt] section.'
+        assert 'profile-key' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
+                                                'profile-key was not found under the [braingeneers-mqtt] section.'
 
         self.certs_temp_dir = None
         self._mqtt_connection = None
