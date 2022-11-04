@@ -48,6 +48,7 @@ DEPENDENCIES = {
         'awsiotsdk',
         'redis',
         'schedule',
+        'paho-mqtt',
     ],
     'analysis': [
         'scipy',
