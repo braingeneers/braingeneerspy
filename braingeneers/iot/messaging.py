@@ -17,7 +17,7 @@ from typing import Callable, Tuple, List, Dict, Union
 import random
 import json
 
-import shadows as sh
+import braingeneers.iot.shadows as sh
 from paho.mqtt import client as mqtt_client
 
 
