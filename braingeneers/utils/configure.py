@@ -45,7 +45,6 @@ DEPENDENCIES = {
     # add dependency groups here, changes will be dynamically added to setup(...)
     'iot': [
         # 'awsiotsdk==1.6.0',  # dependency issues occur when the current version is installed, that may be resolvable
-        'awsiotsdk',
         'redis',
         'schedule',
         'paho-mqtt',
