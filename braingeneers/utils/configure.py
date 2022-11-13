@@ -40,6 +40,7 @@ DEPENDENCIES = {
         'awswrangler',
         'pandas',
         'nptyping',
+        'kubernetes',
     ],
     # Specific dependency groups allow unnecessary (and often large) dependencies to be skipped
     # add dependency groups here, changes will be dynamically added to setup(...)
