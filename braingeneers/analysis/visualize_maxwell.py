@@ -153,7 +153,7 @@ def make_spectrogram(figure, uuid, experiment, datalen, channels, filt_dataset, 
         im1 = axs2.pcolormesh(x_mesh, y_mesh, np.log10(spec[(freq <= fmax) & (freq >= fmin)]), norm=matplotlib.colors.SymLogNorm(linthresh=0.03))
         # left_end, right_end = calc_xlim(datalen, axs2, fs)
         # axs2.set_xlim(left_end, right_end)
-        # axs2.set_xticks(ticks=np.arange(0, axs2.get_xlim()[1], 30))
+        axs2.set_xticks(ticks=np.arange(0, axs2.get_xlim()[1], 30))
     plt.colorbar(im1, ax=left_side_subs.ravel().tolist(), fraction=0.02)
 
 
