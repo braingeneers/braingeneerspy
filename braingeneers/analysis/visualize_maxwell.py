@@ -16,7 +16,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import gc
-
+from hanging_threads import start_monitoring
+monitoring_thread = start_monitoring()
 
 def int_or_str(value):
     """
@@ -137,6 +138,7 @@ def make_spectrogram(figure, uuid, experiment, datalen, channels, filt_dataset, 
     fmin = 1
     # make subplots for left side
     left_side_subs = spectro_subfigs.subplots(nrows=len(channels), ncols=1)
+    left_side_subs = np.array([left_side_subs]) if not isinstance(left_side_subs, np.ndarray) else left_side_subs
     plt.subplots_adjust(hspace=0.3)
     for ix in range(len(left_side_subs)):
         axs2 = left_side_subs[ix]
@@ -149,9 +151,9 @@ def make_spectrogram(figure, uuid, experiment, datalen, channels, filt_dataset, 
         x_mesh, y_mesh = np.meshgrid(times, freq[(freq <= fmax) & (freq >= fmin)])
         # log stuff for testing: norm=matplotlib.colors.SymLogNorm(linthresh=0.03)
         im1 = axs2.pcolormesh(x_mesh, y_mesh, np.log10(spec[(freq <= fmax) & (freq >= fmin)]), norm=matplotlib.colors.SymLogNorm(linthresh=0.03))
-        left_end, right_end = calc_xlim(datalen, axs2, fs)
-        axs2.set_xlim(left_end, right_end)
-        axs2.set_xticks(ticks=np.arange(0, right_end, 30))
+        # left_end, right_end = calc_xlim(datalen, axs2, fs)
+        # axs2.set_xlim(left_end, right_end)
+        # axs2.set_xticks(ticks=np.arange(0, axs2.get_xlim()[1], 30))
     plt.colorbar(im1, ax=left_side_subs.ravel().tolist(), fraction=0.02)
 
 
@@ -175,12 +177,20 @@ def plot_raw_and_filtered(figure, uuid, experiment, channels, raw_dataset, filt_
     """
     fsemg = 1
     subfigs = figure.subfigures(nrows=len(channels), ncols=1)
+    # TODO: Need way to check if more than one subfig was made
     for index in range(len(channels)):
-        subfigs[index].suptitle(f'Channel {channels[index]}')
+        try:
+            subfigs[index].suptitle(f'Channel {channels[index]}')
 
-        # create 1x2 subplots per subfig
-        axs = subfigs[index].subplots(nrows=1, ncols=2, subplot_kw={'anchor': 'SW'},
-                                      gridspec_kw={'wspace': 0.15})
+            # create 1x2 subplots per subfig
+            axs = subfigs[index].subplots(nrows=1, ncols=2, subplot_kw={'anchor': 'SW'},
+                                          gridspec_kw={'wspace': 0.15})
+        except TypeError:
+            subfigs.suptitle(f'Channel {channels[index]}')
+
+            # create 1x2 subplots per subfig
+            axs = subfigs.subplots(nrows=1, ncols=2, subplot_kw={'anchor': 'SW'},
+                                          gridspec_kw={'wspace': 0.15})
         for ax in axs:
             ax.tick_params(bottom=True, labelbottom=True, left=True, labelleft=True, right=False, labelright=False,
                            top=False, labeltop=False)
@@ -195,7 +205,6 @@ def plot_raw_and_filtered(figure, uuid, experiment, channels, raw_dataset, filt_
         axs[1].set_xlim(0, datalen)
 
     datapoints_filename = f'Raw_and_filtered_data_{uuid}_{experiment}_chan_{"-".join(map(str, channels))}.png'
-    # spectro_filename = f'Spectrogram_{uuid}_{experiment}_chan_{"-".join(map(str, chans))}.png'
     with open(datapoints_filename, 'wb') as dfig:
         plt.savefig(dfig, format='png')
     print('Raw data plots produced.')
@@ -227,8 +236,7 @@ def calc_xlim(datalen, axs, fs):
 
 def main(uuid: str, experiment: Union[str, int], outputLocation: str, details: List[str], apply: List[str],
          spect: bool):
-    # set local endpoint for faster loading of data. Turn off when debugging.
-    braingeneers.set_default_endpoint(f'{os.getcwd()}')
+    # braingeneers.set_default_endpoint(f'{os.getcwd()}')
     # fsemg = 1
     # fsd is rate to which the downsampling should occur
     fsd = 200
@@ -240,13 +248,21 @@ def main(uuid: str, experiment: Union[str, int], outputLocation: str, details: L
         datalen = -1
     chans = details[2]
     metad = de.load_metadata(uuid)
-    e = f'experiment{experiment + 1}' if isinstance(experiment, int) else experiment
+    e = (int(experiment[-1]) - 1) if isinstance(experiment, str) else experiment
     fs = metad['ephys_experiments'][e]['sample_rate']
     # then, load the data
-    chans = [int(i) for i in chans.split('-')]
+    if "-" in chans:
+        chans = [int(i) for i in chans.split('-')]
+    else:
+        for_m = details[2]
+        chans = np.atleast_1d( int(chans))
     dataset = de.load_data(metad, experiment=experiment, offset=offset, length=datalen, channels=chans)
-    datalen = np.shape(dataset)[1]
-    dataset = np.vstack(dataset)
+    try:
+        datalen = np.shape(dataset)[1]
+    except IndexError:
+        datalen = len(dataset)
+    # turned off vstack for testing 10/25
+    # dataset = np.vstack(dataset)
     # parse out apply list
     for item in apply:
         filt, arg = item.split('=')
@@ -272,10 +288,10 @@ def main(uuid: str, experiment: Union[str, int], outputLocation: str, details: L
     plot_raw_and_filtered(figure=datafig, uuid=uuid, experiment=experiment, channels=chans, raw_dataset=dataset,
                           filt_dataset=filt_dataset, datalen=datalen)
 
-    datapoints_filename = f'Raw_and_filtered_data_{uuid}_{experiment}_chan_{"-".join(map(str, chans))}.png'
-    # spectro_filename = f'Spectrogram_{uuid}_{experiment}_chan_{"-".join(map(str, chans))}.png'
-    with open(datapoints_filename, 'wb') as dfig:
-        plt.savefig(dfig, format='png')
+    # datapoints_filename = f'Raw_and_filtered_data_{uuid}_{experiment}_chan_{"-".join(map(str, chans))}.png'
+    # # spectro_filename = f'Spectrogram_{uuid}_{experiment}_chan_{"-".join(map(str, chans))}.png'
+    # with open(datapoints_filename, 'wb') as dfig:
+    #     plt.savefig(dfig, format='png')
 
     if spect:
         specfig = plt.figure(figsize=(16, 2 * len(chans) + 2))
@@ -300,7 +316,7 @@ def main(uuid: str, experiment: Union[str, int], outputLocation: str, details: L
             new_meta = {
                 'notes': f'Raw data, filtered data, and spectrogram for {uuid} {e} ',
                 'hardware': 'Maxwell',
-                'channels': chans
+                'channels': chans.tolist() if len(chans) > 1 else for_m
                 # ,
                 # 'drug_condition': 'fill', # TODO: (not immediate) FIND WAY TO PARSE DRUG CONDITION FROM DATA
                 # 'age_of_culture': 'age',

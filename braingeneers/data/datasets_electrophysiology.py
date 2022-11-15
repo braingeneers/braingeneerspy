@@ -563,7 +563,7 @@ def load_data(metadata: dict,
     data_scaled = data if np.dtype(dtype) == np.int16 \
         else data * np.array(voltage_scaling_factor, dtype=dtype)
 
-    return data_scaled
+    return np.atleast_2d(data_scaled)
 
 
 def load_data_raspi(metadata, batch_uuid, experiment_ix: int, offset, length) -> NDArray[Int16]:
@@ -754,6 +754,7 @@ def load_data_maxwell(metadata, batch_uuid, experiment_ix: int, channels, start,
             
             dataset = h5file['sig']
             if channels is not None:
+                channels = np.atleast_1d(channels)
                 sorted_channels = np.sort(channels)
                 undo_sort_channels = np.argsort(np.argsort(channels))
                 dataset = dataset[sorted_channels, start:frame_end]
