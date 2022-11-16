@@ -519,8 +519,10 @@ def load_data(metadata: dict,
         f'(across all files, warning, this can be a very large amount of data)'
     assert parallelism == 'auto', \
         'This feature has not yet been implemented, it is reserved for future use.'
+    assert np.dtype(dtype) in VALID_LOAD_DATA_DTYPES, \
+        'dtype must be one of int16 (unscaled raw data), or float16, float32, or float 64 (scaled data)'
 
-    # change the experiment string value to an int
+    # convert an experiment string value to an index
     experiment_ix = lookup_experiment_ix(metadata, experiment)
 
     dataset_size = sum([block['num_frames'] for block in metadata['ephys_experiments'][experiment_ix]['blocks']])
@@ -536,23 +538,21 @@ def load_data(metadata: dict,
     # hand off to appropriate load_data function
     # all data loader functions should return data in raw int16 format, it will be
     # converted to float and have the voltage_scaling_factor applied here (if appropriate)
-    if 'Raspi' in hardware:
+    if hardware == 'Raspi':
         data = load_data_raspi(metadata, batch_uuid, experiment_ix, channels, offset, length)
-    elif 'Axion' in hardware:
+    elif hardware == 'Axion':
         data = load_data_axion(metadata, batch_uuid, experiment_ix, channels, offset, length)
-    elif 'Intan' in hardware:
+    elif hardware == 'Intan':
         data = load_data_intan(metadata, batch_uuid, experiment_ix, channels, offset, length)
-    elif 'Maxwell' in hardware:
+    elif hardware == 'Maxwell':
         data = load_data_maxwell(metadata, batch_uuid, experiment_ix, channels, offset, length)
-    elif 'Hengenlab' in hardware:
+    elif hardware == 'Hengenlab':
         data = load_data_hengenlab(metadata, batch_uuid, experiment_ix, channels, offset, length)
     else:
         raise AttributeError(f'Metadata file contains invalid hardware field: {metadata["hardware"]}')
 
     # convert to requested dtype
     ephys_experiment = metadata['ephys_experiments'][experiment_ix]
-    assert np.dtype(dtype) in VALID_LOAD_DATA_DTYPES, \
-        'dtype must be one of int16 (unscaled raw data), or float16, float32, or float 64 (scaled data)'
 
     if 'voltage_scaling_factor' in ephys_experiment:
         voltage_scaling_factor = ephys_experiment['voltage_scaling_factor']
@@ -808,8 +808,8 @@ def get_blocks_for_load_data(metadata: dict, experiment_ix: int, offset: int, le
     # This step is cached in memory (lru_cache) after the first call, cum_sum_blocks ex: [100, 200, 300, ...]
     cum_sum_blocks = compute_cumsum_num_frames(metadata, experiment_ix)
 
-    ix_a = bisect.bisect(cum_sum_blocks, offset)
-    ix_b = bisect.bisect(cum_sum_blocks, offset + length) + 1
+    ix_a = bisect.bisect_right(cum_sum_blocks, offset)
+    ix_b = bisect.bisect_left(cum_sum_blocks, offset + length) + 1
 
     blocks = metadata['ephys_experiments'][experiment_ix]['blocks'][ix_a:ix_b]
 
@@ -848,17 +848,18 @@ def load_data_hengenlab(metadata: dict, batch_uuid: str, experiment_ix: int,
     return data_selected
 
 
-def load_mapping_maxwell(uuid: str, metadata_ephys_exp: dict, channels:list=None) -> pd.DataFrame:
-    '''
+def load_mapping_maxwell(uuid: str, metadata_ephys_exp: dict, channels: list = None) -> pd.DataFrame:
+    """
     Loads the mapping of maxwell array from hdf5 file
-
+    
     :param uuid: uuid of the experiment
         UUID of batch of experiments
     :param metadata_ephys_exp: metadata of the experiment for one recording
         This must look like metadata['ephys_experiments']['experiment1']
         from the normal metadata loading function
+    :param channels:
     :return: mapping of maxwell array as a dataframe
-    '''
+    """
     exp_path = metadata_ephys_exp['blocks'][0]['path']
     exp_filename = posixpath.basename(exp_path)
     DATA_PATH = 'original/data/'
@@ -881,7 +882,7 @@ def load_mapping_maxwell(uuid: str, metadata_ephys_exp: dict, channels:list=None
 def load_stims_maxwell(uuid: str, metadata_ephys_exp: dict):
     '''
     Loads the stim log files for a given experiment.
-
+    
     :param uuid: uuid of the experiment
         UUID of batch of experiments
     :param metadata_ephys_exp: metadata of the experiment for one recording
@@ -899,14 +900,14 @@ def load_stims_maxwell(uuid: str, metadata_ephys_exp: dict):
 
     stim_path = posixpath.join(get_basepath(), 'ephys', uuid, DATA_PATH,
                                 exp_stim_log)
-
+    
     print('Loading stim log from UUID: {}, log: {}'.format(uuid, exp_stim_log))
     try:
         with smart_open.open(stim_path, 'rb') as f:
             # read the csv into dataframe
             df = pd.read_csv(f, header=0)#, index_col=0)
         return df
-
+        
     except FileNotFoundError:
         print(f'\tThere seems to be no stim log file for this experiment! :(')
         return None
@@ -914,8 +915,8 @@ def load_stims_maxwell(uuid: str, metadata_ephys_exp: dict):
         print(f'\tThere seems to be no stim log file (on s3) for this experiment! :(')
         return None
 
-
-
+    
+   
 def load_gpio_maxwell(dataset_path, fs=20000):
     """
     Loads the GPIO events for optogenetics stimulation.
@@ -926,12 +927,15 @@ def load_gpio_maxwell(dataset_path, fs=20000):
     with smart_open.open(dataset_path, 'rb') as f:
         with h5py.File(f, 'r') as dataset:
             assert 'bits' in dataset.keys(), 'No GPIO event in the dataset!'
-            bits_dataframe = [dataset['bits'][i][0] for i in range(len(dataset['bits']))]
+            bits_dataset = list(dataset['bits'])
+            bits_dataframe = [bits_dataset[i][0] for i in range(len(bits_dataset))]
             rec_startframe = dataset['sig'][-1, 0] << 16 | dataset['sig'][-2, 0]
-
-    stim_pairs = (np.array(bits_dataframe) - rec_startframe).reshape(len(bits_dataframe) // 2, 2)
-    stim_pairs = stim_pairs / fs
-    return stim_pairs
+    if len(bits_dataframe) % 2 == 0:
+        stim_pairs = (np.array(bits_dataframe) - rec_startframe).reshape(len(bits_dataframe) // 2, 2)
+        return stim_pairs / fs
+    else:
+        print("Odd number of GPIO events can't be paired. Here returns all the events.")
+        return (np.array(bits_dataframe) - rec_startframe)/fs
 
 
 
