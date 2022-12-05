@@ -53,6 +53,7 @@ DEPENDENCIES = {
         'scipy',
         'powerlaw',
         'matplotlib',
+        'pandas',
     ],
     'ml': [
         'torch',

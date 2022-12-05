@@ -7,6 +7,7 @@ import powerlaw
 import os
 import contextlib
 import zipfile
+import pandas as pd
 
 
 DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
