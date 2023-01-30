@@ -41,6 +41,7 @@ class AnalysisTest(unittest.TestCase):
     def assertSpikeDataSubtime(self, sd, sdsub, tmin, tmax, msg=None):
         'Assert that a subtime of a SpikeData is correct.'
         self.assertEqual(len(sd.train), len(sdsub.train))
+        self.assertEqual(sdsub.length, tmax - tmin)
         for n,nsub in zip(sd.train, sdsub.train):
             self.assertAll(nsub <= tmax - tmin, msg=msg)
             if tmin > 0:
@@ -137,6 +138,10 @@ class AnalysisTest(unittest.TestCase):
 
         # Check subtime() with ... second argument.
         sdtime = sd.subtime(20, ...)
+        self.assertSpikeDataSubtime(sd, sdtime, 20, 100)
+
+        # Check subtime() with second argument greater than length.
+        sdtime = sd.subtime(20, 150)
         self.assertSpikeDataSubtime(sd, sdtime, 20, 100)
 
         # Test consistency between subtime() and frames().

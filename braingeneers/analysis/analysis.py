@@ -292,11 +292,11 @@ class SpikeData:
     def subset(self, units, by=None):
         '''
         Return a new SpikeData with spike times for only some units,
-        selected either byy their indices or by an ID stored under a given
+        selected either by their indices or by an ID stored under a given
         key in the neuron_data. If IDs are not unique, every neuron which
-        matches is included in the output.
-        Metadata and raw data are propagated exactly, while neuron
-        data is subsetted in the same way as the spike trains.
+        matches is included in the output. Metadata and raw data are
+        propagated exactly, while neuron data is subsetted in the same way
+        as the spike trains.
         '''
         # The inclusion condition depends on whether we're selecting by ID
         # or by index.
@@ -338,6 +338,8 @@ class SpikeData:
             end = self.length
         elif end < 0:
             end += self.length
+        elif end > self.length:
+            end = self.length
 
         # Special case out the start=0 case by nopping the comparison.
         lower = start if start > 0 else -np.inf
@@ -356,20 +358,14 @@ class SpikeData:
 
     def __getitem__(self, key):
         '''
-        Overloads the [] operator to allow for slicing of the spikeData object.
-        Uses the subtime method to slice the spikeData object.
+        If a slice is provided, it is taken in time as with self.subtime(),
+        but if an iterable is provided, it is taken as a list of neuron
+        indices to select as with self.subset().
         '''
-        # print(start, stop, fs)
-
         if isinstance(key, slice):
             return self.subtime(key.start, key.stop)
-        # print(start, stop, fs)
-        if start is None:
-            start = 0
-        if stop is None:
-            stop = self.length
-
-        return self.subtime(start, stop)
+        else:
+            return self.subset(key)
 
 
     def append(self, spikeData, offset=0):
