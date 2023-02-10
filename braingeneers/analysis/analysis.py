@@ -979,4 +979,5 @@ class ThresholdedSpikeData(SpikeData):
                 length = self.length
             return SpikeData(self.idces, self.times_ms, N=N, length=length)
         else:
+            print('No spikes found.')
             return None

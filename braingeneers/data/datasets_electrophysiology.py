@@ -130,13 +130,10 @@ def list_uuids():
 def load_metadata(batch_uuid: str) -> dict:
     """
     Loads the batch UUID metadata.
-
     Metadata structure documentation:
         https://github.com/braingeneers/wiki/blob/main/shared/organizing-data.md#metadata-json-file
-
     Example usage:
         metadata_json = load_metadata('2020-03-10-e-128silicon-mouse-p35')
-
     :param batch_uuid: Dataset UUID, example: 2020-03-10-e-128silicon-mouse-p35
     :return: A single dict containing the contents of metadata.json. See wiki for further documentation: 
         https://github.com/braingeneers/wiki/blob/main/shared/organizing-data.md
@@ -457,13 +454,10 @@ def load_blocks(batch_uuid, experiment_num, channels=None, start=0, stop=None):
 def load_metadata(batch_uuid: str) -> dict:
     """
     Loads the batch UUID metadata.
-
     Metadata structure documentation:
         https://github.com/braingeneers/wiki/blob/main/shared/organizing-data.md#metadata-json-file
-
     Example usage:
         metadata_json = load_metadata('2020-03-10-e-128silicon-mouse-p35')
-
     :param batch_uuid: Dataset UUID, example: 2020-03-10-e-128silicon-mouse-p35
     :return: A single dict containing the contents of metadata.json. See wiki for further documentation:
         https://github.com/braingeneers/wiki/blob/main/shared/organizing-data.md
@@ -490,7 +484,6 @@ def load_data(metadata: dict,
     This function loads arbitrarily specified amounts of data from an experiment for Axion, Intan, Raspi, and Maxwell.
     As a note, the user MUST provide the offset (offset) and the length of frames to take. This function reads
     across as many blocks as the length specifies.
-
     :param metadata: result of load_metadata, dict
     :param experiment: Which experiment in the batch to load, by name (string) or index location (int),
         examples: "experiment1" or 0
@@ -568,7 +561,6 @@ def load_data(metadata: dict,
 
 def load_data_raspi(metadata, batch_uuid, experiment_ix: int, offset, length) -> NDArray[Int16]:
     """
-
     :param metadata:
     :param batch_uuid:
     :param experiment_ix:
@@ -584,10 +576,8 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_ix: int,
     """
     Reads from Axion raw data format using Python directly (not going through matlab scripts first).
     Reader originally written by Dylan Yong, updated by David Parks.
-
     Limitations:
      - Axion reader must read all channels, it then filters those to selected channels after reading all channel data.
-
     :param metadata: result of load_experiment
     :param batch_uuid: uuid, example: 2020-07-06-e-MGK-76-2614-Wash
     :param experiment_ix: experiment name under 'ephys_experiments'
@@ -654,7 +644,6 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_ix: int,
 
 def load_data_intan(metadata, batch_uuid, experiment_ix: int, offset, length) -> NDArray[Int16]:
     """
-
     :param metadata:
     :param batch_uuid:
     :param experiment_ix:
@@ -760,7 +749,6 @@ def load_data_maxwell(metadata, batch_uuid, experiment_ix: int, channels, start,
 def compute_cumsum_num_frames(metadata: dict, experiment_ix: int) -> List[int]:
     """
     Intended to be an internal function primarily.
-
     Computes and caches the cumulative sum of num_frames, this operation will be repeated
     for each call to load_data which may occur in a high performance loop, hence the caching.
     """
@@ -774,14 +762,11 @@ def compute_cumsum_num_frames(metadata: dict, experiment_ix: int) -> List[int]:
 def get_blocks_for_load_data(metadata: dict, experiment_ix: int, offset: int, length: int) -> List:
     """
     Intended to be an internal function primarily.
-
     Returns a subset of metadata.ephys_experiments.blocks required to
     perform the read from offset to offset + length, this will return a list of one or more
     elements from metadata.ephys_experiments.blocks.
-
     This method can be re-used by different data format readers assuming all use the same
     metadata format.
-
     This method is efficient for high performance operations due to caching
     of the call to compute_cumsum_num_frames.
     :param metadata: result of load_metadata(...)
@@ -856,8 +841,13 @@ def load_mapping_maxwell(uuid: str, metadata_ephys_exp: dict, channels: list = N
 
     with smart_open.open(file_path, 'rb') as f:
         with h5py.File(f, 'r') as h5:
-            mapping = np.array(h5['mapping']) #ch, elec, x, y
-            mapping = pd.DataFrame(mapping)
+            if 'mapping' in h5:
+                mapping = np.array(h5['mapping']) #ch, elec, x, y
+                mapping = pd.DataFrame(mapping)
+            elif 'hdf_version' in h5 and str(h5['hdf_version']) == "b'1.8.21'":
+                mapping = np.array(h5['data_store/data0000/settings/mapping'])
+                mapping = pd.DataFrame(mapping)
+
     if channels is not None:
         return mapping[mapping['channel'].isin(channels)]
     else:
@@ -926,7 +916,6 @@ def load_gpio_maxwell(dataset_path, fs=20000):
 
 def compute_milliseconds(num_frames, sampling_rate):
     """
-
     :param num_frames: int
         Number of frames to convert to milliseconds
     :param sampling_rate: int
@@ -1090,12 +1079,9 @@ def generate_metadata_hengenlab(batch_uuid: str,
                                 save: bool = False):
     """
     Generates a metadata json and experiment1...experimentN section for a hengenlab dataset upload.
-
     File locations in S3 for hengenlab neural data files:
         s3://braingeneers/ephys/YYYY-MM-DD-e-${DATASET_NAME}/original/data/*.bin
-
     Contiguous recording periods
-
     :param batch_uuid: location on braingeneers storage (S3)
     :param dataset_name: the dataset_name as defined in `neuraltoolkit`. Metadata will be pulled from `neuraltoolkit`.
     :param experiment_name: Dataset name as stored in `neuraltoolkit`. For example "CAF26"
@@ -1224,7 +1210,6 @@ def from_uint64(all_values):
     (0x00ff ffff ffff  ffff) which denotes an entry that reads to
     the end of the file. These entries have a length field == inf
     when deserialized
-
     :param all_values:
     :return:
     """
@@ -1274,17 +1259,12 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
                             n_threads: int = 16, save: bool = False):
     """
     Generates metadata.json raw Axion data files on S3 from a standard UUID. Assumes raw data files are stored in:
-
         ${ENDPOINT}/ephys/YYYY-MM-DD-e-[descriptor]/original/experiments/*.raw
         (ENDPOINT defaults to s3://braingeneers)
-
     Raises an exception if no data files were found at the expected location.
-
     All Axion recordings are assumed to be a single experiment.
-
     Limitations:
      - timestamps are not taken from the original data files, the current time is used.
-
     :param batch_uuid: standard ephys UUID
     :param experiment_prefix: Experiments are named "A1", "A2", ..., "B1", "B2", etc. If multiple recordings are
         included in a UUID the experiment name can be prefixed, for example "recording1_A1", "recording2_A1"
@@ -1380,11 +1360,9 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
 def _axion_generate_per_block_metadata(filename: str):
     """
     Internal function
-
     Generates the information necessary to create a metadata file for an Axion dataset.
     This function should only be called when uploading the dataset to Axion, under normal
     circumstances the metadata file is generated once at upload time and stored on S3.
-
     :param filename: S3 or local axion raw data file, example:
         "s3://braingeneers/ephys/2020-07-06-e-MGK-76-2614-Wash/raw/H28126_WK27_010320_Cohort_202000706_Wash(214).raw"
     :return: start of data position in file, length of data section, number of channels,
