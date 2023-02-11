@@ -394,9 +394,17 @@ def lookup_experiment_ix(metadata: dict, experiment: (int, str)) -> int:
     else:
         if cache_key not in load_data_cache:
             for i, ephys_experiment in enumerate(metadata['ephys_experiments']):
-                if experiment == ephys_experiment['name']:
-                    load_data_cache[cache_key] = i
-                    break
+                print(type(ephys_experiment) == dict)
+                # Old metadata
+                if type(ephys_experiment) == dict:
+                    if experiment == ephys_experiment['name']:
+                        load_data_cache[cache_key] = i
+                        break
+                # New metadata format
+                elif type(ephys_experiment) == str:
+                    if experiment == ephys_experiment:
+                        load_data_cache[cache_key] = i
+                        break
         assert cache_key in load_data_cache, \
             f'Experiment name {experiment} not found in metadata for {metadata["uuid"]}'
         experiment_ix = load_data_cache[cache_key]
@@ -503,7 +511,7 @@ def load_data(metadata: dict,
     """
     assert 'uuid' in metadata, \
         'Metadata file is invalid, it does not contain required uuid field.'
-    assert 'ephys_experiments' in metadata, \
+    assert 'ephys_experiments' in metadata or 'experiments' in metadata, \
         'Metadata file is invalid, it does not contain required ephys_experiments field.'
     assert isinstance(experiment, (str, int)), \
         f'Parameter experiment must be an int index or experiment name string. Got: {experiment}'
@@ -518,7 +526,16 @@ def load_data(metadata: dict,
     # convert an experiment string value to an index
     experiment_ix = lookup_experiment_ix(metadata, experiment)
 
+    # Doesn't work with new metadata format
+    # TODO: David + Ash talk about metadata format for ephys_experiments. index or name?
+    # Perhaps use dicts as a list, and index through them
+    if metadata.get('maxwell_chip_id') is not None:
+        # We have the new format so load off the exp string
+        #dataset_size = sum([block['num_frames'] for block in metadata['ephys_experiments'][experiment]['blocks']])
+        experiment_ix = experiment
     dataset_size = sum([block['num_frames'] for block in metadata['ephys_experiments'][experiment_ix]['blocks']])
+    
+    
     if offset + length > dataset_size:
         raise IndexError(
             f'Dataset size is {dataset_size}, but parameters offset + length '
@@ -726,8 +743,10 @@ def load_data_maxwell(metadata, batch_uuid, experiment_ix: int, channels, start,
         with h5py.File(file, 'r', libver='latest', rdcc_nbytes=2 ** 25) as h5file:
             # know that there are 1028 channels which all record and make 'num_frames'
             # lsb = np.float32(h5file['settings']['lsb'][0]*1000) #1000 for uv to mv  # voltage scaling factor is not currently implemented properly in maxwell reader
-            
-            dataset = h5file['sig']
+            if 'sig' in h5file:
+                dataset = h5file['sig']
+            else:
+                dataset = h5file['recordings/rec0000/well000/groups/routed/raw']
             if channels is not None:
                 sorted_channels = np.sort(channels) 
                 undo_sort_channels = np.argsort(np.argsort(channels))
@@ -739,7 +758,7 @@ def load_data_maxwell(metadata, batch_uuid, experiment_ix: int, channels, start,
     #dataset = np.array(dataset)
     # make dataset of chosen frames
 
-    dataset -= 512
+    #dataset -= 512
     if channels is not None:
         # Unsort data
         dataset = dataset[undo_sort_channels, :]
@@ -841,9 +860,11 @@ def load_mapping_maxwell(uuid: str, metadata_ephys_exp: dict, channels: list = N
 
     with smart_open.open(file_path, 'rb') as f:
         with h5py.File(f, 'r') as h5:
+            # version is 20160704 - ish?, old format
             if 'mapping' in h5:
                 mapping = np.array(h5['mapping']) #ch, elec, x, y
                 mapping = pd.DataFrame(mapping)
+            # version is 20190530 - ish?
             elif 'hdf_version' in h5 and str(h5['hdf_version']) == "b'1.8.21'":
                 mapping = np.array(h5['data_store/data0000/settings/mapping'])
                 mapping = pd.DataFrame(mapping)
@@ -854,7 +875,7 @@ def load_mapping_maxwell(uuid: str, metadata_ephys_exp: dict, channels: list = N
         return mapping
 
 
-def load_stims_maxwell(uuid: str, metadata_ephys_exp: dict):
+def load_stims_maxwell(uuid: str, metadata_ephys_exp: dict = None, experiment_stem: str = None):
     '''
     Loads the stim log files for a given experiment.
     
@@ -863,20 +884,27 @@ def load_stims_maxwell(uuid: str, metadata_ephys_exp: dict):
     :param metadata_ephys_exp: metadata of the experiment for one recording
         This must look like metadata['ephys_experiments']['experiment1']
         from the normal metadata loading function
+    :param experiment_stem: file basename of the experiment,
+        Used in place of the dict to load the stim data
     :return: dataframe of stim logs
     '''
-    exp_path = metadata_ephys_exp['blocks'][0]['path']
-    # This is gross, we have to split off the .raw.h5, requiring 2 splits
-    exp_stem = os.path.splitext(posixpath.basename(exp_path))[0]
-    exp_stem = os.path.splitext(exp_stem)[0]
+    if metadata_ephys_exp is not None:
+        exp_path = metadata_ephys_exp['blocks'][0]['path']
+        # This is gross, we have to split off the .raw.h5, requiring 2 splits
+        exp_stem = os.path.splitext(posixpath.basename(exp_path))[0]
+        exp_stem = os.path.splitext(exp_stem)[0]
+    elif experiment_stem is not None:
+        exp_stem = experiment_stem
+
     exp_stim_log = exp_stem + 'log.csv' 
-    DATA_PATH = 'original/data/'
+    DATA_PATH = 'original/log/'
 
 
     stim_path = posixpath.join(get_basepath(), 'ephys', uuid, DATA_PATH, 
                                 exp_stim_log)
     
     print('Loading stim log from UUID: {}, log: {}'.format(uuid, exp_stim_log))
+    print(stim_path)
     try:
         with smart_open.open(stim_path, 'rb') as f:
             # read the csv into dataframe
