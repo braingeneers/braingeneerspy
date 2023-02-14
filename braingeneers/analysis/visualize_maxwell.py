@@ -20,6 +20,18 @@ import gc
 # from hanging_threads import start_monitoring
 # monitoring_thread = start_monitoring()
 
+class EndpointSwitch:
+  endpoint = None
+
+  def __enter__(self):
+    self.endpoint = braingeneers.get_default_endpoint()
+    braingeneers.set_default_endpoint(braingeneers.utils.configure.DEFAULT_ENDPOINT)
+
+  def __exit__(self, type, value, traceback):
+    braingeneers.set_default_endpoint(self.endpoint)
+
+
+
 def int_or_str(value):
     """
     This function is passed as type to accept the Union of two data types.
@@ -122,7 +134,7 @@ def bandpass(data: np.ndarray, hz_high: int, hz_low: int, fs: int):
     return data_bandpass
 
 
-def make_spectrogram(figure, uuid, experiment, datalen, channels, filt_dataset, fs):
+def make_spectrogram(figure, uuid, experiment, datalen, expname, channels, filt_dataset, fs):
     """
 
     :param figure:
@@ -135,6 +147,7 @@ def make_spectrogram(figure, uuid, experiment, datalen, channels, filt_dataset, 
     :return:
     """
     print(f'Shape of downsampled data: {np.shape(filt_dataset)}')
+    figure.suptitle(f"Spectrograms for {expname}")
     spectro_subfigs = figure.subfigures(nrows=1, ncols=1)
     fmax = 64
     fmin = 1
@@ -164,8 +177,8 @@ def make_spectrogram(figure, uuid, experiment, datalen, channels, filt_dataset, 
 
     # axs2.set_xticks(ticks=np.arange(0, axs2.get_xlim()[1], 120))
     # make subplots for left side
-    print("pre-squeeze: ",filt_dataset.shape)
-    print("post-squeeze: ",np.squeeze(filt_dataset).shape)
+    # print("pre-squeeze: ",filt_dataset.shape)
+    # print("post-squeeze: ",np.squeeze(filt_dataset).shape)
     with smart_open.open(f's3://braingeneersdev/ephys/{uuid}/derived/{experiment}_downsampled_data.npy', 'wb') as f:
         np.save(f, np.squeeze(filt_dataset))
     left_side_subs = spectro_subfigs.subplots(nrows=len(channels), ncols=1)
@@ -177,18 +190,25 @@ def make_spectrogram(figure, uuid, experiment, datalen, channels, filt_dataset, 
                          labelright=False, top=False, labeltop=False)
         # set title for each subplot
         axs2.set_title(label=f'Channel {channels[ix]}')
-        # TODO: Next to spectrogram, just plot 10 sec data
 
         freq, times, spec = ssig.spectrogram(np.squeeze(filt_dataset[ix]), fs, window='hamming', nperseg=1000,
                                              noverlap=1000 - 1, mode='psd')
         x_mesh, y_mesh = np.meshgrid(times, freq[(freq <= fmax) & (freq >= fmin)])
         # log stuff for testing: norm=matplotlib.colors.SymLogNorm(linthresh=0.03)
         im1 = axs2.pcolormesh(x_mesh, y_mesh, np.log10(spec[(freq <= fmax) & (freq >= fmin)]), cmap='jet')
-        # left_end, right_end = calc_xlim(datalen, axs2, fs)
-        # axs2.set_xlim(left_end, right_end)
-        axs2.set_xticks(ticks=np.arange(0, axs2.get_xlim()[1], 120))
+        left_end, right_end = calc_xlim(datalen, axs2, fs)
+        axs2.set_xlim(left_end, right_end)
+        ticklist = np.arange(0, axs2.get_xlim()[1], 60)
+        label_list = [str(round(x/60)) for x in ticklist]
+        axs2.set_xticks(ticks=ticklist, labels=label_list)
+
+        axs2.set_yscale('log')
+        # print(axs2.get_ylim())
+        # axs2.set_ylim(0, 64)
     plt.colorbar(im1, ax=left_side_subs.ravel().tolist(), fraction=0.02)
-    plt.yscale('log')
+    figure.supxlabel('Time in Minutes')
+    figure.supylabel('Log Frequency')
+
 
     spectro_filename = f'Spectrogram_{uuid}_{experiment}_chan_{"-".join(map(str, channels))}.png'
     with open(spectro_filename, 'wb') as sfig:
@@ -196,7 +216,7 @@ def make_spectrogram(figure, uuid, experiment, datalen, channels, filt_dataset, 
     print('Spectrograms produced.')
 
 
-def plot_raw_and_filtered(figure, uuid, experiment, channels, raw_dataset, filt_dataset, datalen):
+def plot_raw_and_filtered(figure, uuid, experiment, channels,expname, raw_dataset, filt_dataset, datalen, fs):
     """
 
     :param figure:
@@ -209,6 +229,7 @@ def plot_raw_and_filtered(figure, uuid, experiment, channels, raw_dataset, filt_
     :return:
     """
     fsemg = 1
+    figure.suptitle(f"Raw and filtered data for {expname}")
     subfigs = figure.subfigures(nrows=len(channels), ncols=1)
     # TODO: Need way to check if more than one subfig was made
     for index in range(len(channels)):
@@ -227,15 +248,20 @@ def plot_raw_and_filtered(figure, uuid, experiment, channels, raw_dataset, filt_
         for ax in axs:
             ax.tick_params(bottom=True, labelbottom=True, left=True, labelleft=True, right=False, labelright=False,
                            top=False, labeltop=False)
-
-        raw_plot = raw_dataset[index]
-        filt_plot = filt_dataset[index]
+        raw_plot = raw_dataset[index][int(datalen / 2):int(datalen / 2) + (10 * fs)]
+        filt_plot = filt_dataset[index][int(datalen / 2):int(datalen / 2) + (10 * fs)]
         realtime = np.arange(np.size(raw_plot)) / fsemg
         axs[0].plot(realtime, (raw_plot - np.nanmean(raw_plot)) / np.nanstd(raw_plot))
-        axs[0].set_xlim(0, datalen)
+        axs[0].set_xlim(0, len(raw_plot))
+        ticklist_r = np.arange(0, axs[0].get_xlim()[1], fs)
+        label_list_r = [str(round(x/fs)) for x in ticklist_r]
+        axs[0].set_xticks(ticks=ticklist_r, labels=label_list_r)
         # plot filtered data in middle
         axs[1].plot(realtime, (filt_plot - np.nanmean(filt_plot)) / np.nanstd(filt_plot))
-        axs[1].set_xlim(0, datalen)
+        axs[1].set_xlim(0, len(filt_plot))
+        ticklist_f = np.arange(0, axs[1].get_xlim()[1], fs)
+        label_list_f = [str(round(x/fs)) for x in ticklist_f]
+        axs[1].set_xticks(ticks=ticklist_f, labels=label_list_f)
 
     datapoints_filename = f'Raw_and_filtered_data_{uuid}_{experiment}_chan_{"-".join(map(str, channels))}.png'
     with open(datapoints_filename, 'wb') as dfig:
@@ -245,7 +271,7 @@ def plot_raw_and_filtered(figure, uuid, experiment, channels, raw_dataset, filt_
 
 def calc_xlim(datalen, axs, fs):
     """
-    This function calculates how to set the xlims to show 10 minutes of data.
+    This function calculates how to set the xlims to show 30 minutes of data.
     :param datalen: Length of data used
     :param axs: Axes object being used
     :param fs: sample rate
@@ -262,7 +288,7 @@ def calc_xlim(datalen, axs, fs):
     # divide datalen by sample rate to get time of data in seconds
     datasec = datalen / fs
     # now, we have a length of time that corresponds with a length of data
-    scalar = 600 / datasec * step
+    scalar = 1800 / datasec * step
 
     return leftpoint, leftpoint + scalar
 
@@ -277,9 +303,11 @@ def main(uuid: str, experiment: Union[str, int], outputLocation: str, details: L
     # TODO: Make more robust - if length is not specified, need to still make it work
     # load metadata
     offset = int(details[0])
-    datalen = int(details[1])
+    datalen = details[1]
     if datalen == -1 or datalen == 'all':
         datalen = -1
+    else:
+        datalen = int(datalen)
     chans = details[2]
     metad = de.load_metadata(uuid)
     # if experiment is a string, need to keep it for uploading but have an int.
@@ -287,6 +315,8 @@ def main(uuid: str, experiment: Union[str, int], outputLocation: str, details: L
     # e will be the int version, exp will be the string.
     e = (int(experiment[-1]) - 1) if isinstance(experiment, str) else experiment
     exp = (f'experiment{experiment + 1}') if isinstance(experiment, int) else experiment
+    hardware = metad['ephys_experiments'][e]['hardware']
+    expname = metad['ephys_experiments'][e]['blocks'][0]['path'].split('/')[-1] if hardware=="Maxwell" else exp
     fs = metad['ephys_experiments'][e]['sample_rate']
     # then, load the data
     if "-" in chans:
@@ -297,7 +327,7 @@ def main(uuid: str, experiment: Union[str, int], outputLocation: str, details: L
         for_m = details[2]
         chans = np.atleast_1d( int(chans))
     dataset = de.load_data(metad, experiment=exp, offset=offset, length=datalen, channels=chans, dtype=np.float32)
-    print(dataset.dtype)
+    # print(dataset.dtype)
     try:
         datalen = np.shape(dataset)[1]
     except IndexError:
@@ -326,8 +356,8 @@ def main(uuid: str, experiment: Union[str, int], outputLocation: str, details: L
 
     # do raw data viz no matter what
     datafig = plt.figure(figsize=(16, 2 * len(chans) + 2))
-    plot_raw_and_filtered(figure=datafig, uuid=uuid, experiment=exp, channels=chans, raw_dataset=dataset,
-                          filt_dataset=filt_dataset, datalen=datalen)
+    plot_raw_and_filtered(figure=datafig, uuid=uuid, experiment=exp,expname=expname, channels=chans, raw_dataset=dataset,
+                          filt_dataset=filt_dataset, datalen=datalen, fs=fs)
 
     # datapoints_filename = f'Raw_and_filtered_data_{uuid}_{experiment}_chan_{"-".join(map(str, chans))}.png'
     # # spectro_filename = f'Spectrogram_{uuid}_{experiment}_chan_{"-".join(map(str, chans))}.png'
@@ -338,84 +368,100 @@ def main(uuid: str, experiment: Union[str, int], outputLocation: str, details: L
         specfig = plt.figure(figsize=(16, 2 * len(chans) + 2))
         # fs = fs / fsd
         downsampled_dataset = dataset[:, ::np.int64(fs / fsd)]
-        datalen = np.shape(downsampled_dataset)[1]
+        dsp_datalen = np.shape(downsampled_dataset)[1]
         # filt_dataset = np.hstack(filt_dataset)
         make_spectrogram(figure=specfig, uuid=uuid, channels=chans, filt_dataset=downsampled_dataset,
-                         experiment=exp, datalen=datalen, fs=fsd)
+                         experiment=exp,expname=expname, datalen=dsp_datalen, fs=fsd)
 
     # then, if it's meant to be on s3, awswrangle it up there.
-    if outputLocation == 's3':
-        # Check if file exists
-        file_exists = common_utils.file_exists(f's3://braingeneersdev/ephys/{uuid}/derived/{exp}_visualization_metadata.json')
-        # try:
-        #     with smart_open.open(f's3://braingeneersdev/ephys/{uuid}/derived/{exp}_visualization_metadata.json'):
-        #         file_exists = True
-        #         print('File exists')
-        # except OSError:
-        #     file_exists = False
-        #     print('File does not exist')
-        # # pdb.set_trace()
-        # except Exception as e:
-        #     print(f'I got {e} instead')
-        if not file_exists:
-            # make metadata
-            new_meta = {
-                'notes': f'Raw data, filtered data, and spectrogram for {uuid} {exp} ',
-                'hardware': 'Maxwell',
-                'channels': for_m
-                # ,
-                # 'drug_condition': 'fill', # TODO: (not immediate) FIND WAY TO PARSE DRUG CONDITION FROM DATA
-                # 'age_of_culture': 'age',
-                # 'duration_on_chip': 'len',
-                # 'cell_type': 'H9',
-                # 'stimulation':'None',
-                # 'external_considerations': 'microfluidics'
+    with EndpointSwitch():
+        if outputLocation == 's3':
+            # Check if file exists
+            # endpoint = braingeneers.get_default_endpoint()
+            # braingeneers.set_default_endpoint(braingeneers.utils.configure.DEFAULT_ENDPOINT)
 
-            }
-            with smart_open.open(f'{uuid}_viz_metadata.json', 'w') as f:
-                json.dump(new_meta, f)
-            # then, make the new bucket and put the metadata in. awswrangler for that.
-            # pdb.set_trace()
-            # print(wr.config.s3_endpoint_url)
-            wr.upload(local_file=f'{os.getcwd()}/{uuid}_viz_metadata.json',
-                      path=f's3://braingeneersdev/ephys/{uuid}/derived/{exp}_visualization_metadata.json')
+            file_exists = common_utils.file_exists(
+                f's3://braingeneersdev/ephys/{uuid}/derived/{exp}_visualization_metadata.json')
+            # if braingeneers.get_default_endpoint().startswith("http"):
+            #
+            #     file_exists = common_utils.file_exists(f's3://braingeneersdev/ephys/{uuid}/derived/{exp}_visualization_metadata.json')
+            # else:
+            #     file_exists = common_utils.file_exists(f'{os.getcwd()')
+            # try:
+            #     with smart_open.open(f's3://braingeneersdev/ephys/{uuid}/derived/{exp}_visualization_metadata.json'):
+            #         file_exists = True
+            #         print('File exists')
+            # except OSError:
+            #     file_exists = False
+            #     print('File does not exist')
+            # # pdb.set_trace()
+            # except Exception as e:
+            #     print(f'I got {e} instead')
+            if not file_exists:
+                # make metadata
+                new_meta = {
+                    'notes': f'Raw data, filtered data, and spectrogram for {uuid} {exp} ',
+                    'hardware': hardware,
+                    'channels': for_m
+                    # ,
+                    # 'drug_condition': 'fill', # TODO: (not immediate) FIND WAY TO PARSE DRUG CONDITION FROM DATA
+                    # 'age_of_culture': 'age',
+                    # 'duration_on_chip': 'len',
+                    # 'cell_type': 'H9',
+                    # 'stimulation':'None',
+                    # 'external_considerations': 'microfluidics'
 
-        else:
-            # if the metadata exists, need to add this metadata onto the existing one
-            # TODO: Need to find good way to add channels together. Consider single channel, more than one, etc.
-            # TODO: will it pull a list from the metadata or just a string? Check with maxwell data too
+                }
+                with smart_open.open(f'{uuid}_viz_metadata.json', 'w') as f:
+                    json.dump(new_meta, f)
+                # then, make the new bucket and put the metadata in. awswrangler for that.
+                # pdb.set_trace()
+                # print(wr.config.s3_endpoint_url)
+                wr.upload(local_file=f'{os.getcwd()}/{uuid}_viz_metadata.json',
+                          path=f's3://braingeneersdev/ephys/{uuid}/derived/{exp}_visualization_metadata.json')
 
-            newchans = set()
-            with smart_open.open(
-                    f's3://braingeneersdev/ephys/{uuid}/derived/{exp}_visualization_metadata.json') as old_json:
-                fixed_meta = json.load(old_json)
-                cur_chans = fixed_meta['channels']
-                # if there's more than one value, split it and put all into a set
-                if ',' in cur_chans:
-                    for chan in cur_chans.split(','):
-                        newchans.add(chan)
-                # TODO: Add all channels to list. Since chans is a list of int (normally), could maybe just join into string and set as new value? -> won't deal with repeats
-                if len(chans) > 1:
-                    for chan in chans:
-                        newchans.add(str(chan))
-                # for single channels
-                elif len(chans) == 1:
-                    newchans.add(str(chans[0]))
+            else:
+                # if the metadata exists, need to add this metadata onto the existing one
+                # TODO: Need to find good way to add channels together. Consider single channel, more than one, etc.
+                # TODO: will it pull a list from the metadata or just a string? Check with maxwell data too
 
-                # for chan in chans:
-                #     newchans.add(str(chan))
-                #new_chans = sorted(list(set(old_chans + chans.astype(str))))
-                fixed_meta['channels'] = ','.join(sorted(list(newchans)))
-            with smart_open.open(f's3://braingeneersdev/ephys/{uuid}/derived/{exp}_visualization_metadata.json',
-                                 'w') as out_metadata:
-                json.dump(fixed_meta, out_metadata, indent=2)
+                newchans = set()
+                with smart_open.open(
+                        f's3://braingeneersdev/ephys/{uuid}/derived/{exp}_visualization_metadata.json') as old_json:
+                    fixed_meta = json.load(old_json)
+                    cur_chans = fixed_meta['channels']
+                    # if there's more than one value, split it and put all into a set
+                    if ',' in cur_chans:
+                        for chan in cur_chans.split(','):
+                            newchans.add(chan)
+                    else:
+                        newchans.add(cur_chans)
+                    # TODO: Add all channels to list. Since chans is a list of int (normally), could maybe just join into string and set as new value? -> won't deal with repeats
+                    if len(chans) > 1:
+                        for chan in chans:
+                            newchans.add(str(chan))
+                    # for single channels
+                    elif len(chans) == 1:
+                        newchans.add(str(chans[0]))
 
-        wr.upload(
-            local_file=f'{os.getcwd()}/Raw_and_filtered_data_{uuid}_{exp}_chan_{"-".join(map(str, chans))}.png',
-            path=f's3://braingeneersdev/ephys/{uuid}/derived/visuals/Raw_and_filtered_data_{uuid}_{exp}_chan_{"-".join(map(str, chans))}.png')
-        if spect:
-            wr.upload(local_file=f'{os.getcwd()}/Spectrogram_{uuid}_{exp}_chan_{"-".join(map(str, chans))}.png',
-                      path=f's3://braingeneersdev/ephys/{uuid}/derived/visuals/Spectrogram_{uuid}_{exp}_chan_{"-".join(map(str, chans))}.png')
+                    # for chan in chans:
+                    #     newchans.add(str(chan))
+                    #new_chans = sorted(list(set(old_chans + chans.astype(str))))
+                    fixed_meta['channels'] = ','.join(sorted(list(newchans)))
+                with smart_open.open(f's3://braingeneersdev/ephys/{uuid}/derived/{exp}_visualization_metadata.json',
+                                     'w') as out_metadata:
+                    json.dump(fixed_meta, out_metadata, indent=2)
+
+                # braingeneers.set_default_endpoint(endpoint)
+
+            wr.upload(
+                local_file=f'{os.getcwd()}/Raw_and_filtered_data_{uuid}_{exp}_chan_{"-".join(map(str, chans))}.png',
+                path=f's3://braingeneersdev/ephys/{uuid}/derived/visuals/{exp}/raw_and_filtered_data/{uuid}_{exp}_frame_{offset}-{offset + datalen}_chan_{"-".join(map(str, chans))}.png')
+            print("Raw data figure uploaded.")
+            if spect:
+                wr.upload(local_file=f'{os.getcwd()}/Spectrogram_{uuid}_{exp}_chan_{"-".join(map(str, chans))}.png',
+                          path=f's3://braingeneersdev/ephys/{uuid}/derived/visuals/{exp}/spectrogram/{uuid}_{exp}_frame_{offset}-{offset + datalen}_chan_{"-".join(map(str, chans))}.png')
+                print("Spectrogram uploaded.")
     print('Figures created.')
     plt.close()
     gc.collect()
