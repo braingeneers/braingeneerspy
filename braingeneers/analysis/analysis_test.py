@@ -4,14 +4,14 @@ import numpy as np
 import braingeneers.analysis as ba
 from collections import namedtuple
 
-DerpNeuron = namedtuple('Neuron', 'spike_time fs')
+Neuron = namedtuple('Neuron', 'spike_time fs')
 
 class DerpSpikeRecorder:
     'Weird mockup of a NEST spike recorder.'
     def __init__(self, idces, times):
         self.events = dict(senders=idces, times=times)
     def __getattr__(self, attr):
-        return self.__dict__[attr]
+        return self.events[attr]
     def __iter__(self):
         yield self
 
@@ -37,6 +37,21 @@ class AnalysisTest(unittest.TestCase):
         for a,b in zip(sda.train, sdb.train):
             self.assertTrue(len(a) == len(b) and np.allclose(a, b),
                             msg=msg)
+
+    def assertSpikeDataSubtime(self, sd, sdsub, tmin, tmax, msg=None):
+        'Assert that a subtime of a SpikeData is correct.'
+        self.assertEqual(len(sd.train), len(sdsub.train))
+        self.assertEqual(sdsub.length, tmax - tmin)
+        for n,nsub in zip(sd.train, sdsub.train):
+            self.assertAll(nsub <= tmax - tmin, msg=msg)
+            if tmin > 0:
+                self.assertAll(nsub > 0, msg=msg)
+                n_in_range = np.sum((n > tmin) & (n <= tmax))
+            else:
+                self.assertAll(nsub >= 0, msg=msg)
+                n_in_range = np.sum(n <= tmax)
+            print(tmin, tmax, n_in_range, len(nsub))
+            self.assertTrue(len(nsub) == n_in_range, msg=msg)
 
     def assertAll(self, bools, msg=None):
         'Assert that two arrays are equal elementwise.'
@@ -71,7 +86,7 @@ class AnalysisTest(unittest.TestCase):
 
         # Test 'list of Neuron()s' constructor.
         fs = 10
-        ns = [DerpNeuron(spike_time=ts*fs, fs=fs*1e3) for ts in sd.train]
+        ns = [Neuron(spike_time=ts*fs, fs=fs*1e3) for ts in sd.train]
         sd3 = ba.SpikeData(ns)
         self.assertSpikeDataEqual(sd, sd3)
 
@@ -101,7 +116,8 @@ class AnalysisTest(unittest.TestCase):
         self.assertSpikeDataEqual(sdsub, sdsub2)
 
         # Make sure the previous is actually using neuron_data.
-        sdsub3 = sd6.subset([3,4,5], by='nest_id').subset([4,5], by='nest_id')
+        sdsub3 = sd6.subset([3,4,5], by='nest_id'
+                            ).subset([4,5], by='nest_id')
         self.assertSpikeDataEqual(sdsub, sdsub3)
 
         # Test subtime() constructor idempotence.
@@ -110,40 +126,23 @@ class AnalysisTest(unittest.TestCase):
 
         # Test subtime() constructor actually grabs subsets.
         sdtime = sd.subtime(20, 50)
-        for i in range(len(sd.train)):
-            self.assertAll(sdtime.train[i] > 0)
-            self.assertAll(sdtime.train[i] <= 30)
-            n_in_range = np.sum((sd.train[i] > 20) & (sd.train[i] <= 50))
-            self.assertTrue(len(sdtime.train[i]) == n_in_range)
+        self.assertSpikeDataSubtime(sd, sdtime, 20, 50)
 
         # Test subtime() with negative arguments.
         sdtime = sd.subtime(-80, -50)
-        for i in range(len(sd.train)):
-            self.assertAll(sdtime.train[i] > 0)
-            self.assertAll(sdtime.train[i] <= 30)
-            n_in_range = np.sum((sd.train[i] > 20) & (sd.train[i] <= 50))
-            print(sd.length)
-            print(sdtime.length)
-            print(n_in_range, len(sdtime.train[i]))
-            print(sdtime.train[i])
-            print(sd.train[i])
-            self.assertTrue(len(sdtime.train[i]) == n_in_range)
+        self.assertSpikeDataSubtime(sd, sdtime, 20, 50)
 
         # Check subtime() with ... first argument.
         sdtime = sd.subtime(..., 50)
-        for i in range(len(sd.train)):
-            self.assertAll(sdtime.train[i] > 0)
-            self.assertAll(sdtime.train[i] <= 50)
-            n_in_range = np.sum(sd.train[i] <= 50)
-            self.assertTrue(len(sdtime.train[i]) == n_in_range)
+        self.assertSpikeDataSubtime(sd, sdtime, 0, 50)
 
         # Check subtime() with ... second argument.
         sdtime = sd.subtime(20, ...)
-        for i in range(len(sd.train)):
-            self.assertAll(sdtime.train[i] > 0)
-            self.assertAll(sdtime.train[i] <= 80)
-            n_in_range = np.sum(sd.train[i] > 20)
-            self.assertTrue(len(sdtime.train[i]) == n_in_range)
+        self.assertSpikeDataSubtime(sd, sdtime, 20, 100)
+
+        # Check subtime() with second argument greater than length.
+        sdtime = sd.subtime(20, 150)
+        self.assertSpikeDataSubtime(sd, sdtime, 20, 100)
 
         # Test consistency between subtime() and frames().
         for i,frame in enumerate(sd.frames(20)):
@@ -526,7 +525,8 @@ class AnalysisTest(unittest.TestCase):
         # give you exactly the correct rate, here 1 kHz.
         spikes = np.arange(10)
         when = np.random.rand(1000) * 12 - 1
-        self.assertAll(ba.analysis._resampled_isi(spikes, when) == 1)
+        self.assertAll(ba.analysis._resampled_isi(spikes, when,
+                                                  sigma_ms=0.0) == 1)
 
         # Also check that the rate is correctly calculated for some varying
         # examples.
