@@ -15,7 +15,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 setup(
     name='braingeneerspy',
     version='0.1.9',
-    python_requires='>=3.6.0',
+    python_requires='>=3.8.0',  # needed for ordered dictionaries
     description='Braingeneers Python utilities',
     long_description=long_description,
     long_description_content_type='text/markdown',
