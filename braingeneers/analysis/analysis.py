@@ -74,8 +74,9 @@ def read_phy_files(path: str, fs=20000.0):
                           "neighbor_templates": nbgh_temps}
 
     config_dict = dict(zip(channels, positions))
-    neuron_data = {0: neuron_dict, 1: config_dict}
-    spikedata = SpikeData(list(cluster_agg["spikeTimes"]), neuron_data=neuron_data)
+    neuron_data = {0: neuron_dict}
+    metadata = {0: config_dict}
+    spikedata = SpikeData(list(cluster_agg["spikeTimes"]), neuron_data=neuron_data, metadata=metadata)
     return spikedata
 
 
