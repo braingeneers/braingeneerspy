@@ -1,10 +1,6 @@
 """ A simplified MQTT client for Braingeneers specific connections """
-import boto3
-import awsiot
+
 # import awsiot.mqtt_connection_builder
-from awsiot import mqtt_connection_builder
-import awscrt
-import awscrt.auth
 import redis
 import tempfile
 import functools
@@ -18,9 +14,14 @@ import threading
 import queue
 import uuid
 from typing import Callable, Tuple, List, Dict, Union
+import random
+import json
+
+import braingeneers.iot.shadows as sh
+from paho.mqtt import client as mqtt_client
 
 
-MQTT_ENDPOINT = 'ahp00abmtph4i-ats.iot.us-west-2.amazonaws.com'
+
 AWS_REGION = 'us-west-2'
 PRP_ENDPOINT = 'https://s3.nautilus.optiputer.net'
 AWS_PROFILE = 'aws-braingeneers-iot'
@@ -28,6 +29,8 @@ REDIS_HOST = 'redis.braingeneers.gi.ucsc.edu'
 REDIS_PORT = 6379
 logger = logging.getLogger()
 logger.level = logging.INFO
+
+
 
 
 class CallableQueue(queue.Queue):
@@ -81,9 +84,61 @@ class MessageBroker:
         https://aws.github.io/aws-iot-device-sdk-python-v2/
         https://awslabs.github.io/aws-crt-python/
     """
+
+
+    def __init__(self, name: str = None, endpoint: str = AWS_REGION, credentials: (str, io.IOBase) = None):
+        """
+        :param name: name of device or client, must be a globally unique string ID.
+        :param endpoint: optional AWS endpoint, defaults to Braingeneers standard us-west-2
+        :param credentials: optional file path string or file-like object containing the
+            standard `~/.aws/credentials` file. See https://github.com/braingeneers/wiki/blob/main/shared/permissions.md
+            defaults to looking in `~/.aws/credentials` if left as None. This file expects to find profiles named
+            'aws-braingeneers-iot' and 'redis' in it.
+        """
+        self.name = name if name is not None else str(uuid.uuid4())
+        self.endpoint = endpoint
+
+        if credentials is None:
+            credentials = os.path.expanduser('~/.aws/credentials')  # default credentials location
+
+        if isinstance(credentials, str):
+            with open(credentials, 'r') as f:
+                self._credentials = f.read()
+        else:
+            assert hasattr(credentials, 'read'), 'credentials parameter must be a filename string or file-like object.'
+            self._credentials = credentials.read()
+
+        config = configparser.ConfigParser()
+        config.read_file(io.StringIO(self._credentials))
+
+        assert 'braingeneers-mqtt' in config, 'Your AWS credentials file is missing a section [braingeneers-mqtt], ' \
+                                    'you may have the wrong version of the credentials file.'
+        assert 'profile-id' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
+                                                'profile-id is missing from the [braingeneers-mqtt] section.'
+        assert 'profile-key' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
+                                                'profile-key was not found under the [braingeneers-mqtt] section.'
+        assert 'endpoint' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
+                                                'endpoint was not found under the [braingeneers-mqtt] section.'
+        assert 'port' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
+                                                'port was not found under the [braingeneers-mqtt] section.'
+
+        self.certs_temp_dir = None
+        self._mqtt_connection = None
+        self._mqtt_profile_id = config['braingeneers-mqtt']['profile-id']
+        self._mqtt_profile_key = config['braingeneers-mqtt']['profile-key']
+        self._mqtt_endpoint = config['braingeneers-mqtt']['endpoint']
+        self._mqtt_port = int(config['braingeneers-mqtt']['port'])
+        self._boto_iot_client = None
+        self._boto_iot_data_client = None
+        self._redis_client = None
+
+        self.shadow_interface = sh.DatabaseInteractor()
+
+        self._subscribed_data_streams = set()  # keep track of subscribed data streams
+
     def create_device(self, device_name: str, device_type: str) -> None:
         """
-        This function creates a new device in AWS IoT.
+        This function creates a new device in the Shadows database
 
         Creating a device is not necessary to communicate over MQTT, if you do so when you
         connect to MQTT with the device name that device will be searchable using list_devices.
@@ -97,13 +152,7 @@ class MessageBroker:
         :param device_name: Name of the device, for example 'marvin'
         :param device_type: Device type as defined in AWS, standard device types are ['ephys', 'picroscope', 'feeding']
         """
-        if self._mqtt_connection is not None:
-            logger.warning(
-                'You have already connected to MQTT before calling create_device. If the device did not exist '
-                'previously it will appear offline until you restart this code. You should create the device '
-                'before publishing or subscribing messages.'
-            )
-        self.boto_iot_client.create_thing(thingName=device_name, thingTypeName=device_type)
+        self.shadow_interface.create_interaction_thing(device_type, device_name)
 
     def publish_message(self, topic: str, message: (dict, list, str)) -> None:
         """
@@ -114,14 +163,14 @@ class MessageBroker:
         :param message: a message in dictionary/list format, JSON serializable, or a JSON string. May be None.
         """
         payload = json.dumps(message) if not isinstance(message, str) else message
-        publish_future, packet_id = self.mqtt_connection.publish(
-            topic=topic,
-            payload=payload,
-            qos=awscrt.mqtt.QoS.AT_LEAST_ONCE
+        result = self.mqtt_connection.publish(
+            topic,
+            payload,
+            qos=1
         )
-        publish_future.result()
+        return result
 
-    def subscribe_message(self, topic: str, callback: Callable, timeout_sec: float = 10) -> \
+    def subscribe_message(self, topic: str, callback: Callable) -> \
             Union[Callable, CallableQueue]:
         """
         Subscribes to receive messages on a given topic. When providing a topic you will be
@@ -156,12 +205,13 @@ class MessageBroker:
         :param timeout_sec: number of seconds to wait to verify connection successful.
         :return: the original callable, this is returned for convenience sake only, it's not altered in any way.
         """
-        subscribe_future, packet_id = self.mqtt_connection.subscribe(
-            topic=topic,
-            callback=functools.partial(self._callback_handler, callback=callback),
-            qos=awscrt.mqtt.QoS.AT_LEAST_ONCE,
-        )
-        subscribe_future.result(timeout=timeout_sec)
+        def on_message(client, userdata, msg):
+            # this modifies callback for compatibility with code written for the AWS SDK
+            callback(msg.topic, json.loads(msg.payload.decode()))
+
+        self.mqtt_connection.subscribe(topic, qos=1)
+        self.mqtt_connection.on_message = on_message
+
         return callback
 
     def publish_data_stream(self, stream_name: str, data: Dict[Union[str, bytes], bytes], stream_size: int) -> None:
@@ -251,34 +301,19 @@ class MessageBroker:
         result = self.redis_client.xread(streams=streams_exclusive, count=count if count >= 1 else None)
         return result
 
-    def list_devices_by_type(self, **filters) -> List[str]:
+    def list_devices_by_type(self, thingTypeName) -> List[str]:
         """
-        Lists devices, filtered by one or more keyword arguments. Returns
-        a list of device names in string format.
-        
-        request keyword list syntax:
-        
-        response = client.list_things(
-            nextToken='string',
-            maxResults=123,
-            attributeName='string',
-            attributeValue='string',
-            thingTypeName='string',
-            usePrefixAttributeValue=True|False
-        )
+        Lists devices, filtered by thingtype. Returns
+        a list of device names in string format along with the device id in the database.
 
         Example usage:
-        list_devices_by_type() 
-        list_devices_by_type(thingTypeName="picroscope")
-        list_devices_by_type(maxResults=10, thingTypeName="picroscope")
+        list_devices_by_type("BioPlateScope")
 
-        :param filters:
-        :return: a list of device names that match the filtering criteria.
+        This is a wrapper for the function located in the shadows interface, provided here for legacy compatibility.
+
         """
         
-        response = self.boto_iot_client.list_things(**filters)
-        ret_val = [thing['thingName'] for thing in response['things']]
-        return ret_val
+        return self.shadow_interface.list_devices_by_type(thingTypeName)
     
     def list_devices(self, **filters) -> List[str]:
         """
@@ -302,52 +337,43 @@ class MessageBroker:
         :param filters:
         :return: a list of device names that match the filtering criteria.
         """
-        query_string = 'connectivity.connected:true'  # always query for connected devices
-        for k, v in filters.items():
-            if isinstance(v, (tuple, list)):
-                assert len(v) == 2, f'One or two values expected for filter {k}, found {v}'
-                query_string = f'{query_string}'
-            else:
-                query_string = f'{query_string} AND shadow.{k}:{v}'
+        raise Exception ("This function is not implemented yet")
+        # query_string = 'connectivity.connected:true'  # always query for connected devices
+        # for k, v in filters.items():
+        #     if isinstance(v, (tuple, list)):
+        #         assert len(v) == 2, f'One or two values expected for filter {k}, found {v}'
+        #         query_string = f'{query_string}'
+        #     else:
+        #         query_string = f'{query_string} AND shadow.{k}:{v}'
 
-        response = self.boto_iot_client.search_index(queryString=query_string)
-        ret_val = [thing['thingName'] for thing in response['things']]
-        return ret_val
+        # response = self.boto_iot_client.search_index(queryString=query_string)
+        # ret_val = [thing['thingName'] for thing in response['things']]
+        # return ret_val
 
     def get_device_state(self, device_name: str) -> dict:
         """
         Get a dictionary of the devices state. State is a dict of key:value pairs.
         :param device_name: The devices name, example: "marvin"
         :return: a dictionary of {key: value, ...} state key: value pairs.
-        """
-        try:
-            response = self.boto_iot_data_client.get_thing_shadow(thingName=device_name)
-            assert response['ResponseMetadata']['HTTPStatusCode'] == 200
-            shadow = json.loads(response['payload'].read())
-            shadow_reported = shadow['state']['reported']
-        except self.boto_iot_data_client.exceptions.ResourceNotFoundException:
-            shadow_reported = {}
-        return shadow_reported
 
-    def update_device_state(self, device_name: str, device_state: dict) -> None:
+        wrapper for function in shadows interface, provided here for legacy compatibility.
         """
-        Updates a subset (or all) of a devices state variables as defined in the device_state dict.
 
-        :param device_name: device name
-        :param device_state: a dictionary of one or more device states to update or create
+        return self.shadow_interface.get_device_state_by_name(device_name)
+
+
+    def update_device_state(self, device_name: str, state: dict) -> None:
         """
-        # Construct shadow file
-        shadow = {
-            'state': {
-                'reported': device_state
-            }
-        }
+        Update the state of a device. State is a dict of key:value pairs.
+        :param device_name: The devices name, example: "marvin"
+        :param state: a dictionary of {key: value, ...} state key: value pairs.
 
-        # Submit update to AWS
-        self.boto_iot_data_client.update_thing_shadow(
-            thingName=device_name,
-            payload=json.dumps(shadow).encode('utf-8')
-        )
+        wrapper for function in shadows interface, provided here for legacy compatibility.
+        """
+
+        thing = self.shadow_interface.get_device(name=device_name)
+        thing.add_to_shadow(state)
+
 
     def delete_device_state(self, device_name: str, device_state_keys: List[str] = None) -> None:
         """
@@ -357,18 +383,18 @@ class MessageBroker:
         :param device_state_keys: a List of one or more state variables to delete. None to delete all.
         :return:
         """
+        thing = self.shadow_interface.get_device(name=device_name)
         if device_state_keys is None:
+            thing.attributes["shadow"] = {}
             # Delete the whole shadow file
-            try:
-                self.boto_iot_data_client.delete_thing_shadow(thingName=device_name)
-            except self.boto_iot_data_client.exceptions.ResourceNotFoundException:
-                pass  # ResourceNotFoundException thrown when no shadow file exits, the desired state anyway.
         else:
             # Delete specific keys from the shadow file
             state = self.get_device_state(device_name)
             for key in device_state_keys:
-                state[key] = None
-            self.update_device_state(device_name=device_name, device_state=state)
+                state.pop(key,None)
+
+            thing.attributes["shadow"] = state
+            thing.push()
 
     def subscribe_device_state_change(self, device_name: str, device_state_keys: List[str], callback: Callable) -> None:
         """
@@ -386,17 +412,22 @@ class MessageBroker:
         :param callback:
         :return:
         """
+        raise Exception ("This function is not supported by the braingeneers shadows interface, it is a holdover from the original implementation using AWS IoT")
         # Get the latest version for tracking
         # todo
 
         # Subscribe on the $aws/things/THING_NAME/shadow/update/delta
-        func = functools.partial(self._callback_subscribe_device_state_change, callback, device_name, device_state_keys)
-        self.subscribe_message(f'$aws/things/{device_name}/shadow/update/accepted', func)
+        # func = functools.partial(self._callback_subscribe_device_state_change, callback, device_name, device_state_keys)
+        # self.subscribe_message(f'$aws/things/{device_name}/shadow/update/accepted', func)
 
     @staticmethod
     def _callback_subscribe_device_state_change(callback: Callable,
                                                 device_name: str, device_state_keys: List[str],
                                                 topic: str, message: dict):
+        """
+        Not in use with current implementation of shadows interface
+        
+        """
         print('')
         print(f'_callback_subscribe_device_state_change\n\tdevice_name: {device_name}\n\ttopic: {topic}\n\tmessage: {message}')  # todo debug step, remove
 
@@ -452,34 +483,37 @@ class MessageBroker:
     def mqtt_connection(self):
         """ Lazy initialization of mqtt connection. """
         if self._mqtt_connection is None:
-            with TemporaryEnvironment('AWS_PROFILE', AWS_PROFILE):
-                # write the aws root cert to a temp location, doing this to avoid
-                # configuration dependencies, for simplicity
-                self.certs_temp_dir = tempfile.TemporaryDirectory()  # cleans up automatically on exit
-                with open(f'{self.certs_temp_dir.name}/AmazonRootCA1.pem', 'wb') as f:
-                    f.write(AWS_ROOT_CA1.encode('utf-8'))
+            '''
+            root certs only required for https connection our current mqtt broker does not have this yet
+            '''
+            # with TemporaryEnvironment('AWS_PROFILE', AWS_PROFILE):
+            #     # write the aws root cert to a temp location, doing this to avoid
+            #     # configuration dependencies, for simplicity
+            #     self.certs_temp_dir = tempfile.TemporaryDirectory()  # cleans up automatically on exit
+            #     with open(f'{self.certs_temp_dir.name}/AmazonRootCA1.pem', 'wb') as f:
+            #         f.write(AWS_ROOT_CA1.encode('utf-8'))
 
-                event_loop_group = awscrt.io.EventLoopGroup(1)
-                host_resolver = awscrt.io.DefaultHostResolver(event_loop_group)
-                client_bootstrap = awscrt.io.ClientBootstrap(event_loop_group, host_resolver)
-                credentials_provider = awscrt.auth.AwsCredentialsProvider.new_default_chain(client_bootstrap)
+            #     event_loop_group = awscrt.io.EventLoopGroup(1)
+            #     host_resolver = awscrt.io.DefaultHostResolver(event_loop_group)
+            #     client_bootstrap = awscrt.io.ClientBootstrap(event_loop_group, host_resolver)
+            #     credentials_provider = awscrt.auth.AwsCredentialsProvider.new_default_chain(client_bootstrap)
+            def on_connect(client, userdata, flags, rc):
+                if rc == 0:
+                    print("Connected to MQTT Broker!")
+                    logger.info('MQTT connected: client:' + str(client) + ' userdata:' + str(userdata) + ' flags:' + str(flags) + ' rc:' + str(rc))
+                else:
+                    print("Failed to connect, return code %d\n", rc)
 
-                self._mqtt_connection = mqtt_connection_builder.websockets_with_default_aws_signing(
-                    endpoint=MQTT_ENDPOINT,
-                    client_bootstrap=client_bootstrap,
-                    region=AWS_REGION,
-                    credentials_provider=credentials_provider,
-                    ca_filepath=f'{self.certs_temp_dir.name}/AmazonRootCA1.pem',
-                    on_connection_interrupted=self._on_connection_interrupted,
-                    on_connection_resumed=self._on_connection_resumed,
-                    client_id=self.name,
-                    clean_session=False,
-                    keep_alive_secs=6
-                )
+            client_id = f'braingeneerspy-{random.randint(0, 1000)}'
 
-                connect_future = self.mqtt_connection.connect()
-                logger.info('MQTT connected: ', connect_future.result())
-
+            self._mqtt_connection = mqtt_client.Client(client_id)
+            self._mqtt_connection.username_pw_set(self._mqtt_profile_id, self._mqtt_profile_key)
+            self._mqtt_connection.on_connect = on_connect
+            self._mqtt_connection.connect(self._mqtt_endpoint, self._mqtt_port)
+            self._mqtt_connection.loop_start()
+            
+    
+                
         return self._mqtt_connection
 
     @property
@@ -515,36 +549,6 @@ class MessageBroker:
 
         return self._redis_client
 
-    def __init__(self, name: str = None, endpoint: str = AWS_REGION, credentials: (str, io.IOBase) = None):
-        """
-
-        :param name: name of device or client, must be a globally unique string ID.
-        :param endpoint: optional AWS endpoint, defaults to Braingeneers standard us-west-2
-        :param credentials: optional file path string or file-like object containing the
-            standard `~/.aws/credentials` file. See https://github.com/braingeneers/wiki/blob/main/shared/permissions.md
-            defaults to looking in `~/.aws/credentials` if left as None. This file expects to find profiles named
-            'aws-braingeneers-iot' and 'redis' in it.
-        """
-        self.name = name if name is not None else str(uuid.uuid4())
-        self.endpoint = endpoint
-
-        if credentials is None:
-            credentials = os.path.expanduser('~/.aws/credentials')  # default credentials location
-
-        if isinstance(credentials, str):
-            with open(credentials, 'r') as f:
-                self._credentials = f.read()
-        else:
-            assert hasattr(credentials, 'read'), 'credentials parameter must be a filename string or file-like object.'
-            self._credentials = credentials.read()
-
-        self.certs_temp_dir = None
-        self._mqtt_connection = None
-        self._boto_iot_client = None
-        self._boto_iot_data_client = None
-        self._redis_client = None
-
-        self._subscribed_data_streams = set()  # keep track of subscribed data streams
 
     def shutdown(self):
         """ Release resources and shutdown connections as needed. """
