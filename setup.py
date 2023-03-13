@@ -14,7 +14,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 #   list is not duplicated. It is also necessary to allow the dependency list to be validated at runtime.
 setup(
     name='braingeneerspy',
-    version='0.1.9',
+    version='0.1.10',
     python_requires='>=3.10.0',  # needed for ordered dictionaries; also this bug in 3.9 and below https://bugs.python.org/issue42853
     description='Braingeneers Python utilities',
     long_description=long_description,
