@@ -9,6 +9,7 @@ import functools
 import inspect
 import multiprocessing
 import posixpath
+import itertools
 
 
 _s3_client = None  # S3 client for boto3, lazy initialization performed in _lazy_init_s3_client()

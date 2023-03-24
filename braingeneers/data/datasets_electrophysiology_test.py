@@ -20,16 +20,67 @@ class MaxwellReaderTests(unittest.TestCase):
         self.assertEqual(data.shape, (1, 4))  # trivial check that we read data
 
     @skip_unittest_if_offline
-    def test_online_maxwell_load_data_by_index_number(self):
-        """ Test that load_data can accept an index number. """
-        self.fail()  # needs to be implemented asap, this is a known bug
+    def test_load_data_maxwell_per_channel(self):
+        """ Reads a single channel from a maxwell data file without any parallelism """
+        filepath = 's3://braingeneersdev/dfparks/omfg_stim.repack4-1.raw.h5'  # a repacked V1 HDF5 file
+        data = ephys._load_data_maxwell_per_channel(filepath, 42, 5, 10)
+        self.assertEqual(data.shape, (10,))
+        self.assertListEqual(data.tolist(), [497, 497, 497, 495, 496, 497, 497, 496, 497, 497])  # manually confirmed result
 
     @skip_unittest_if_offline
-    def test_bug_metadata_read(self):
-        # uuid = '2022-04-25-e-'
-        uuid = '9999-00-00-e-test'
+    def test_read_maxwell_parallel_maxwell_v1_format(self):
+        """ V1 maxwell HDF5 data format """
+        uuid = '2021-10-05-e-org1_real'
         metadata = ephys.load_metadata(uuid)
-        self.assertTrue(len(metadata) > 0)
+        data = ephys.load_data_maxwell_parallel(
+            metadata=metadata,
+            batch_uuid=uuid,
+            experiment='experiment1',
+            channels=[42, 43],
+            offset=5,
+            length=10,
+        )
+        self.assertEqual(data.shape, (2, 10))
+        self.assertListEqual(data.tolist(), [
+            [527, 527, 527, 527, 526, 526, 526, 527, 526, 527],
+            [511, 511, 511, 511, 512, 511, 510, 511, 512, 511],
+        ])
+
+    @skip_unittest_if_offline
+    def test_read_data_maxwell_v1_format(self):
+        """ V1 maxwell HDF5 data format """
+        uuid = '2021-10-05-e-org1_real'
+        metadata = ephys.load_metadata(uuid)
+        data = ephys.load_data(
+            metadata=metadata,
+            experiment=0,
+            channels=[42, 43],
+            offset=5,
+            length=10,
+        )
+        self.assertEqual(data.shape, (2, 10))
+        self.assertListEqual(data.tolist(), [
+            [527, 527, 527, 527, 526, 526, 526, 527, 526, 527],
+            [511, 511, 511, 511, 512, 511, 510, 511, 512, 511],
+        ])
+
+    @skip_unittest_if_offline
+    def test_read_data_maxwell_v2_format(self):
+        """ V2 maxwell HDF5 data format """
+        uuid = '2023-02-08-e-mouse_updates'
+        metadata = ephys.load_metadata(uuid)
+        data = ephys.load_data(
+            metadata=metadata,
+            experiment=0,
+            channels=[73, 42],
+            offset=5,
+            length=10,
+        )
+        self.assertEqual(data.shape, (2, 10))
+        self.assertListEqual(data.tolist(), [
+            [507, 508, 509, 509, 509, 508, 507, 507, 509, 509],
+            [497, 497, 497, 498, 498, 498, 497, 497, 498, 498],
+        ])
 
 
 class AxionReaderTests(unittest.TestCase):
@@ -64,7 +115,7 @@ class AxionReaderTests(unittest.TestCase):
     @skip_unittest_if_offline
     def test_online_axion_generate_metadata(self):
         metadata = ephys.generate_metadata_axion(self.batch_uuid)
-        experiment0 = metadata['ephys_experiments'][0]
+        experiment0 = list(metadata['ephys_experiments'].values())[0]
 
         self.assertEqual(len(metadata['ephys_experiments']), 6)
         self.assertEqual(metadata['issue'], '')
@@ -73,7 +124,7 @@ class AxionReaderTests(unittest.TestCase):
         self.assertEqual(metadata['uuid'], self.batch_uuid)
         self.assertEqual(len(metadata), 6)
 
-        self.assertEqual(experiment0['hardware'], 'Axion')
+        self.assertEqual(experiment0['hardware'], 'Axion BioSystems')
         self.assertEqual(experiment0['name'], 'A1')
         self.assertEqual(experiment0['notes'], '')
         self.assertEqual(experiment0['num_channels'], 384)  # 6 well, 64 channel per well
@@ -94,7 +145,7 @@ class AxionReaderTests(unittest.TestCase):
         self.assertEqual(experiment0['blocks'][0]['path'], 'H28126_WK27_010320_Cohort_202000706_Wash(000).raw')
         self.assertTrue('T' in experiment0['blocks'][0]['timestamp'])
 
-        self.assertEqual(metadata['ephys_experiments'][1]['axion_channel_offset'], 64)
+        self.assertEqual(list(metadata['ephys_experiments'].values())[1]['axion_channel_offset'], 64)
 
         # validate json serializability
         json.dumps(metadata)
@@ -164,10 +215,10 @@ class AxionReaderTests(unittest.TestCase):
         voltage_scaling_factor = -5.484861781483107e-08
 
         # Test a few manually selected values are returned correctly
-        self.assertEqual(data[0][0], -9 * voltage_scaling_factor)
-        self.assertEqual(data[0][1], -18 * voltage_scaling_factor)
-        self.assertEqual(data[0][2], 10 * voltage_scaling_factor)
-        self.assertEqual(data[0][3], 30 * voltage_scaling_factor)
+        self.assertAlmostEqual(data[0][0], -9 * voltage_scaling_factor)
+        self.assertAlmostEqual(data[0][1], -18 * voltage_scaling_factor)
+        self.assertAlmostEqual(data[0][2], 10 * voltage_scaling_factor)
+        self.assertAlmostEqual(data[0][3], 30 * voltage_scaling_factor)
 
     @skip_unittest_if_offline
     def test_bug_read_length_neg_one(self):
