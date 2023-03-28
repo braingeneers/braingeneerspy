@@ -18,6 +18,7 @@ import random
 import json
 import braingeneers.iot.shadows as sh
 from paho.mqtt import client as mqtt_client
+from deprecated import deprecated
 
 
 AWS_REGION = 'us-west-2'
