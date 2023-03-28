@@ -37,6 +37,14 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
 
         message_received_barrier.wait()  # will throw BrokenBarrierError if timeout
 
+    def test_publish_subscribe_message_with_confirm_receipt(self):
+        q = messaging.CallableQueue()
+        self.mb.subscribe_message('test/unittest', q)
+        self.mb.publish_message('test/unittest', message={'test': 'true'}, confirm_receipt=True)
+        topic, message = q.get()
+        self.assertEqual(topic, 'test/unittest')
+        self.assertEqual(message, {'test': 'true'})
+
     def test_publish_subscribe_data_stream(self):
         """ Uses queue method to test publish/subscribe data streams """
         q = messaging.CallableQueue(1)

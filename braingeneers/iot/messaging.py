@@ -152,20 +152,36 @@ class MessageBroker:
         """
         self.shadow_interface.create_interaction_thing(device_type, device_name)
 
-    def publish_message(self, topic: str, message: (dict, list, str)) -> None:
+    def publish_message(self, topic: str, message: (dict, list, str), confirm_receipt: bool = False) -> None:
         """
         Publish a message on a topic. Example:
             publish('/devices/ephys/marvin', '{"START_EXPERIMENT":None, "UUID":"2020-11-27-e-primary-axion-morning"}')
 
         :param topic: an MQTT topic as documented at https://github.com/braingeneers/wiki/blob/main/shared/mqtt.md
         :param message: a message in dictionary/list format, JSON serializable, or a JSON string. May be None.
+        :param confirm_receipt: blocks until the message send is confirmed. This will cause the `publish_message` function
+            to block for a network delay
         """
+        if confirm_receipt is True:
+            barrier = threading.Barrier(2, timeout=10)
+            original_callback = self.mqtt_connection.on_publish
+
+            def on_publish_callback(client, userdata, msg):
+                barrier.wait()
+                self.mqtt_connection.on_publish = original_callback
+
+            self.mqtt_connection.on_publish = on_publish_callback
+
         payload = json.dumps(message) if not isinstance(message, str) else message
         result = self.mqtt_connection.publish(
-            topic,
-            payload,
-            qos=1
+            topic=topic,
+            payload=payload,
+            qos=2,
         )
+
+        if confirm_receipt:
+            barrier.wait()
+
         return result
 
     def subscribe_message(self, topic: str, callback: Callable) -> \
@@ -207,7 +223,7 @@ class MessageBroker:
             # this modifies callback for compatibility with code written for the AWS SDK
             callback(msg.topic, json.loads(msg.payload.decode()))
 
-        self.mqtt_connection.subscribe(topic, qos=1)
+        self.mqtt_connection.subscribe(topic, qos=2)
         self.mqtt_connection.on_message = on_message
 
         return callback
