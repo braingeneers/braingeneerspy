@@ -40,6 +40,7 @@ DEPENDENCIES = {
         'awswrangler @ git+https://github.com/aws/aws-sdk-pandas.git@3.0.0rc3',
         'pandas',
         'nptyping',
+        'paho-mqtt',
     ],
     # Specific dependency groups allow unnecessary (and often large) dependencies to be skipped
     # add dependency groups here, changes will be dynamically added to setup(...)

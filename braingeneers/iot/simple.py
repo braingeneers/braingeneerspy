@@ -83,7 +83,7 @@ def start_iot(device_name, device_type, experiment, commands=[]): #, #allowed_co
     print = logger.debug
 
     # Start IoT Device
-    if device_name not in mb.list_devices_by_type( thingTypeName= device_type):    # check if device already exists
+    if device_name not in mb.list_devices_by_type(thing_type_name= device_type):    # check if device already exists
         mb.create_device( device_name= device_name, device_type= device_type)      # if not, create it
     else:                                                                          # otherwise, check device is ok and isn't still running
         assert "status" in mb.get_device_state(device_name), f"{device_name} has corrupted data! Talk to data team."

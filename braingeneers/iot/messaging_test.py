@@ -10,6 +10,7 @@ import warnings
 import functools
 import braingeneers.iot.shadows as sh
 
+
 class TestBraingeneersMessageBroker(unittest.TestCase):
     def setUp(self) -> None:
         warnings.filterwarnings("ignore", category=ResourceWarning, message="unclosed.*<ssl.SSLSocket.*>")

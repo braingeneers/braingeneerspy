@@ -16,10 +16,8 @@ import uuid
 from typing import Callable, Tuple, List, Dict, Union
 import random
 import json
-
 import braingeneers.iot.shadows as sh
 from paho.mqtt import client as mqtt_client
-
 
 
 AWS_REGION = 'us-west-2'
@@ -29,8 +27,6 @@ REDIS_HOST = 'redis.braingeneers.gi.ucsc.edu'
 REDIS_PORT = 6379
 logger = logging.getLogger()
 logger.level = logging.INFO
-
-
 
 
 class CallableQueue(queue.Queue):
@@ -85,7 +81,6 @@ class MessageBroker:
         https://awslabs.github.io/aws-crt-python/
     """
 
-
     def __init__(self, name: str = None, endpoint: str = AWS_REGION, credentials: (str, io.IOBase) = None):
         """
         :param name: name of device or client, must be a globally unique string ID.
@@ -111,16 +106,18 @@ class MessageBroker:
         config = configparser.ConfigParser()
         config.read_file(io.StringIO(self._credentials))
 
-        assert 'braingeneers-mqtt' in config, 'Your AWS credentials file is missing a section [braingeneers-mqtt], ' \
-                                    'you may have the wrong version of the credentials file.'
-        assert 'profile-id' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
-                                                'profile-id is missing from the [braingeneers-mqtt] section.'
-        assert 'profile-key' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
-                                                'profile-key was not found under the [braingeneers-mqtt] section.'
-        assert 'endpoint' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
-                                                'endpoint was not found under the [braingeneers-mqtt] section.'
-        assert 'port' in config['braingeneers-mqtt'], 'Your AWS credentials file is malformed, ' \
-                                                'port was not found under the [braingeneers-mqtt] section.'
+        assert 'braingeneers-mqtt' in config, \
+            'Your AWS credentials file is missing a section [braingeneers-mqtt], you may have the wrong ' \
+            'version of the credentials file.'
+        assert 'profile-id' in config['braingeneers-mqtt'], \
+            'Your AWS credentials file is malformed, profile-id is missing from the [braingeneers-mqtt] section.'
+        assert 'profile-key' in config['braingeneers-mqtt'], \
+            'Your AWS credentials file is malformed, profile-key was not found under the [braingeneers-mqtt] section.'
+        assert 'endpoint' in config['braingeneers-mqtt'], \
+            'Your AWS credentials file is malformed, endpoint was not found under the [braingeneers-mqtt] section.'
+        assert 'port' in config['braingeneers-mqtt'], \
+            'Your AWS credentials file is malformed, ' \
+                                                      'port was not found under the [braingeneers-mqtt] section.'
 
         self.certs_temp_dir = None
         self._mqtt_connection = None
@@ -301,9 +298,9 @@ class MessageBroker:
         result = self.redis_client.xread(streams=streams_exclusive, count=count if count >= 1 else None)
         return result
 
-    def list_devices_by_type(self, thingTypeName) -> List[str]:
+    def list_devices_by_type(self, thing_type_name) -> List[str]:
         """
-        Lists devices, filtered by thingtype. Returns
+        Lists devices, filtered by thing_type_name. Returns
         a list of device names in string format along with the device id in the database.
 
         Example usage:
@@ -313,7 +310,7 @@ class MessageBroker:
 
         """
         
-        return self.shadow_interface.list_devices_by_type(thingTypeName)
+        return self.shadow_interface.list_devices_by_type(thing_type_name)
     
     def list_devices(self, **filters) -> List[str]:
         """
@@ -337,7 +334,7 @@ class MessageBroker:
         :param filters:
         :return: a list of device names that match the filtering criteria.
         """
-        raise Exception ("This function is not implemented yet")
+        raise NotImplementedError("This function is not implemented yet")
         # query_string = 'connectivity.connected:true'  # always query for connected devices
         # for k, v in filters.items():
         #     if isinstance(v, (tuple, list)):
@@ -361,7 +358,6 @@ class MessageBroker:
 
         return self.shadow_interface.get_device_state_by_name(device_name)
 
-
     def update_device_state(self, device_name: str, state: dict) -> None:
         """
         Update the state of a device. State is a dict of key:value pairs.
@@ -373,7 +369,6 @@ class MessageBroker:
 
         thing = self.shadow_interface.get_device(name=device_name)
         thing.add_to_shadow(state)
-
 
     def delete_device_state(self, device_name: str, device_state_keys: List[str] = None) -> None:
         """
@@ -396,6 +391,7 @@ class MessageBroker:
             thing.attributes["shadow"] = state
             thing.push()
 
+    @deprecated
     def subscribe_device_state_change(self, device_name: str, device_state_keys: List[str], callback: Callable) -> None:
         """
         Subscribe to be notified if one or more state variables changes.
@@ -412,13 +408,8 @@ class MessageBroker:
         :param callback:
         :return:
         """
-        raise Exception ("This function is not supported by the braingeneers shadows interface, it is a holdover from the original implementation using AWS IoT")
-        # Get the latest version for tracking
-        # todo
-
-        # Subscribe on the $aws/things/THING_NAME/shadow/update/delta
-        # func = functools.partial(self._callback_subscribe_device_state_change, callback, device_name, device_state_keys)
-        # self.subscribe_message(f'$aws/things/{device_name}/shadow/update/accepted', func)
+        raise NotImplementedError("This function is not supported by the braingeneers shadows interface, "
+                                  "it is a holdover from the original implementation using AWS IoT")
 
     @staticmethod
     def _callback_subscribe_device_state_change(callback: Callable,
@@ -486,23 +477,11 @@ class MessageBroker:
             '''
             root certs only required for https connection our current mqtt broker does not have this yet
             '''
-            # with TemporaryEnvironment('AWS_PROFILE', AWS_PROFILE):
-            #     # write the aws root cert to a temp location, doing this to avoid
-            #     # configuration dependencies, for simplicity
-            #     self.certs_temp_dir = tempfile.TemporaryDirectory()  # cleans up automatically on exit
-            #     with open(f'{self.certs_temp_dir.name}/AmazonRootCA1.pem', 'wb') as f:
-            #         f.write(AWS_ROOT_CA1.encode('utf-8'))
-
-            #     event_loop_group = awscrt.io.EventLoopGroup(1)
-            #     host_resolver = awscrt.io.DefaultHostResolver(event_loop_group)
-            #     client_bootstrap = awscrt.io.ClientBootstrap(event_loop_group, host_resolver)
-            #     credentials_provider = awscrt.auth.AwsCredentialsProvider.new_default_chain(client_bootstrap)
             def on_connect(client, userdata, flags, rc):
                 if rc == 0:
-                    print("Connected to MQTT Broker!")
                     logger.info('MQTT connected: client:' + str(client) + ' userdata:' + str(userdata) + ' flags:' + str(flags) + ' rc:' + str(rc))
                 else:
-                    print("Failed to connect, return code %d\n", rc)
+                    logger.error("Failed to connect to MQTT, return code %d\n", rc)
 
             client_id = f'braingeneerspy-{random.randint(0, 1000)}'
 
@@ -511,9 +490,7 @@ class MessageBroker:
             self._mqtt_connection.on_connect = on_connect
             self._mqtt_connection.connect(self._mqtt_endpoint, self._mqtt_port)
             self._mqtt_connection.loop_start()
-            
-    
-                
+
         return self._mqtt_connection
 
     @property
@@ -549,7 +526,6 @@ class MessageBroker:
 
         return self._redis_client
 
-
     def shutdown(self):
         """ Release resources and shutdown connections as needed. """
         if self.certs_temp_dir is not None:
@@ -572,57 +548,3 @@ class TemporaryEnvironment:
             del os.environ[self.env]
         else:
             os.environ[self.env] = self.save_original_env_value
-
-
-# The AWS root certificate. Embedded here to avoid requiring installing it as a dependency.
-AWS_ROOT_CA1 = inspect.cleandoc("""
-    -----BEGIN CERTIFICATE-----
-    MIIDQTCCAimgAwIBAgITBmyfz5m/jAo54vB4ikPmljZbyjANBgkqhkiG9w0BAQsF
-    ADA5MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6
-    b24gUm9vdCBDQSAxMB4XDTE1MDUyNjAwMDAwMFoXDTM4MDExNzAwMDAwMFowOTEL
-    MAkGA1UEBhMCVVMxDzANBgNVBAoTBkFtYXpvbjEZMBcGA1UEAxMQQW1hem9uIFJv
-    b3QgQ0EgMTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJ4gHHKeNXj
-    ca9HgFB0fW7Y14h29Jlo91ghYPl0hAEvrAIthtOgQ3pOsqTQNroBvo3bSMgHFzZM
-    9O6II8c+6zf1tRn4SWiw3te5djgdYZ6k/oI2peVKVuRF4fn9tBb6dNqcmzU5L/qw
-    IFAGbHrQgLKm+a/sRxmPUDgH3KKHOVj4utWp+UhnMJbulHheb4mjUcAwhmahRWa6
-    VOujw5H5SNz/0egwLX0tdHA114gk957EWW67c4cX8jJGKLhD+rcdqsq08p8kDi1L
-    93FcXmn/6pUCyziKrlA4b9v7LWIbxcceVOF34GfID5yHI9Y/QCB/IIDEgEw+OyQm
-    jgSubJrIqg0CAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMC
-    AYYwHQYDVR0OBBYEFIQYzIU07LwMlJQuCFmcx7IQTgoIMA0GCSqGSIb3DQEBCwUA
-    A4IBAQCY8jdaQZChGsV2USggNiMOruYou6r4lK5IpDB/G/wkjUu0yKGX9rbxenDI
-    U5PMCCjjmCXPI6T53iHTfIUJrU6adTrCC2qJeHZERxhlbI1Bjjt/msv0tadQ1wUs
-    N+gDS63pYaACbvXy8MWy7Vu33PqUXHeeE6V/Uq2V8viTO96LXFvKWlJbYK8U90vv
-    o/ufQJVtMVT8QtPHRh8jrdkPSHCa2XV4cdFyQzR1bldZwgJcJmApzyMZFo6IQ6XU
-    5MsI+yMRQ+hDKXJioaldXgjUkK642M4UwtBV8ob2xJNDd2ZhwLnoQdeXeGADbkpy
-    rqXRfboQnoZsG4q5WTP468SQvvG5
-    -----END CERTIFICATE-----
-""")
-
-"""
-# AWS Thing Indexing Notes - this is misc dev documentation.
-
-aws --profile aws-braingeneers-iot --region us-west-2 iot update-indexing-configuration --thing-indexing-configuration '{"thingIndexingMode": "REGISTRY_AND_SHADOW", "thingConnectivityIndexingMode": "STATUS", "customFields": []}' 
-{
-  "thingIndexingMode": "OFF"|"REGISTRY"|"REGISTRY_AND_SHADOW",
-  "thingConnectivityIndexingMode": "OFF"|"STATUS",
-  "customFields": [
-    { name: field-name, type: String | Number | Boolean },
-    ...
-  ]
-}
-
-'{"thingIndexingMode": "REGISTRY_AND_SHADOW", "thingConnectivityIndexingMode": "STATUS", "customFields": []}'
-
-Useful CLI commands for testing:
---------------------------------
-python3 pubsub.py --endpoint ahp00abmtph4i-ats.iot.us-west-2.amazonaws.com --root-ca AmazonRootCA1.pem --client-id "arn:aws:iot:us-west-2:443872533066:thing/test" --signing-region us-west-2 --use-websocket --count 100
-aws --profile aws-braingeneers-iot --region us-west-2 iot search-index --query-string connectivity.connected:true
-
-https://stackoverflow.com/questions/65639235/how-to-set-a-profile-on-an-aws-client
-https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/iot.html
-https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/iot-data.html
-boto_session = boto3.Session(profile_name='aws-braingeneers-iot')
-iot_client = boto_session.client('iot', region_name='us-west-2')
-iot_data_client = boto_session.client('iot-data', region_name='us-west-2')
-
-"""
