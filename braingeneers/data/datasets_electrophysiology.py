@@ -725,12 +725,13 @@ def load_data_maxwell(metadata, batch_uuid, experiment_ix: int, channels, start,
     # metadata['ephys_experiments'][experiment_ix]['num_channels']
     # if length is -1, read in all the frames from all blocks
     if length == -1:
-        end_block = len(metadata['ephys_experiments'][experiment_ix]['blocks']) - 1
-        frame_end = 0
-        # add up all the frames divided by their channel number
-        for block in metadata['ephys_experiments'][experiment_ix]['blocks']:
-            frame_end += block['num_frames'] / metadata['ephys_experiments'][experiment_ix]['num_channels']
-        frame_end = int(frame_end)
+        # end_block = len(metadata['ephys_experiments'][experiment_ix]['blocks']) - 1
+        # frame_end = 0
+        # # add up all the frames divided by their channel number
+        # for block in metadata['ephys_experiments'][experiment_ix]['blocks']:
+        #     frame_end += block['num_frames'] / metadata['ephys_experiments'][experiment_ix]['num_channels']
+        # frame_end = int(frame_end)
+        frame_end = metadata['ephys_experiments'][experiment_ix]['blocks'][index]['num_frames']
     else:
         frame_end = start + length
     #     for index in range(start_block, len(metadata['ephys_experiments'][experiment_ix]['blocks'])):
