@@ -435,7 +435,6 @@ def main(uuid: str, experiment: Union[str, int], outputLocation: str, details: L
     # if experiment is a string, need to keep it for uploading but have an int.
     # If it's an int, need to make it a string but still use it.
     # e will be the int version, exp will be the string.
-    # TODO: NOTE! This load the old metadata version, will have to be modified when the metadata gets fixed
     # TODO: Go into metadata and use experiment number to get the name of the Trace
     e = (int(experiment[-1]) - 1) if isinstance(experiment, str) else experiment
     exp = f'experiment{experiment + 1}' if isinstance(experiment, int) else experiment
