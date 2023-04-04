@@ -7,8 +7,9 @@ __pycache__
 tmp/
 *.pyc
 build/
-.DS_Store
+**/.DS_Store
 dist/
 braingeneers/test/*
 braingeneers/test/unit_test.py
 braingeneers/iot/credentials.py
+**/.vscode/**

@@ -51,67 +51,6 @@ def get_basepath():
     return basepath
 
 
-@deprecated('Will be removed in the future, use braingeneers.utils.smart_open_braingeneers instead')
-def get_archive_path():
-    """/public/groups/braingeneers/ephys  Return path to archive on the GI public server """
-    return os.getenv("BRAINGENEERS_ARCHIVE_PATH", "/public/groups/braingeneers/ephys")
-
-
-@deprecated('Will be removed in the future, use braingeneers.utils.smart_open_braingeneers instead')
-def get_archive_url():
-    """  https://s3.nautilus.optiputer.net/braingeneers/ephys     Return URL to archive on PRP """
-    return "{}/ephys".format(os.getenv("BRAINGENEERS_ARCHIVE_URL", "s3://braingeneers"))
-
-
-@deprecated('Use load_metadata(batch_uuid, experiment_nums) instead.')
-def load_batch(batch_uuid):
-    """
-    Load the metadata for a batch of experiments and return as a dict
-    Parameters
-    ----------
-    batch_uuid : str
-        UUID of batch of experiments within the Braingeneer's archive'
-        Example: 2019-02-15, or d820d4a6-f59a-4565-bcd1-6469228e8e64
-    """
-    try:
-        full_path = "{}/{}/metadata.json".format(get_archive_path(), batch_uuid)
-        if not os.path.exists(full_path):
-            full_path = "{}/{}/metadata.json".format(get_archive_url(), batch_uuid)
-
-        with smart_open.open(full_path, "r") as f:
-            return json.load(f)
-    except OSError:
-        raise OSError('Are you sure ' + batch_uuid + ' is the right uuid?')
-
-
-@deprecated('Use load_metadata(batch_uuid, experiment_nums) instead.')
-def load_experiment(batch_uuid, experiment_num):
-    """
-    Load metadata from PRP S3 for a single experiment
-    Parameters
-    ----------
-    batch_uuid : str
-        UUID of batch of experiments within the Braingeneer's archive'
-    experiment_num : int
-        Which experiment in the batch to load
-    Returns
-    -------
-    metadata : dict
-        All of the metadata associated with this experiment
-    """
-    batch = load_batch(batch_uuid)
-    try:
-        exp_full_path = "{}/{}/original/{}".format(get_archive_path(), batch_uuid, batch['experiments'][experiment_num])
-        if not os.path.exists(exp_full_path):
-            exp_full_path = "{}/{}/original/{}".format(get_archive_url(), batch_uuid,
-                                                       batch['experiments'][experiment_num])
-
-        with smart_open.open(exp_full_path, "r") as f:
-            return json.load(f)
-    except OSError:
-        raise OSError('Are you sure experiment number ' + str(experiment_num) + ' exists?')
-
-
 def list_uuids():
     """
     List all UUIDs in the archive
@@ -126,337 +65,6 @@ def list_uuids():
     else:
         # list file locally
         return os.listdir(braingeneers.get_default_endpoint() + '/ephys/')
-
-def load_metadata(batch_uuid: str) -> dict:
-    """
-    Loads the batch UUID metadata.
-    Metadata structure documentation:
-        https://github.com/braingeneers/wiki/blob/main/shared/organizing-data.md#metadata-json-file
-    Example usage:
-        metadata_json = load_metadata('2020-03-10-e-128silicon-mouse-p35')
-    :param batch_uuid: Dataset UUID, example: 2020-03-10-e-128silicon-mouse-p35
-    :return: A single dict containing the contents of metadata.json. See wiki for further documentation: 
-        https://github.com/braingeneers/wiki/blob/main/shared/organizing-data.md
-    """
-    base_path = 's3://braingeneers/' \
-        if braingeneers.get_default_endpoint().startswith('http') \
-        else braingeneers.get_default_endpoint()
-
-    metadata_full_path = posixpath.join(base_path, 'ephys', batch_uuid, 'metadata.json')
-    with smart_open.open(metadata_full_path, 'r') as f:
-        metadata = json.load(f)
-
-    # make 'ephys_experiments' a sorted dict indexable by experiment name if the key exists
-    if 'ephys_experiments' in metadata:
-        metadata['ephys_experiments'] = {e['name']: e for e in metadata['ephys_experiments']}
-
-    return metadata
-
-
-@deprecated(reason='Deprecated as a result of deprecating load_blocks, use load_data')
-def load_files_raspi(metadata, batch_uuid, experiment_num, start, stop):
-    """
-    Load signal blocks of data from a single experiment
-    Parameters
-    ----------
-    batch_uuid : str
-        UUID of batch of experiments within the Braingeneers archive
-    experiment_num : int
-        Which experiment in the batch to load
-    start : int, optional
-        First rhd data block to return
-    stop : int, optional
-        Last-1 rhd data block to return
-    Returns
-    -------
-    X : ndarray
-        Numpy matrix of shape frames, channels
-    t : ndarray
-        Numpy array with time in milliseconds for each frame
-    fs : float
-        Sample rate in Hz
-    """
-
-    def _load_path(path):
-        with open(path, "rb") as f:
-            # f.seek(8, os.SEEK_SET)
-            return np.fromfile(f, dtype='>i2', count=-1, offset=int(metadata['offset'] / 32))
-
-    def _load_url(url):
-        with np.DataSource(None).open(url, "rb") as f:
-            # f.seek(8, os.SEEK_SET)
-            return np.fromfile(f, dtype='>i2', count=-1, offset=int(metadata['offset'] / 32))
-
-    print("Loading file Raspi... start:", start, " stop:", stop)
-    # Load all the raw files into a single matrix
-    if os.path.exists("{}/{}/derived/".format(get_archive_path(), batch_uuid)):
-        # Load from local archive
-        # filename = "{}/{}/derived/{}".format(get_archive_path(), batch_uuid, metadata["blocks"][0]["path"])
-        # raw_data = np.fromfile(filename, dtype='>i2', count=-1, offset=metadata['offset']/32)
-        raw_data = np.concatenate([
-            _load_path("{}/{}/derived/{}".format(get_archive_path(), batch_uuid, s["path"]))
-            for s in metadata["blocks"][start:stop]], axis=0)
-    else:
-        # Load from PRP S3
-        # url = "{}/{}/derived/{}".format(get_archive_url(), batch_uuid, metadata["blocks"][0]["path"])
-        # with np.DataSource(None).open(url, "rb") as f:
-        #        raw_data = np.fromfile(f, dtype='>i2', count=-1, offset=metadata['offset']/32)
-        raw_data = np.concatenate([
-            _load_url("{}/{}/derived/{}".format(get_archive_url(), batch_uuid, s["path"]))
-            for s in metadata["blocks"][start:stop]], axis=0)
-
-    # throw away last partial frame
-    max_index = (len(raw_data) // metadata["num_channels"]) * metadata["num_channels"]
-    raw_data = raw_data[:max_index]
-
-    # scale the data
-    if "scaler" in metadata:
-        scale = metadata["scaler"]  # legacy
-    else:
-        scale = metadata["voltage_scaling_factor"]
-    uV_data = raw_data * scale
-
-    # shape data into (frames, channels) (x, y)
-    X = np.reshape(uV_data, (-1, metadata["num_channels"]), order="C")
-
-    # S ampling rate
-    fs = metadata["sample_rate"]  # Hz
-
-    # Time
-    T = (1.0 / fs) * 1000  # ms (given fs in Hz)
-    start_t = 0
-    end_t = start_t + (T * X.shape[0])
-    t = np.linspace(start_t, end_t, X.shape[0], endpoint=False)  # MILISECOND_TIMESCALE
-    assert t.shape[0] == X.shape[0]
-
-    return X, t, fs
-
-
-@deprecated(reason='Deprecated as a result of deprecating load_blocks, use load_data')
-def load_files_intan(metadata, batch_uuid, experiment_num, start, stop):
-    """
-    Load signal blocks of data from a single experiment
-    Parameters
-    ----------
-    batch_uuid : str
-        UUID of batch of experiments within the Braingeneer's archive'
-    experiment_num : int
-        Which experiment in the batch to load
-    start : int, optional
-        First rhd data block to return
-    stop : int, optional
-        Last-1 rhd data block to return
-    Returns
-    -------
-    X : ndarray
-        Numpy matrix of shape frames, channels
-    t : ndarray
-        Numpy array with time in milliseconds for each frame
-    fs : float
-        Sample rate in Hz
-    """
-
-    def _load_path(path):
-        with open(path, "rb") as f:
-            f.seek(8, os.SEEK_SET)
-            return np.fromfile(f, dtype=np.int16)
-
-    def _load_url(url):
-        with np.DataSource(None).open(url, "rb") as f:
-            f.seek(8, os.SEEK_SET)
-            return np.fromfile(f, dtype=np.int16)
-
-    print("Loading file Intan... start:", start, " stop:", stop)
-    # Load all the raw files into a single matrix
-    if os.path.exists("{}/{}/derived/".format(get_archive_path(), batch_uuid)):
-        # Load from local archive
-        raw = np.concatenate([
-            _load_path("{}/{}/derived/{}".format(get_archive_path(), batch_uuid, s["path"]))
-            for s in metadata["blocks"][start:stop]], axis=0)
-    else:
-        # Load from PRP S3
-        raw = np.concatenate([
-            _load_url("{}/{}/derived/{}".format(get_archive_url(), batch_uuid, s["path"]))
-            for s in metadata["blocks"][start:stop]], axis=0)
-        print('Just ignore all the stuff in the pink rectangle.')
-
-    # Get scale value for data from new or legacy format
-    if "scaler" in metadata:
-        scale = metadata["scaler"]  # legacy
-    else:
-        scale = metadata["voltage_scaling_factor"]
-
-    # Reshape interpreting as row major
-    X = raw.reshape((-1, metadata["num_channels"]), order="C")
-    # Convert from the raw uint16 into float "units" via "offset" and "scale"
-    X = np.multiply(scale, (X.astype(np.float32) - metadata["offset"]))
-
-    # Extract sample rate for first channel and construct a time axis in ms
-    fs = metadata["sample_rate"]
-
-    start_t = (1000 / fs) * sum([s["num_frames"] for s in metadata["blocks"][0:start]])
-    end_t = (1000 / fs) * sum([s["num_frames"] for s in metadata["blocks"][0:stop]])
-    t = np.linspace(start_t, end_t, X.shape[0], endpoint=False)
-    assert t.shape[0] == X.shape[0]
-
-    return X, t, fs
-
-
-@deprecated(reason='Deprecated as a result of deprecating load_blocks, use load_data')
-def load_files_maxwell(metadata, batch_uuid, experiment_num, channels, start, stop):
-    """
-        Load signal blocks of data from a single experiment
-        Parameters
-        ----------
-        metadata : json object
-            Holds the json that details a specific experiment.
-        batch_uuid : str
-            UUID of batch of experiments within the Braingeneer's archive'
-        channels : list of int
-            List of picked channels
-        start : int, optional
-            First rhd data block to return
-        stop : int, optional
-            Last-1 rhd data block to return
-        f_start : int
-            starting frame to take data from (default 0)
-        f_end : int
-            ending frame to take data from (default None)
-        Returns
-        -------
-        X : ndarray
-            Numpy matrix of shape frames, channels
-        t : ndarray
-            Numpy array with time in milliseconds for each frame
-        fs : float
-            Sample rate in Hz
-        """
-    # show what's happening first
-    print("Loading file Maxwell... start:", start, " stop:", stop)
-
-    # as a note, load_experiment must have run successfully for execution to get here.
-    # the json is stored in metadata, which was passed in already.
-    # for robustness, maybe show all the h5 files present so it can be picked?
-    # make sure start/stop have a non-None value
-
-    # should this whole process be in a loop to get every file?
-
-    # get name of experiment
-    filename = metadata['blocks'][0]['path'].split('/')[-1]
-    # datafile is the data we're interested in
-    datafile = '{}/{}/original/data/{}'.format(get_archive_url(), batch_uuid, filename)
-
-    # ask David Parks about this part, and if it should be edited throughout
-    if "scaler" in metadata:
-        scale = metadata["scaler"]  # legacy
-    else:
-        scale = metadata["voltage_scaling_factor"]
-
-    with smart_open.open(datafile, 'rb') as file:
-        with h5py.File(file, 'r', libver='latest', rdcc_nbytes=2 ** 25) as h5file:
-            print("Keys: %s" % h5file.keys())
-            print(h5file['sig'].shape)
-            # know that there are 1028 channels which all record and make 'num_frames'
-            # thus, cannot use the values passed in for start and stop because they're indicating blocks. it would conflict
-            # with the assert
-            sig = h5file['sig']
-            # if stop is unset, have it be the end of all the blocks
-            if stop is None:
-                stop = len(metadata['blocks'])
-            # if channels has values, pick only those.
-            if channels is not None:
-                data = sig[channels, :]
-            # otherwise, pick them all
-            else:
-                data = sig[:, :]
-
-    X = np.transpose(data)
-    X = np.multiply(scale, X.astype(np.float32))
-
-    fs = metadata["sample_rate"]
-
-    # to get time in milliseconds for each frame, it would just be total num_frames / channel number / sampling rate
-
-    start_t = (1000 / fs) * sum([s["num_frames"] for s in metadata["blocks"][0:start]])
-    print('start_t: ', start_t)
-    end_t = (1000 / fs) * sum([s["num_frames"] for s in metadata["blocks"][0:stop]])
-    print('end_t: ', end_t)
-    t = np.linspace(start_t, end_t, X.shape[0], endpoint=False)
-
-    return X, t, fs
-
-
-def lookup_experiment_ix(metadata: dict, experiment: (int, str)) -> int:
-    """ Look up the experiment index from name (requires a scan which is cached to avoid repeating the scan) """
-    cache_key = ('_lookup_experiment_ix_', metadata['uuid'], experiment)
-    if isinstance(experiment, int):
-        experiment_ix = experiment
-    else:
-        if cache_key not in load_data_cache:
-            for i, ephys_experiment in enumerate(metadata['ephys_experiments']):
-                print(type(ephys_experiment) == dict)
-                # Old metadata
-                if type(ephys_experiment) == dict:
-                    if experiment == ephys_experiment['name']:
-                        load_data_cache[cache_key] = i
-                        break
-                # New metadata format
-                elif type(ephys_experiment) == str:
-                    if experiment == ephys_experiment:
-                        load_data_cache[cache_key] = i
-                        break
-        assert cache_key in load_data_cache, \
-            f'Experiment name {experiment} not found in metadata for {metadata["uuid"]}'
-        experiment_ix = load_data_cache[cache_key]
-
-    return experiment_ix
-
-
-@deprecated(reason='Use load_data function instead.')
-def load_blocks(batch_uuid, experiment_num, channels=None, start=0, stop=None):
-    """
-    Load signal blocks of data from a single experiment for Axion, Intan, Raspi, and Maxwell
-    Parameters
-    ----------
-    batch_uuid : str
-        UUID of batch of experiments within the Braingeneer's archive'
-    experiment_num : int
-        Which experiment in the batch to load
-    channels : list of ints
-        A list of channel numbers to return
-    start : int, optional
-        First rhd data block to return
-    stop : int, optional
-        Last-1 rhd data block to return
-    Returns
-    -------
-    X : ndarray
-        Numpy matrix of shape frames, channels. Raw electrical voltages being measured.
-    t : ndarray
-        Numpy array with timestamps in milliseconds for each frame.
-    fs : float
-        Sample rate in Hz. How quickly the samples are taken.
-    """
-    metadata = load_experiment(batch_uuid, experiment_num)
-    assert start >= 0 and start < len(metadata["blocks"])
-    assert not stop or stop >= 0 and stop <= len(metadata["blocks"])
-    assert not stop or stop > start
-    # if channels is 'None', return all channels
-    if ("hardware" in metadata):
-        if ("Raspi" in metadata["hardware"]):
-            X, t, fs = load_files_raspi(metadata, batch_uuid, experiment_num, start, stop)
-        elif ("Axion" in metadata["hardware"]):
-            X, t, fs = load_files_axion(metadata, batch_uuid, experiment_num, start, stop)
-        elif ("Intan" in metadata["hardware"]):
-            X, t, fs = load_files_intan(metadata, batch_uuid, experiment_num, start, stop)
-        elif ("Maxwell" in metadata["hardware"]):
-            X, t, fs = load_files_maxwell(metadata, batch_uuid, experiment_num, channels, start, stop)
-        else:
-            raise Exception('hardware field in metadata.json must contain keyword Axion, Raspi, Intan, or Maxwell')
-    else:  # assume intan
-        X, t, fs = load_files_intan(metadata, batch_uuid, experiment_num, start, stop)
-
-    return X, t, fs
 
 
 def load_metadata(batch_uuid: str) -> dict:
@@ -523,18 +131,11 @@ def load_data(metadata: dict,
     assert np.dtype(dtype) in VALID_LOAD_DATA_DTYPES, \
         'dtype must be one of int16 (unscaled raw data), or float16, float32, or float 64 (scaled data)'
 
-    # convert an experiment string value to an index
-    experiment_ix = lookup_experiment_ix(metadata, experiment)
+    # look up experiment by string name or index
+    experiment_str = experiment if isinstance(experiment, str) else list(metadata['ephys_experiments'])[experiment]
+    ephys_experiment = metadata['ephys_experiments'][experiment_str]
 
-    # Doesn't work with new metadata format
-    # TODO: David + Ash talk about metadata format for ephys_experiments. index or name?
-    # Perhaps use dicts as a list, and index through them
-    if metadata.get('maxwell_chip_id') is not None:
-        # We have the new format so load off the exp string
-        #dataset_size = sum([block['num_frames'] for block in metadata['ephys_experiments'][experiment]['blocks']])
-        experiment_ix = experiment
-    dataset_size = sum([block['num_frames'] for block in metadata['ephys_experiments'][experiment_ix]['blocks']])
-
+    dataset_size = sum([block['num_frames'] for block in metadata['ephys_experiments'][experiment_str]['blocks']])
 
     if offset + length > dataset_size:
         raise IndexError(
@@ -543,27 +144,38 @@ def load_data(metadata: dict,
         )
 
     batch_uuid = metadata['uuid']
-    hardware = metadata['ephys_experiments'][experiment_ix]['hardware']
+    hardware = ephys_experiment['hardware']
 
     # hand off to appropriate load_data function
     # all data loader functions should return data in raw int16 format, it will be
     # converted to float and have the voltage_scaling_factor applied here (if appropriate)
     if hardware == 'Raspi':
-        data = load_data_raspi(metadata, batch_uuid, experiment_ix, channels, offset, length)
-    elif hardware == 'Axion':
-        data = load_data_axion(metadata, batch_uuid, experiment_ix, channels, offset, length)
+        data = load_data_raspi(metadata, batch_uuid, experiment_str, channels, offset, length)
+    elif hardware == 'Axion BioSystems':
+        data = load_data_axion(metadata, batch_uuid, experiment_str, channels, offset, length)
     elif hardware == 'Intan':
-        data = load_data_intan(metadata, batch_uuid, experiment_ix, channels, offset, length)
+        data = load_data_intan(metadata, batch_uuid, experiment_str, channels, offset, length)
     elif hardware == 'Maxwell':
-        data = load_data_maxwell(metadata, batch_uuid, experiment_ix, channels, offset, length)
+        # Check if all experiments in this UUID have been converted to row-major format already
+        # Data has to be converted to row-major after recording in a batch process using `h5repack`
+        is_rowmajor = all([
+            block.get('data_order', None) == 'rowmajor'
+            for exp in metadata['ephys_experiments'].values() for block in exp['blocks']
+        ])
+        if is_rowmajor:
+            # Use the high performance data reader that requires row-major data
+            data = load_data_maxwell_parallel(metadata, batch_uuid, experiment_str, channels, offset, length)
+        else:
+            # Use the old data loader and emmit a warning that this dataset has not been converted yet
+            warnings.warn(f'Dataset {batch_uuid} is not in row-major format, the parallel data reader '
+                          f'can\'t be used, read speeds may be slow over a network.')
+            data = load_data_maxwell(metadata, batch_uuid, experiment_str, channels, offset, length)
     elif hardware == 'Hengenlab':
-        data = load_data_hengenlab(metadata, batch_uuid, experiment_ix, channels, offset, length)
+        data = load_data_hengenlab(metadata, batch_uuid, experiment_str, channels, offset, length)
     else:
         raise AttributeError(f'Metadata file contains invalid hardware field: {metadata["hardware"]}')
 
     # convert to requested dtype
-    ephys_experiment = metadata['ephys_experiments'][experiment_ix]
-
     if 'voltage_scaling_factor' in ephys_experiment:
         voltage_scaling_factor = ephys_experiment['voltage_scaling_factor']
     else:
@@ -576,11 +188,11 @@ def load_data(metadata: dict,
     return np.atleast_2d(data_scaled)
 
 
-def load_data_raspi(metadata, batch_uuid, experiment_ix: int, offset, length) -> NDArray[Int16]:
+def load_data_raspi(metadata, batch_uuid, experiment: str, offset, length) -> NDArray[Int16]:
     """
     :param metadata:
     :param batch_uuid:
-    :param experiment_ix:
+    :param experiment:
     :param offset:
     :param length:
     :return:
@@ -588,7 +200,7 @@ def load_data_raspi(metadata, batch_uuid, experiment_ix: int, offset, length) ->
     raise NotImplementedError
 
 
-def load_data_axion(metadata: dict, batch_uuid: str, experiment_ix: int,
+def load_data_axion(metadata: dict, batch_uuid: str, experiment: str,
                     channels: Iterable[int], offset: int, length: int) -> NDArray[Int16]:
     """
     Reads from Axion raw data format using Python directly (not going through matlab scripts first).
@@ -597,7 +209,7 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_ix: int,
      - Axion reader must read all channels, it then filters those to selected channels after reading all channel data.
     :param metadata: result of load_experiment
     :param batch_uuid: uuid, example: 2020-07-06-e-MGK-76-2614-Wash
-    :param experiment_ix: experiment name under 'ephys_experiments'
+    :param experiment: experiment name under 'ephys_experiments'
     :param channels: a list of channels
     :param offset: data offset (spans full experiment, across files)
     :param length: data read length in frames (e.g. data points, agnostic of channel count)
@@ -605,11 +217,10 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_ix: int,
     """
 
     data_multi_file = []
-    # basepath = 's3://braingeneers' if braingeneers.get_default_endpoint().startswith('http') \
-    #     else braingeneers.get_default_endpoint()
+
     # get subset of files to read from metadata.blocks
     metadata_offsets_cumsum = np.cumsum([
-        block['num_frames'] for block in metadata['ephys_experiments'][experiment_ix]['blocks']
+        block['num_frames'] for block in metadata['ephys_experiments'][experiment]['blocks']
     ])
     block_ixs_range = np.minimum(
         len(metadata_offsets_cumsum),
@@ -620,12 +231,12 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_ix: int,
         f'No data file found starting from offset {offset}, is this past the end of the data file?'
 
     # this is a back reference which was constructed this way to avoid duplicating the large channel map many times
-    channel_map_key = metadata['ephys_experiments'][experiment_ix]['blocks'][0]['axion_channel_map_key']
+    channel_map_key = metadata['ephys_experiments'][experiment]['blocks'][0]['axion_channel_map_key']
 
     # perform N read operations accumulating results in data_multi_file
     frame_read_count = 0  # counter to track number of frames read across multiple files
     for block_ix in block_ixs:
-        experiment = metadata['ephys_experiments'][experiment_ix]
+        experiment = metadata['ephys_experiments'][experiment]
         block = experiment['blocks'][block_ix]
         file_name = block['path']
         full_file_path = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original', 'data', file_name)
@@ -659,25 +270,25 @@ def load_data_axion(metadata: dict, batch_uuid: str, experiment_ix: int,
     return data_concat
 
 
-def load_data_intan(metadata, batch_uuid, experiment_ix: int, offset, length) -> NDArray[Int16]:
+def load_data_intan(metadata, batch_uuid, experiment: str, offset, length) -> NDArray[Int16]:
     """
     :param metadata:
     :param batch_uuid:
-    :param experiment_ix:
+    :param experiment:
     :param offset:
     :param length
     """
     raise NotImplementedError
 
 
-def load_data_maxwell(metadata, batch_uuid, experiment_ix: int, channels, start, length) -> NDArray[Int16]:
+def load_data_maxwell(metadata, batch_uuid, experiment: str, channels, start, length) -> NDArray[Int16]:
     """
     Loads specified amount of data from one block
     :param metadata: json file
         JSON file containing metadata of experiment
     :param batch_uuid: str
         UUID of batch of experiments within the Braingeneers's archive
-    :param experiment_ix: int
+    :param experiment: str
         Experiment name as a int
     :param channels: list of int
         Channels of interest
@@ -692,66 +303,49 @@ def load_data_maxwell(metadata, batch_uuid, experiment_ix: int, channels, start,
     # TODO: Check the length and see if there are enough blocks to even support it
     # NOTE: Blocks (right now) are worthless to me
 
-    experiment_stem = posixpath.basename(metadata['ephys_experiments'][experiment_ix]['blocks'][0]['path'])
+    experiment_stem = posixpath.basename(metadata['ephys_experiments'][experiment]['blocks'][0]['path'])
 
     if length == -1:
         print(
-            f"Loading file Maxwell, UUID {batch_uuid}, {experiment_ix}: {experiment_stem}, frame {start} to end of file....")
+            f"Loading file Maxwell, UUID {batch_uuid}, {experiment}: {experiment_stem}, frame {start} to end of file....")
     else:
         print(
-            f"Loading file Maxwell, UUID {batch_uuid}, {experiment_ix}: {experiment_stem}, frame {start} to {start + length}....")
+            f"Loading file Maxwell, UUID {batch_uuid}, {experiment}: {experiment_stem}, frame {start} to {start + length}....")
     # get datafile
 
-    # filename = metadata['ephys_experiments'][experiment_ix]['blocks'][0]['path'].split('/')[-1]
-    # datafile = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original', 'data', filename)
-    filename = metadata['ephys_experiments'][experiment_ix]['blocks'][0]['path'].split('/')[-1]
-    datafile = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original', 'data', filename) \
-        if braingeneers.get_default_endpoint().startswith('http') \
-        else f'{os.getcwd()}/ephys/{batch_uuid}/original/data/{filename}'
+    filename = metadata['ephys_experiments'][experiment]['blocks'][0]['path'].split('/')[-1]
+    datafile = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original', 'data', filename)
 
     # keep in mind that the range is across all channels. So, num_frames from the metadata is NOT the correct range.
     # Finding the block where the datapoints start
-    start_block = 0
-    # end_block = len(metadata['blocks']) - 1
-    for index in range(len(metadata['ephys_experiments'][experiment_ix]['blocks'])):
+    for index in range(len(metadata['ephys_experiments'][experiment]['blocks'])):
         # if the offset is lower than the upper range of frames in a block, break out
-        if start < metadata['ephys_experiments'][experiment_ix]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment_ix]['num_channels']:
+        if start < metadata['ephys_experiments'][experiment]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment]['num_channels']:
             start_block = index
             break
         # otherwise, keep finding the block where the offset lies
         else:
-            start -= metadata['ephys_experiments'][experiment_ix]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment_ix]['num_channels']
+            start -= metadata['ephys_experiments'][experiment]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment]['num_channels']
+
     # Finding block where the datapoints end
-    # metadata['ephys_experiments'][experiment_ix]['num_channels']
+    # metadata['ephys_experiments'][experiment]['num_channels']
     # if length is -1, read in all the frames from all blocks
     if length == -1:
-        # end_block = len(metadata['ephys_experiments'][experiment_ix]['blocks']) - 1
-        # frame_end = 0
-        # # add up all the frames divided by their channel number
-        # for block in metadata['ephys_experiments'][experiment_ix]['blocks']:
-        #     frame_end += block['num_frames'] / metadata['ephys_experiments'][experiment_ix]['num_channels']
+        # add up all the frames divided by their channel number
+        # for block in metadata['ephys_experiments'][experiment]['blocks']:
+        #     frame_end += block['num_frames'] / metadata['ephys_experiments'][experiment]['num_channels']
+        frame_end = metadata['ephys_experiments'][experiment]['blocks'][0]['num_frames']
         # frame_end = int(frame_end)
-        frame_end = metadata['ephys_experiments'][experiment_ix]['blocks'][index]['num_frames']
     else:
         frame_end = start + length
-    #     for index in range(start_block, len(metadata['ephys_experiments'][experiment_ix]['blocks'])):
-    #         if (start + length) < metadata['ephys_experiments'][experiment_ix]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment_ix]['num_channels']:
-    #             end_block = index
-    #             break
-    #         else:
-    #             length -= metadata['ephys_experiments'][experiment_ix]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment_ix]['num_channels']
-    #             end_block = len(metadata['ephys_experiments'][experiment_ix]['blocks'])
-    # assert end_block < len(metadata['ephys_experiments'][experiment_ix]['blocks'])
-    # now, with the starting block, ending block, and frames to take, take those frames and put into nparray.
+
     # open file
     with smart_open.open(datafile, 'rb') as file:
         with h5py.File(file, 'r', libver='latest', rdcc_nbytes=2 ** 25) as h5file:
             # know that there are 1028 channels which all record and make 'num_frames'
             # lsb = np.float32(h5file['settings']['lsb'][0]*1000) #1000 for uv to mv  # voltage scaling factor is not currently implemented properly in maxwell reader
-            if 'sig' in h5file:
-                dataset = h5file['sig']
-            else:
-                dataset = h5file['recordings/rec0000/well000/groups/routed/raw']
+            table = 'sig' if 'sig' in h5file.keys() else '/data_store/data0000/groups/routed/raw'
+            dataset = h5file[table]
             if channels is not None:
                 channels = np.atleast_1d(channels)
                 sorted_channels = np.sort(channels)
@@ -760,31 +354,76 @@ def load_data_maxwell(metadata, batch_uuid, experiment_ix: int, channels, start,
             else:
                 dataset = dataset[:, start:frame_end]
 
-    # dataset = (np.array(dataset, dtype=np.float32) - 512.0)*lsb
-    #dataset = np.array(dataset)
-    # make dataset of chosen frames
-
-    #dataset -= 512
     if channels is not None:
         # Unsort data
         dataset = dataset[undo_sort_channels, :]
+
     return dataset
 
 
-def compute_cumsum_num_frames(metadata: dict, experiment_ix: int) -> List[int]:
+def load_data_maxwell_parallel(metadata: dict, batch_uuid: str, experiment: str,
+                               channels: Iterable[int], offset: int, length: int) -> NDArray[Int16]:
+    """
+    High-performance version of load_data_maxwell that expects raw data in rows-first format rather than the default
+    column-first format. This version of load_data encapsulates parallelism to make read calls efficient over S3
+    """
+    # filter blocks based on offset and length
+    blocks, first_block_offset, first_block_read_offset = \
+        get_blocks_for_load_data(metadata, experiment, offset, length)
+
+    # construct arguments for _load_data_maxwell_per_channel per block per channel
+    num_frames = [b['num_frames'] for b in blocks]
+    starts_readlengths_per_block = [
+        (first_block_read_offset, min(length, num_frames[0] - first_block_read_offset)),  # first block
+        *[(0, nf) for nf in num_frames[1:-1]],  # middle blocks between first & last
+    ]
+    sum_readlengths = sum([rl for s, rl in starts_readlengths_per_block])
+    if len(num_frames) >= 3:
+        starts_readlengths_per_block.append((0, min(length - sum_readlengths, length - (num_frames[0] - first_block_offset + sum(num_frames[1:-1])))))  # last block
+    filepaths_channels_starts_lengths = [
+        (common_utils.path_join('ephys', batch_uuid, b['path']), c, s, l)
+        for (b, (s, l)), c in itertools.product(zip(blocks, starts_readlengths_per_block), channels)
+    ]
+
+    # Parallel read from each channel using separate processes (necessary so HDF5 doesn't
+    # step on its own toes as it would do if threads were used). If multiple files exist
+    # then the read will be per channel per each block (aka file).
+    data_per_block_per_channel = common_utils.map2(
+        func=_load_data_maxwell_per_channel,
+        args=filepaths_channels_starts_lengths,
+        parallelism=False,
+    )
+    data = np.vstack(data_per_block_per_channel)
+
+    return data
+
+
+def _load_data_maxwell_per_channel(filepath: str, channel: int, start: int, length: int):
+    """
+    Internal function used by load_data_maxwell to read each channel. This function is
+    called in worker sub-processes.
+    """
+    with smart_open.open(filepath, 'rb') as raw_file:
+        with h5py.File(raw_file) as f:
+            table = 'sig' if 'sig' in f.keys() else '/data_store/data0000/groups/routed/raw'  # 'recordings/rec0000/well000/groups/routed/raw'
+            data = f[table][channel, start:start+length]
+            return data
+
+
+def compute_cumsum_num_frames(metadata: dict, experiment: str) -> List[int]:
     """
     Intended to be an internal function primarily.
     Computes and caches the cumulative sum of num_frames, this operation will be repeated
     for each call to load_data which may occur in a high performance loop, hence the caching.
     """
-    cache_key = ('_compute_cumsum_num_frames_', metadata['uuid'], experiment_ix)
+    cache_key = ('_compute_cumsum_num_frames_', metadata['uuid'], experiment)
     if cache_key not in load_data_cache:
-        csum = np.cumsum([block['num_frames'] for block in metadata['ephys_experiments'][experiment_ix]['blocks']]).tolist()
+        csum = np.cumsum([block['num_frames'] for block in metadata['ephys_experiments'][experiment]['blocks']]).tolist()
         load_data_cache[cache_key] = csum
     return load_data_cache[cache_key]
 
 
-def get_blocks_for_load_data(metadata: dict, experiment_ix: int, offset: int, length: int) -> List:
+def get_blocks_for_load_data(metadata: dict, experiment: str, offset: int, length: int) -> List:
     """
     Intended to be an internal function primarily.
     Returns a subset of metadata.ephys_experiments.blocks required to
@@ -795,30 +434,33 @@ def get_blocks_for_load_data(metadata: dict, experiment_ix: int, offset: int, le
     This method is efficient for high performance operations due to caching
     of the call to compute_cumsum_num_frames.
     :param metadata: result of load_metadata(...)
-    :param experiment_ix: experiment index number as passed to load_data_* functions
-    :param offset: offset as passed to load_data_* functions
-    :param length: length as passed to load_data_* functions
-    :return: a list of one or more metadata.ephys_experiments.blocks, the offset of the first block
+    :param experiment: experiment index number as passed to load_data function
+    :param offset: offset as passed to load_data function
+    :param length: length as passed to load_data function
+    :return: 1) a list of one or more metadata.ephys_experiments.blocks;
+             2) the offset of the first block (globally across all blocks);
+             3) the offset to start reading from in the first block;
     """
     # This step is cached in memory (lru_cache) after the first call, cum_sum_blocks ex: [100, 200, 300, ...]
-    cum_sum_blocks = compute_cumsum_num_frames(metadata, experiment_ix)
+    cum_sum_blocks = compute_cumsum_num_frames(metadata, experiment)
 
     ix_a = bisect.bisect_right(cum_sum_blocks, offset)
     ix_b = bisect.bisect_left(cum_sum_blocks, offset + length) + 1
 
-    blocks = metadata['ephys_experiments'][experiment_ix]['blocks'][ix_a:ix_b]
+    blocks = metadata['ephys_experiments'][experiment]['blocks'][ix_a:ix_b]
 
     cum_sum_offset = [0] + cum_sum_blocks
     first_block_offset = cum_sum_offset[ix_a]
+    first_block_read_offset = offset - first_block_offset
 
-    return blocks, first_block_offset
+    return blocks, first_block_offset, first_block_read_offset
 
 
-def load_data_hengenlab(metadata: dict, batch_uuid: str, experiment_ix: int,
+def load_data_hengenlab(metadata: dict, batch_uuid: str, experiment: str,
                         channels: Iterable[int], offset: int, length: int) -> NDArray[Int16]:
     # filter blocks based on offset and length
-    blocks, first_block_offset = get_blocks_for_load_data(metadata, experiment_ix, offset, length)
-    n_channels = metadata['ephys_experiments'][experiment_ix]['num_channels']
+    blocks, first_block_offset, _ = get_blocks_for_load_data(metadata, experiment, offset, length)
+    n_channels = metadata['ephys_experiments'][experiment]['num_channels']
 
     # pre-allocate memory for data
     block_offset = offset - first_block_offset
@@ -902,7 +544,7 @@ def load_stims_maxwell(uuid: str, metadata_ephys_exp: dict = None, experiment_st
     elif experiment_stem is not None:
         exp_stem = experiment_stem
 
-    exp_stim_log = exp_stem + 'log.csv'
+    exp_stim_log = exp_stem + 'log.csv' 
     DATA_PATH = 'original/log/'
 
 
@@ -937,15 +579,14 @@ def load_gpio_maxwell(dataset_path, fs=20000):
         with h5py.File(f, 'r') as dataset:
             assert 'bits' in dataset.keys(), 'No GPIO event in the dataset!'
             bits_dataset = list(dataset['bits'])
-            bits_dataframe = [bits_dataset[i][0] for i in range(len(bits_dataset))]
-            rec_startframe = dataset['sig'][-1, 0] << 16 | dataset['sig'][-2, 0]
+            bits_dataframe = [bits_dataset[i][0] for i in range(len(bits_dataset))]  
+            rec_startframe = dataset['raw'][-1, 0] << 16 | dataset['raw'][-2, 0]
     if len(bits_dataframe) % 2 == 0:
         stim_pairs = (np.array(bits_dataframe) - rec_startframe).reshape(len(bits_dataframe) // 2, 2)
         return stim_pairs / fs
     else:
         print("Odd number of GPIO events can't be paired. Here returns all the events.")
         return (np.array(bits_dataframe) - rec_startframe)/fs
-
 
 
 def compute_milliseconds(num_frames, sampling_rate):
@@ -1309,7 +950,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
         json serializable to metadata.json and experiment1.json.
     """
     metadata_json = {}
-    ephys_experiments = OrderedDict()
+    ephys_experiments = {}
     current_timestamp = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%dT%H:%M:%S')
 
     # construct metadata_json
@@ -1319,6 +960,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
     metadata_json['uuid'] = batch_uuid
 
     # list raw data files at batch_uuid
+    # noinspection PyArgumentList
     list_of_raw_data_files = sorted(s3wrangler.list_objects(
         path=posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original/data/'),
         suffix='.raw',
@@ -1382,7 +1024,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
                 experiment.setdefault('blocks', [])
                 experiment['blocks'].append(block)
 
-    metadata_json['ephys_experiments'] = list(ephys_experiments.values())
+    metadata_json['ephys_experiments'] = ephys_experiments
 
     if save:
         with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
