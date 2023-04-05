@@ -119,6 +119,10 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         self.assertEqual(state['x'], 42)
         self.mb_test_device.delete_device_state('test')
 
+    def test_lock(self):
+        with self.mb.lock('unittest'):
+            print('lock granted')
+
     # def test_list_devices_basic(self):
     #     q = self.mb_test_device.subscribe_message('test/unittest', callback=messaging.CallableQueue())
     #     self.mb_test_device.publish_message('test/unittest', message={'test': 'true'})

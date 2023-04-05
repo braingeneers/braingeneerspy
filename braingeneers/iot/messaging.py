@@ -408,6 +408,32 @@ class MessageBroker:
             thing.attributes["shadow"] = state
             thing.push()
 
+    def lock(self, named_lock: str):
+        """
+        Provides an inter-process named lock, this method will block as long as the lock is held by
+        another process. Usage example:
+
+            import braingeneers.iot.messaging.MessageBroker as MessageBroker
+            import uuid
+
+            with MessageBroker(uuid.uuid4()).lock(f'spikesorting/9999-00-00-e-test'):
+                do_something_()
+        """
+        return MessageBroker.Lock(self, named_lock)
+
+    class Lock:
+        """ Internal class, use: MessageBroker.lock() """
+        def __init__(self, mb_instance, named_lock: str):
+            self.mb_instance = mb_instance   # Outer class MessageBroker instance
+            self.name = named_lock
+
+        def __enter__(self):
+            self.lock = self.mb_instance.redis_client.lock(name=self.name)
+            self.lock.acquire()
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.lock.release()
+
     @deprecated
     def subscribe_device_state_change(self, device_name: str, device_state_keys: List[str], callback: Callable) -> None:
         """
@@ -527,17 +553,17 @@ class MessageBroker:
         return self._boto_iot_client
 
     @property
-    def redis_client(self):
+    def redis_client(self) -> redis.Redis:
         """ Lazy initialization of the redis client. """
         if self._redis_client is None:
             config = configparser.ConfigParser()
             config.read_file(io.StringIO(self._credentials))
             assert 'redis' in config, 'Your AWS credentials file is missing a section [redis], ' \
                                       'you may have the wrong version of the credentials file.'
-            assert 'password' in config['redis'], 'Your AWS credentials file is malformed, ' \
+            assert 'redis_password' in config['redis'], 'Your AWS credentials file is malformed, ' \
                                                   'password was not found under the [redis] section.'
             self._redis_client = redis.Redis(
-                host=REDIS_HOST, port=REDIS_PORT, password=config['redis']['password']
+                host=REDIS_HOST, port=REDIS_PORT, password=config['redis']['redis_password']
             )
             self._redis_client.config_set(name='notify-keyspace-events', value='t')
 
