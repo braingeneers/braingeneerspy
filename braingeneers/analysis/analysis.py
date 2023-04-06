@@ -1,14 +1,18 @@
+import os
+import itertools
+import contextlib
+from collections import namedtuple
 import heapq
+import io
+import zipfile
 import numpy as np
 from scipy import sparse, stats, signal, interpolate, ndimage
-import itertools
-from collections import namedtuple
 import powerlaw
-import os
-import contextlib
-import zipfile
-import pandas as pd
-import io
+
+
+__all__ = ['DCCResult', 'read_phy_files', 'SpikeData', 'filter',
+           'fano_factors', 'pearson', 'cumulative_moving_average',
+           'burst_detection', 'ThresholdedSpikeData']
 
 
 DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
