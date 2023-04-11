@@ -500,7 +500,7 @@ def load_mapping_maxwell(uuid: str, metadata_ephys_exp: dict, channels: list = N
     exp_filename = posixpath.basename(exp_path)
     DATA_PATH = 'original/data/'
 
-    file_path = posixpath.join(get_basepath(), 
+    file_path = posixpath.join(common_utils.get_basepath(), 
             'ephys',uuid, DATA_PATH, exp_filename)
 
     print('Loading mapping from UUID: {}, experiment: {}'.format(uuid, exp_filename))
@@ -512,7 +512,7 @@ def load_mapping_maxwell(uuid: str, metadata_ephys_exp: dict, channels: list = N
                 mapping = np.array(h5['mapping']) #ch, elec, x, y
                 mapping = pd.DataFrame(mapping)
             # version is 20190530 - ish?
-            elif 'hdf_version' in h5 and str(h5['hdf_version']) == "b'1.8.21'":
+            else:
                 mapping = np.array(h5['data_store/data0000/settings/mapping'])
                 mapping = pd.DataFrame(mapping)
 

@@ -72,6 +72,8 @@ def get_default_endpoint() -> str:
 
     :return: str: the current endpoint
     """
+    if CURRENT_ENDPOINT is None:
+        return DEFAULT_ENDPOINT
     return CURRENT_ENDPOINT
 
 
