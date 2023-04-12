@@ -52,6 +52,7 @@ DEPENDENCIES = {
     ],
     'analysis': [
         'scipy',
+        'pandas',
         'powerlaw',
         'matplotlib',
     ],
