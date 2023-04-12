@@ -252,7 +252,7 @@ class SpikeData:
         interval of times, with the exception that events at time
         precisely zero will be included in the first bin.
         '''
-        return self.raster(bin_size).sum(0)
+        return self.sparse_raster(bin_size).sum(0)
 
     def rates(self, unit='kHz'):
         '''
@@ -366,7 +366,7 @@ class SpikeData:
         raw_data = np.concatenate((self.raw_data, spikeData.raw_data), axis=1)
         raw_time = np.concatenate((self.raw_time, spikeData.raw_time))
         length = self.length + spikeData.length + offset
-        assert self.N + spikeData.N, 'Number of neurons must be the same'
+        assert self.N == spikeData.N, 'Number of neurons must be the same'
         #metadata = self.metadata + spikeData.metadata
         #neuron_data = self.neuron_data + spikeData.neuron_data
         return SpikeData(train, length=length, N=self.N,
@@ -377,7 +377,7 @@ class SpikeData:
 
     def sparse_raster(self, bin_size=20):
         '''
-        Bin all spike times and create a sparse matrix where entry
+        Bin all spike times and create a sparse array where entry
         (i,j) is the number of times cell i fired in bin j. Bins are
         left-open and right-closed intervals except the first, which
         will capture any spikes occurring exactly at t=0.
@@ -389,13 +389,13 @@ class SpikeData:
         values = np.ones_like(indices)
         length = int(np.ceil(self.length / bin_size))
         np.clip(indices, 0, length - 1, out=indices)
-        ret = sparse.csr_matrix((values, indices, indptr),
-                                shape=(self.N, length))
+        ret = sparse.csr_array((values, indices, indptr),
+                               shape=(self.N, length))
         return ret
 
     def raster(self, bin_size=20):
         '''
-        Bin all spike times and create a dense matrix where entry
+        Bin all spike times and create a dense array where entry
         (i,j) is the number of times cell i fired in bin j.
         '''
         return self.sparse_raster(bin_size).toarray()
@@ -842,23 +842,20 @@ def pearson(spikes):
         return np.corrcoef(spikes)
 
     Exy = (spikes @ spikes.T) / spikes.shape[1]
-    Ex = np.array(spikes.mean(axis=1))
-
-    # Calculating std is convoluted
-    spikes2 = spikes.copy()
-    spikes2.data **= 2
-    Ex2 = np.array(spikes2.mean(axis=1))
+    Ex = spikes.mean(axis=1)
+    Ex2 = (spikes**2).mean(axis=1)
     σx = np.sqrt(Ex2 - Ex**2)
 
-    # Some cells won't fire in the whole observation window.
-    # These should be treated as uncorrelated with everything
-    # else, rather than generating infinite Pearson coefficients.
+    # Some cells won't fire in the whole observation window. To get their
+    # correlation coefficients to zero, give them infinite σ.
     σx[σx == 0] = np.inf
 
     # This is by the formula, but there's also a hack to deal with the
     # numerical issues that break the invariant that every variable
     # should have a Pearson autocorrelation of 1.
-    corr = np.array(Exy - Ex*Ex.T) / (σx*σx.T)
+    Exx = np.multiply.outer(Ex, Ex)
+    σxx = np.multiply.outer(σx, σx)
+    corr = np.array(Exy - Exx) / σxx
     np.fill_diagonal(corr, 1)
     return corr
 

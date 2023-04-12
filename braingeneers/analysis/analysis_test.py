@@ -50,7 +50,6 @@ class AnalysisTest(unittest.TestCase):
             else:
                 self.assertAll(nsub >= 0, msg=msg)
                 n_in_range = np.sum(n <= tmax)
-            print(tmin, tmax, n_in_range, len(nsub))
             self.assertTrue(len(nsub) == n_in_range, msg=msg)
 
     def assertAll(self, bools, msg=None):
@@ -219,8 +218,6 @@ class AnalysisTest(unittest.TestCase):
         ground_truth = np.stack((cellA, cellB, cellC, cellD))
         times, idces = np.where(ground_truth.T)
         raster = ba.SpikeData(idces, times + 0.5).sparse_raster(bin_size=1)
-        print(raster.todense())
-        print(ground_truth)
         self.assertAll(raster == ground_truth)
 
         # Finally, check the calculated Pearson coefficients to ensure
