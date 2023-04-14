@@ -6,6 +6,7 @@ import re
 import itertools
 import importlib
 import distutils.util
+from deprecated import deprecated
 
 
 """
@@ -33,6 +34,7 @@ DEPENDENCIES = {
         'tenacity',
         # 'sortedcontainers',
         'boto3',
+        'deprecated',
     ],
     'data': [
         'h5py',
@@ -119,63 +121,6 @@ def set_default_endpoint(endpoint: str = None, verify_ssl_cert: bool = True) -> 
 
     global CURRENT_ENDPOINT
     CURRENT_ENDPOINT = endpoint
-
-
-def get_packages_from_install_name(package_install_name: str) -> List[str]:
-    """
-    Based on: https://stackoverflow.com/a/54853084/4790871
-
-    Converts the package installation name found in DEPENDENCIES to a list of one or more packages contained in
-    the installer.
-
-    :param package_install_name: name of a pip based package name, example: braingeneerspy
-    :return: a list of packages contained in package_install_name, example: ["braingeneers"],
-        may contain multiple packages.
-    """
-    import pkg_resources as pkg
-    metadata_dir = pkg.get_distribution(package_install_name).egg_info
-    with open(os.path.join(metadata_dir, 'top_level.txt')) as f:
-        return f.read().split()
-
-
-@functools.lru_cache(maxsize=None)
-def verify_optional_extras(optional_extras: (str, List[str]), raise_exception: bool = True):
-    """
-    Verifies whether one or more extra dependencies have been installed,
-    extras are defined in setup.py->dependencies.
-
-    This function is normally called at the beginning, or initialization of a code that relies
-    on an optional package.
-
-    This function can be called repeatedly, it will cache the results after the first call for efficiency.
-
-    Example usage:
-        # Verify hengenlab dependencies are installed
-        braingeneers.verify_optional_extras('hengenlab')
-
-        # Verify iot and ml dependencies
-        braingeneers.verify_optional_extras(['iot', 'ml'])
-
-    :param optional_extras: String or list of strings of "extras" packages to verify are installed.
-    :param raise_exception: boolean default == True, raises an exception when missing packages,
-        else the function will simply return True|False
-    :raise ModuleNotFoundError:
-    :return: None if all dependencies are met else a list of missing dependencies
-    """
-    optional_extras = set([optional_extras] if isinstance(optional_extras, str) else optional_extras)  # ensure set
-    required_eggs = set(itertools.chain(*[v for k, v in DEPENDENCIES.items() if k in optional_extras]))
-    required_eggs_parsed = set([re.split(r'[^a-zA-Z0-9_-]+', package)[0] for package in required_eggs])
-    required_packages = set(itertools.chain(*[get_packages_from_install_name(egg) for egg in required_eggs_parsed]))
-    missing_packages = [package for package in required_packages if importlib.util.find_spec(package) is None]
-
-    if len(missing_packages) > 0 and raise_exception:
-        exception_message = f'Package dependencies are missing, ' \
-                            f'see README.md for optional package installation instructions ' \
-                            f'optional dependency group(s): {",".join(map(str, optional_extras))}, ' \
-                            f'missing package(s): {",".join(map(str, missing_packages))}.'
-        raise ModuleNotFoundError(exception_message)
-    else:
-        return missing_packages if len(missing_packages) > 0 else None
 
 
 def skip_unittest_if_offline(f):
