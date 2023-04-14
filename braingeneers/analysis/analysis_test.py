@@ -537,3 +537,17 @@ class AnalysisTest(unittest.TestCase):
         # sd = ba.SpikeData([1e3*np.random.rand(1000)], length=1e3)
         # self.assertAlmostEqual(sd.isi_skewness()[0], 2, 1)
         pass
+
+    def test_latencies(self):
+        a = ba.SpikeData([[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]])
+        b = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]) - .2
+        # Make sure the latencies are correct, this is latencies relative
+        # to the input (b), so should all be .2 after
+        self.assertAlmostEqual(a.latencies2(b)[0][0], 0.2)
+        self.assertAlmostEqual(a.latencies2(b)[0][-1], 0.2)
+
+        # Small enough window, should be no latencies.
+        self.assertEqual(a.latencies2(b,.1)[0], [])
+
+        # Can do negative
+        self.assertAlmostEqual(a.latencies2([.1])[0][0], -.1)

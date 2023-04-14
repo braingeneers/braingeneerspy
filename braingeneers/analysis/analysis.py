@@ -579,6 +579,7 @@ class SpikeData:
         # Return the DCC value and significance.
         return DCCResult(dcc=dcc, p_size=p_size, p_duration=p_dur)
 
+
     def latencies(self, times, window_ms=100):
         '''
         Given a sorted list of times, compute the latencies from that time to
@@ -590,10 +591,20 @@ class SpikeData:
         '''
         latencies = []
         for train in self.train:
-            cur_latencies = np.hstack([train[(train >= time) & (train <= time + window_ms)] - time
-                                       for time in times])
-            latencies.append(cur_latencies)
+            cur_latencies = []
+            for time in times:
+                # Subtract time from all spikes in the train
+                # and take the absolute value
+                abs_diff_ind = np.argmin(np.abs(train - time))
+                
+                # Calculate the actual latency
+                latency = np.array(train)-time
+                latency = latency[abs_diff_ind]
 
+                abs_diff = np.abs(latency)
+                if abs_diff <= window_ms:
+                    cur_latencies.append(latency)
+            latencies.append(cur_latencies)
         return latencies
 
     def latencies_to_index(self, i, window_ms=100):
@@ -605,6 +616,11 @@ class SpikeData:
         '''
 
         return self.latencies(self.train[i], window_ms)
+
+    
+
+    
+            
 
 
 def filter(raw_data, fs_Hz=20000, filter_order=3,
