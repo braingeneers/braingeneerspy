@@ -29,12 +29,12 @@ environment for example, where large dependencies can be very slow to build.
 DEPENDENCIES = {
     # Minimal dependencies are always installed with a pip install of the repo
     'minimal': [
+        'deprecated',
         'requests',
         'numpy',
         'tenacity',
         # 'sortedcontainers',
         'boto3',
-        'deprecated',
     ],
     'data': [
         'h5py',
