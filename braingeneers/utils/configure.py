@@ -6,7 +6,6 @@ import re
 import itertools
 import importlib
 import distutils.util
-from deprecated import deprecated
 
 
 """
