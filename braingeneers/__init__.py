@@ -1,3 +1,5 @@
+import braingeneers
+import braingeneers.utils
 from braingeneers.utils.configure import \
     set_default_endpoint, get_default_endpoint, skip_unittest_if_offline
 import warnings

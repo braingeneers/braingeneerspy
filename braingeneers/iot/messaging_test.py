@@ -162,6 +162,19 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
     #     self.assertEqual(result['new_value'], t)
 
 
+class TestInterprocessQueue(unittest.TestCase):
+    def test_get_put_defaults(self):
+        q = messaging.MessageBroker().queue()
+        q.put('unittest')
+        result = q.get('unittest')
+        self.assertEqual(result, 'unittest')
+
+    def test_get_put_blocking(self):
+        self.fail()
+
+    def test_maxsize(self):
+        self.fail()
+
 # def callback_device_state_change(barrier: threading.Barrier, result: dict,
 #                                  device_name: str, device_state_key: str, new_value):
 #     print('')
@@ -174,31 +187,3 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
-# if __name__ == '__main__':
-#     mb_test_device = messaging.MessageBroker('unittest')
-#     # awscrt.io.init_logging(awscrt.io.LogLevel.Trace, 'stderr')
-#
-#     result = {}
-#     print('a')
-#     t = str(datetime.datetime.today())
-#     print('b')
-#     mb_test_device.update_device_state('unittest', {'unchanging_key': 'static'})
-#     print('c')
-#     barrier = threading.Barrier(2)
-#     print('d')
-#     func = functools.partial(callback_device_state_change, barrier, result)
-#     print('e')
-#     mb_test_device.subscribe_device_state_change(
-#         device_name='unittest', device_state_keys=['test_key'], callback=func
-#     )
-#     print('f')
-#     mb_test_device.update_device_state('unittest', {'test_key': t})
-#     try:
-#         barrier.wait(timeout=5)
-#     except threading.BrokenBarrierError:
-#         print(msg='Barrier timeout')
-#
-#     assert result['device_name'] == 'unittest'
-#     assert result['device_state_key'] == 'test_key'
-#     assert result['new_value'] == t

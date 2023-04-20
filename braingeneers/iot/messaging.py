@@ -1,6 +1,5 @@
 """ A simplified MQTT client for Braingeneers specific connections """
 
-# import awsiot.mqtt_connection_builder
 import redis
 import tempfile
 import functools
@@ -19,6 +18,7 @@ import json
 import braingeneers.iot.shadows as sh
 from paho.mqtt import client as mqtt_client
 from deprecated import deprecated
+import pickle
 
 
 AWS_REGION = 'us-west-2'
@@ -133,6 +133,99 @@ class MessageBroker:
         self.shadow_interface = sh.DatabaseInteractor()
 
         self._subscribed_data_streams = set()  # keep track of subscribed data streams
+
+    class InterprocessQueue:
+        """ Internal class, use: MessageBroker.queue() """
+
+        def __init__(self, mb_instance, name: str, maxsize: int, expire_sec: int):
+            self.key = f'bpy-queue-{name if name is not None else uuid.uuid4()}'
+            # to implement blocking
+            self.token_key = None if maxsize is None \
+                else f'bpy-queue-maxsize-tokens-{name if name is not None else uuid.uuid4()}'
+            self.mb_instance = mb_instance
+            self.redis_client = mb_instance.redis_client
+            self.redis_client.delete(self.key, self.token_key)  # overwrite the key if it already exists
+            self.maxsize = maxsize
+            self.expire_sec = expire_sec
+            self.join_semaphore = threading.Semaphore(1)
+
+            if maxsize > 0:
+                # create tokens for maxsize so BRPOPLPUSH can be used for blocking
+                self.redis_client.lpush(self.token_key, [b''] * maxsize)
+
+        def qsize(self) -> int:
+            return self.redis_client.llen(self.key)
+
+        def empty(self) -> bool:
+            return self.qsize() == 0
+
+        def full(self):
+            return self.qsize() >= self.maxsize
+
+        def put(self, item, block=True, timeout=None):
+            # For explanation of this implementation see: https://stackoverflow.com/a/76057700/4790871
+            timeout = 0.000000000001 if timeout is None or block is False else timeout
+
+            if self.maxsize > 0:
+                # blocking happens here if we're out of $maxsize tokens
+                # if block = False but self.maxsize > 0 then the timeout will be effectively 0 but
+                # this function will return a nil that we can use to identify the queue full condition without
+                # risking a race condition that would occur with check-and-push
+                self.redis_client.brpop(self.token_key, timeout=timeout)
+                if result is None:
+                    raise queue.Full(f'Queue size {self.maxsize} is full or timeout exceeded, unable to push to queue.')
+
+            # no blocking on the push to the main queue because tokens keep count for us, so this is safe at this point
+            # if it wouldn't be safe to push here we would have already blocked or raised an exception above
+            blob = pickle.dumps(item)
+            self.redis_client.lpush(self.key, blob)
+            self.join_semaphore.acquire()  # forces q.join() to block while semaphore count > 0
+
+        def put_nowait(self, item):
+            self.put(item, block=False)
+
+        def get(self, block=True, timeout=None):
+            timeout = 1e-12 if timeout is None else timeout
+
+            pipe = self.redis_client.pipeline()
+
+            if self.maxsize > 0:
+                pipe.lpush(self.token_key, b'')
+
+            if block is True:
+                pipe.brpop(self.key, timeout=timeout)
+            else:
+                pipe.rpop(self.key)
+
+            blob = pipe.execute()[-1]
+
+            if blob is None:
+                raise queue.Empty('Queue is empty, ' + f'timeout exceeded.' if block else f'non-blocking mode.')
+
+            o = pickle.loads(blob)
+            return o
+
+        def get_nowait(self):
+            self.get(False)
+
+        def task_done(self):
+            self.join_semaphore.release()  # decrements semaphore per each put() operation.
+
+        def join(self):
+            self.join_semaphore.acquire()  # only passes once task_done is called once per each put operation.
+
+    class Lock:
+        """ Internal class, use: MessageBroker.lock() """
+        def __init__(self, mb_instance, named_lock: str):
+            self.mb_instance = mb_instance   # Outer class MessageBroker instance
+            self.name = named_lock
+
+        def __enter__(self):
+            self.lock = self.mb_instance.redis_client.lock(name=self.name)
+            self.lock.acquire()
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.lock.release()
 
     def create_device(self, device_name: str, device_type: str) -> None:
         """
@@ -408,31 +501,35 @@ class MessageBroker:
             thing.attributes["shadow"] = state
             thing.push()
 
-    def lock(self, named_lock: str):
+    def lock(self, named_lock: str) -> Lock:
         """
         Provides an inter-process named lock, this method will block as long as the lock is held by
         another process. Usage example:
 
             import braingeneers.iot.messaging.MessageBroker as MessageBroker
-            import uuid
 
-            with MessageBroker(uuid.uuid4()).lock(f'spikesorting/9999-00-00-e-test'):
+            with MessageBroker().lock(f'spikesorting/9999-00-00-e-test'):
                 do_something_()
         """
         return MessageBroker.Lock(self, named_lock)
 
-    class Lock:
-        """ Internal class, use: MessageBroker.lock() """
-        def __init__(self, mb_instance, named_lock: str):
-            self.mb_instance = mb_instance   # Outer class MessageBroker instance
-            self.name = named_lock
+    def queue(self, name: str = None, maxsize: int = 0, expire_sec: str = 604800) -> InterprocessQueue:
+        """
+        Inter-process named queue
+        This is a queue that
 
-        def __enter__(self):
-            self.lock = self.mb_instance.redis_client.lock(name=self.name)
-            self.lock.acquire()
+        This data structure implements the python standard queue.Queue interface.
+        See Python queue docs: https://docs.python.org/3/library/queue.html#queue.Queue
 
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            self.lock.release()
+        Usage example:
+            import braingeneers.iot.messaging.MessageBroker as MessageBroker
+
+            mb = MessageBroker()
+            q = mb.queue()
+            q.put({'serializable': 'objects only'})  # objects must serialize with Python pickle
+            task = q.get()                           # may be running on a different computer or process
+        """
+        return MessageBroker.InterprocessQueue(self, name, maxsize, expire_sec)
 
     @deprecated
     def subscribe_device_state_change(self, device_name: str, device_state_keys: List[str], callback: Callable) -> None:
