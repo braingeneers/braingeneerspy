@@ -56,6 +56,9 @@ DEPENDENCIES = {
         'pandas',
         'powerlaw',
         'matplotlib',
+        # Both of these dependencies are required for read_phy_files
+        'awswrangler @ git+https://github.com/aws/aws-sdk-pandas.git@3.0.0rc3',
+        'smart_open @ git+https://github.com/davidparks21/smart_open.git@develop',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
     ],
     'ml': [
         'torch',
