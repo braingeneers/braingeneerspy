@@ -7,6 +7,7 @@ import json
 import inspect
 import logging
 import os
+import time
 import io
 import configparser
 import threading
@@ -134,24 +135,33 @@ class MessageBroker:
 
         self._subscribed_data_streams = set()  # keep track of subscribed data streams
 
-    class InterprocessQueue:
-        """ Internal class, use: MessageBroker.queue() """
+    class NamedQueue:
+        """ Internal class, use: MessageBroker.get_queue() """
+        NAME_PREFIX = 'bpy-queue-'
+        TOKEN_PREFIX = 'bpy-queue-tokens-'
+        TASK_COUNT_PREFIX = 'bpy-queue-task-count-'
+        JOIN_CHANNEL_PREFIX = 'bpy-queue-join-channel-'
 
-        def __init__(self, mb_instance, name: str, maxsize: int, expire_sec: int):
-            self.key = f'bpy-queue-{name if name is not None else uuid.uuid4()}'
+        def __init__(self, mb_instance, name: str, maxsize: int, cleanup_sec: int):
+            self.key = f'{self.NAME_PREFIX}{name}'
             # to implement blocking
-            self.token_key = None if maxsize is None \
-                else f'bpy-queue-maxsize-tokens-{name if name is not None else uuid.uuid4()}'
+            self.token_key = None if maxsize is None else f'{self.TOKEN_PREFIX}{name}'
+            self.task_count_key = f'{self.TASK_COUNT_PREFIX}{name}'
+            self.join_channel_key = f'{self.JOIN_CHANNEL_PREFIX}{name}'
+
             self.mb_instance = mb_instance
             self.redis_client = mb_instance.redis_client
-            self.redis_client.delete(self.key, self.token_key)  # overwrite the key if it already exists
             self.maxsize = maxsize
-            self.expire_sec = expire_sec
-            self.join_semaphore = threading.Semaphore(1)
+            self.cleanup_sec = cleanup_sec
+            self.redis_client.set(self.TASK_COUNT_PREFIX, 0)
+
+            self.pubsub = self.redis_client.pubsub()
 
             if maxsize > 0:
                 # create tokens for maxsize so BRPOPLPUSH can be used for blocking
-                self.redis_client.lpush(self.token_key, [b''] * maxsize)
+                # this is a bit hacky, but the only way to implement the blocking in redis
+                # because redis only supports blocking on GET operations not PUT operations.
+                self.redis_client.lpush(self.token_key, *[b''] * maxsize)
 
         def qsize(self) -> int:
             return self.redis_client.llen(self.key)
@@ -164,22 +174,28 @@ class MessageBroker:
 
         def put(self, item, block=True, timeout=None):
             # For explanation of this implementation see: https://stackoverflow.com/a/76057700/4790871
-            timeout = 0.000000000001 if timeout is None or block is False else timeout
+            timeout = 1e-12 if timeout is None or block is False else timeout
 
             if self.maxsize > 0:
                 # blocking happens here if we're out of $maxsize tokens
                 # if block = False but self.maxsize > 0 then the timeout will be effectively 0 but
                 # this function will return a nil that we can use to identify the queue full condition without
                 # risking a race condition that would occur with check-and-push
-                self.redis_client.brpop(self.token_key, timeout=timeout)
+                result = self.redis_client.brpop(self.token_key, timeout=timeout)
                 if result is None:
                     raise queue.Full(f'Queue size {self.maxsize} is full or timeout exceeded, unable to push to queue.')
 
             # no blocking on the push to the main queue because tokens keep count for us, so this is safe at this point
             # if it wouldn't be safe to push here we would have already blocked or raised an exception above
             blob = pickle.dumps(item)
-            self.redis_client.lpush(self.key, blob)
-            self.join_semaphore.acquire()  # forces q.join() to block while semaphore count > 0
+
+            pipe = self.redis_client.pipeline()
+            pipe.lpush(self.key, blob)
+            # reset expiration on each get or put
+            for key in [self.key, self.token_key, self.task_count_key]:
+                pipe.expire(key, self.cleanup_sec)
+            pipe.incr(self.task_count_key)
+            pipe.execute()
 
         def put_nowait(self, item):
             self.put(item, block=False)
@@ -188,6 +204,9 @@ class MessageBroker:
             timeout = 1e-12 if timeout is None else timeout
 
             pipe = self.redis_client.pipeline()
+            # reset expiration on each get or put
+            for key in [self.key, self.token_key, self.task_count_key]:
+                pipe.expire(key, self.cleanup_sec)
 
             if self.maxsize > 0:
                 pipe.lpush(self.token_key, b'')
@@ -197,7 +216,8 @@ class MessageBroker:
             else:
                 pipe.rpop(self.key)
 
-            blob = pipe.execute()[-1]
+            pipe_result = pipe.execute()
+            blob = None if pipe_result[-1] is None else pipe_result[-1][1] if isinstance(pipe_result[-1], tuple) else pipe_result[-1]
 
             if blob is None:
                 raise queue.Empty('Queue is empty, ' + f'timeout exceeded.' if block else f'non-blocking mode.')
@@ -209,23 +229,52 @@ class MessageBroker:
             self.get(False)
 
         def task_done(self):
-            self.join_semaphore.release()  # decrements semaphore per each put() operation.
+            task_count = self.redis_client.decr(self.task_count_key)
+            print('DEBUG> TASK_COUNT: ' + str(task_count))
+            if task_count == 0:
+                self.redis_client.publish(self.join_channel_key, b'JOIN')
+            elif task_count < 0:
+                raise ValueError('task_done() was called more times than items placed in the queue.')
 
         def join(self):
-            self.join_semaphore.acquire()  # only passes once task_done is called once per each put operation.
+            p = self.redis_client.pubsub()
+            p.subscribe(self.join_channel_key)
 
-    class Lock:
-        """ Internal class, use: MessageBroker.lock() """
-        def __init__(self, mb_instance, named_lock: str):
-            self.mb_instance = mb_instance   # Outer class MessageBroker instance
-            self.name = named_lock
+            # resolve the race condition that would exist otherwise
+            if int(self.redis_client.get(self.task_count_key)) == 0:
+                self.redis_client.publish(self.join_channel_key, b'JOIN')
+
+            # "subscribe" message types will be seen on the channel and are discarded
+            # by the loop here, which only breaks when it sees the JOIN message issued
+            # in this function or in task_done.
+            for message in p.listen():
+                if message['type'] == 'message' and message['data'] == b'JOIN':
+                    break
+
+    class NamedLock:
+        """ Internal class, use: MessageBroker.get_lock() """
+        NAME_PREFIX = 'bpy-lock-'
+
+        def __init__(self, mb_instance, name: str, cleanup_sec: int):
+            self.redis_client = mb_instance.redis_client
+            self.key = f'{self.NAME_PREFIX}{name}'
+            self.cleanup_sec = cleanup_sec
+            self.lock = self.redis_client.lock(self.key)
+            self.redis_client.expire(self.key, self.cleanup_sec)
 
         def __enter__(self):
-            self.lock = self.mb_instance.redis_client.lock(name=self.name)
-            self.lock.acquire()
+            self.acquire()
 
         def __exit__(self, exc_type, exc_val, exc_tb):
+            self.release()
+
+        def acquire(self):
+            self.lock.acquire()
+            self.redis_client.expire(self.key, self.cleanup_sec)
+
+        def release(self):
             self.lock.release()
+            self.redis_client.expire(self.key, self.cleanup_sec)
 
     def create_device(self, device_name: str, device_type: str) -> None:
         """
@@ -255,6 +304,8 @@ class MessageBroker:
         :param confirm_receipt: blocks until the message send is confirmed. This will cause the `publish_message` function
             to block for a network delay
         """
+        barrier = None
+
         if confirm_receipt is True:
             barrier = threading.Barrier(2, timeout=10)
             original_callback = self.mqtt_connection.on_publish
@@ -272,7 +323,7 @@ class MessageBroker:
             qos=2,
         )
 
-        if confirm_receipt:
+        if confirm_receipt is True:
             barrier.wait()
 
         return result
@@ -501,22 +552,30 @@ class MessageBroker:
             thing.attributes["shadow"] = state
             thing.push()
 
-    def lock(self, named_lock: str) -> Lock:
+    def get_lock(self, name: str, cleanup_sec: int = 604800) -> NamedLock:
         """
-        Provides an inter-process named lock, this method will block as long as the lock is held by
-        another process. Usage example:
+        Get an instance of named lock or creates one if it doesn't already exist.
+
+        An inter-process named lock will block as long as the lock is acquired and held by
+        another process. Supports with blocks. Usage example:
 
             import braingeneers.iot.messaging.MessageBroker as MessageBroker
 
-            with MessageBroker().lock(f'spikesorting/9999-00-00-e-test'):
-                do_something_()
-        """
-        return MessageBroker.Lock(self, named_lock)
+            mb = MessageBroker()
+            with mb.get_lock('spikesorting/9999-00-00-e-test'):
+                do_something()
 
-    def queue(self, name: str = None, maxsize: int = 0, expire_sec: str = 604800) -> InterprocessQueue:
+        :param name: A globally unique name for the lock, you can get the same lock from multiple devices by this name.
+            It's recommended to prefix lock names with something specific to your process.
+        :param cleanup_sec: Locks will be automatically removed this many seconds after their last use, defaults to 1 week.
+            This ensures the server is not contaminated with stale locks that were never deleted.
+        """
+        return MessageBroker.NamedLock(self, name, cleanup_sec)
+
+    def get_queue(self, name: str, maxsize: int = 0, cleanup_sec: int = 604800) -> NamedQueue:
         """
         Inter-process named queue
-        This is a queue that
+        This queue functions across network connected devices.
 
         This data structure implements the python standard queue.Queue interface.
         See Python queue docs: https://docs.python.org/3/library/queue.html#queue.Queue
@@ -528,8 +587,28 @@ class MessageBroker:
             q = mb.queue()
             q.put({'serializable': 'objects only'})  # objects must serialize with Python pickle
             task = q.get()                           # may be running on a different computer or process
+
+        :param name: queue name, use the same name across devices to access a common queue object.
+        :param maxsize: maximum size of the queue as defined in Python standard queue.Queue
+        :param cleanup_sec: deletes the queue after inactivity, defaults to 1 week.
+            This ensures the server is not contaminated with stale locks that were never deleted.
         """
-        return MessageBroker.InterprocessQueue(self, name, maxsize, expire_sec)
+        return MessageBroker.NamedQueue(self, name, maxsize, cleanup_sec)
+
+    def delete_lock(self, name: str):
+        """ Deletes a named lock, this will delete the lock regardless of whether it's held on not. """
+        key = f'{MessageBroker.NamedLock.NAME_PREFIX}{name}'
+        self.redis_client.delete(key)
+
+    def delete_queue(self, name: str):
+        """ Deletes a named queue, this will delete the queue regardless of its state. """
+        keys = [
+            f'{MessageBroker.NamedQueue.NAME_PREFIX}{name}',
+            f'{MessageBroker.NamedQueue.TOKEN_PREFIX}{name}',
+            f'{MessageBroker.NamedQueue.TASK_COUNT_PREFIX}{name}',
+            f'{MessageBroker.NamedQueue.JOIN_CHANNEL_PREFIX}{name}',
+        ]
+        self.redis_client.delete(*keys)
 
     @deprecated
     def subscribe_device_state_change(self, device_name: str, device_state_keys: List[str], callback: Callable) -> None:

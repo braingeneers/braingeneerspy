@@ -3,12 +3,12 @@ import datetime
 import time
 import unittest.mock
 import braingeneers.iot.messaging as messaging
-import messaging
 import threading
 import uuid
 import warnings
 import functools
 import braingeneers.iot.shadows as sh
+import queue
 
 
 class TestBraingeneersMessageBroker(unittest.TestCase):
@@ -120,7 +120,7 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         self.mb_test_device.delete_device_state('test')
 
     def test_lock(self):
-        with self.mb.lock('unittest'):
+        with self.mb.get_lock('unittest'):
             print('lock granted')
 
     # def test_list_devices_basic(self):
@@ -163,26 +163,83 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
 
 
 class TestInterprocessQueue(unittest.TestCase):
-    def test_get_put_defaults(self):
-        q = messaging.MessageBroker().queue()
-        q.put('unittest')
-        result = q.get('unittest')
-        self.assertEqual(result, 'unittest')
+    def setUp(self) -> None:
+        self.mb = messaging.MessageBroker()
+        self.mb.delete_queue('unittest')
 
-    def test_get_put_blocking(self):
-        self.fail()
+    def test_get_put_defaults(self):
+        q = self.mb.get_queue('unittest')
+        q.put('some-value')
+        result = q.get('some-value')
+        self.assertEqual(result, 'some-value')
+
+    def test_get_put_nonblocking_without_maxsize(self):
+        q = self.mb.get_queue('unittest')
+        q.put('some-value', block=False)
+        result = q.get(block=False)
+        self.assertEqual(result, 'some-value')
 
     def test_maxsize(self):
-        self.fail()
+        q = self.mb.get_queue('unittest', maxsize=1)
+        q.put('some-value')
+        result = q.get()
+        self.assertEqual(result, 'some-value')
 
-# def callback_device_state_change(barrier: threading.Barrier, result: dict,
-#                                  device_name: str, device_state_key: str, new_value):
-#     print('')
-#     print(f'UNITTEST CALLBACK\n\tdevice_name: {device_name}\n\tdevice_state_key: {device_state_key}\n\tnew_value: {new_value}')
-#     result['device_name'] = device_name
-#     result['device_state_key'] = device_state_key
-#     result['new_value'] = new_value
-#     barrier.wait()
+    def test_timeout_put(self):
+        q = self.mb.get_queue('unittest', maxsize=1)
+        q.put('some-value-1')
+        with self.assertRaises(queue.Full):
+            q.put('some-value-2', timeout=0.1)
+            time.sleep(1)
+            self.fail('Queue failed to throw an expected exception after 0.1s timeout period.')
+
+    def test_timeout_get(self):
+        q = self.mb.get_queue('unittest', maxsize=1)
+        with self.assertRaises(queue.Empty):
+            q.get(timeout=0.1)
+            time.sleep(1)
+            self.fail('Queue failed to throw an expected exception after 0.1s timeout period.')
+
+    def test_task_done_join(self):
+        """ Test that task_done and join work as expected. """
+        def f(ql, jl, bl):
+            t0 = time.time()
+            ql.join()
+            jl['join_time'] = time.time() - t0
+            b.wait()
+
+        b = threading.Barrier(2)
+        join_time = {'join_time': 0}  # a mutable datastructure
+
+        q = self.mb.get_queue('unittest')
+        q.put('some-value')
+        threading.Thread(target=f, args=(q, join_time, b)).start()
+        time.sleep(0.1)
+        q.get()
+        q.task_done()
+        q.join()
+        b.wait()
+
+        t = join_time["join_time"]
+        self.assertTrue(t >= 0.1, msg=f'Join time {t} less than expected 0.1 sec.')
+
+
+class TestNamedLock(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mb = messaging.MessageBroker()
+        self.mb.delete_lock('unittest')
+
+    def tearDown(self) -> None:
+        self.mb.delete_lock('unittest')
+
+    def test_enter_exit(self):
+        with self.mb.get_lock('unittest'):
+            self.assertTrue(True)
+
+    def test_acquire_release(self):
+        lock = self.mb.get_lock('unittest')
+        lock.acquire()
+        lock.release()
 
 
 if __name__ == '__main__':
