@@ -22,12 +22,7 @@ setup(
     url='https://github.com/braingeneers/braingeneerspy',
     author='Braingeneers',
     # non python files are excluded by default
-    package_data={'': [
-        'braingeneers/data/mxw_h5_plugin/Linux/libcompression.so',
-        'braingeneers/data/mxw_h5_plugin/Mac_arm64/libcompression.dylib',
-        'braingeneers/data/mxw_h5_plugin/Mac_x86_64/libcompression.dylib',
-        'braingeneers/data/mxw_h5_plugin/Windows/compression.dll',
-    ]},
+    package_data={'braingeneers': ['data/mxw_h5_plugin/**/*']},
     include_package_data=True,
     classifiers=[
         'Development Status :: 3 - Alpha',
