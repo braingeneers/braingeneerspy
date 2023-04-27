@@ -21,6 +21,7 @@ setup(
     long_description_content_type='text/markdown',
     url='https://github.com/braingeneers/braingeneerspy',
     author='Braingeneers',
+    package_data={'': ['braingeneers/data/mxw_h5_plugin/**/*']},  # non python files are excluded by default
     include_package_data=True,
     classifiers=[
         'Development Status :: 3 - Alpha',
@@ -34,5 +35,5 @@ setup(
     extras_require={
         'all': list(itertools.chain(*config.DEPENDENCIES.values())),              # all dependencies included
         **{k: v for k, v in config.DEPENDENCIES.items() if k != 'minimal'},    # each dependency group
-    }
+    },
 )
