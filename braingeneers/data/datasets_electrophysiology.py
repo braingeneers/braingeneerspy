@@ -67,6 +67,31 @@ def list_uuids():
         return os.listdir(braingeneers.get_default_endpoint() + '/ephys/')
 
 
+def save_metadata(metadata: dict):
+    """
+    Saves a metadata file back to S3. This is not multi-writer safe, you can use a lock as shown in the example:
+
+    from braingeneers.iot.messaging import MessageBroker()
+    import braingeneers.data.datasets_electrophysiology as de
+
+    with MessageBroker().get_lock('a-unique-lock-name-for-your-process'):
+        metadata = de.load_metadata(uuid)
+        metadata = do_something_to(metadata)
+        de.save_metadata(metadata)
+
+    :param metadata: the metadata dictionary as obtained from load_metadata(uuid)
+    """
+    batch_uuid = metadata['uuid']
+    save_path = posixpath.join(
+        braingeneers.utils.common_utils.get_basepath(),
+        'ephys',
+        batch_uuid,
+        'metadata.json'
+    )
+    with smart_open.open(save_path, 'w') as f:
+        f.write(json.dumps(metadata, indent=2))
+
+
 def load_metadata(batch_uuid: str) -> dict:
     """
     Loads the batch UUID metadata.
@@ -130,6 +155,8 @@ def load_data(metadata: dict,
         'This feature has not yet been implemented, it is reserved for future use.'
     assert np.dtype(dtype) in VALID_LOAD_DATA_DTYPES, \
         'dtype must be one of int16 (unscaled raw data), or float16, float32, or float 64 (scaled data)'
+    assert isinstance(offset, int) and isinstance(length, int), \
+        f'offset and length must be integers, got offset is {type(offset)}, length is {type(length)}'
 
     # look up experiment by string name or index
     experiment_str = experiment if isinstance(experiment, str) else list(metadata['ephys_experiments'])[experiment]

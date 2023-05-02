@@ -82,6 +82,19 @@ class MaxwellReaderTests(unittest.TestCase):
             [497, 497, 497, 498, 498, 498, 497, 497, 498, 498],
         ])
 
+    @skip_unittest_if_offline
+    def test_non_int_offset_length(self):
+        """ Bug found while reading Maxwell V2 file """
+        with self.assertRaises(AssertionError):
+            uuid = '2023-04-17-e-connectoid16235_CCH'
+            metadata = ephys.load_metadata(uuid)
+            fs = 20000
+            time_from = 14.75
+            time_to = 16
+            offset = 14.75 * fs
+            length = int((time_to - time_from) * fs)
+            ephys.load_data(metadata=metadata, experiment=0, offset=offset, length=length)
+
 
 class AxionReaderTests(unittest.TestCase):
     """
