@@ -305,39 +305,19 @@ def load_data_maxwell(metadata, batch_uuid, experiment: str, channels, start, le
 
     experiment_stem = posixpath.basename(metadata['ephys_experiments'][experiment]['blocks'][0]['path'])
 
-    if length == -1:
-        print(
-            f"Loading file Maxwell, UUID {batch_uuid}, {experiment}: {experiment_stem}, frame {start} to end of file....")
-    else:
-        print(
-            f"Loading file Maxwell, UUID {batch_uuid}, {experiment}: {experiment_stem}, frame {start} to {start + length}....")
+    # if length == -1:
+    #     print(
+    #         f"Loading file Maxwell, UUID {batch_uuid}, {experiment}: {experiment_stem}, frame {start} to end of file....")
+    # else:
+    #     print(
+    #         f"Loading file Maxwell, UUID {batch_uuid}, {experiment}: {experiment_stem}, frame {start} to {start + length}....")
     # get datafile
 
     filename = metadata['ephys_experiments'][experiment]['blocks'][0]['path'].split('/')[-1]
     datafile = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original', 'data', filename)
 
-    # keep in mind that the range is across all channels. So, num_frames from the metadata is NOT the correct range.
-    # Finding the block where the datapoints start
-    for index in range(len(metadata['ephys_experiments'][experiment]['blocks'])):
-        # if the offset is lower than the upper range of frames in a block, break out
-        if start < metadata['ephys_experiments'][experiment]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment]['num_channels']:
-            start_block = index
-            break
-        # otherwise, keep finding the block where the offset lies
-        else:
-            start -= metadata['ephys_experiments'][experiment]['blocks'][index]['num_frames'] / metadata['ephys_experiments'][experiment]['num_channels']
-
-    # Finding block where the datapoints end
-    # metadata['ephys_experiments'][experiment]['num_channels']
-    # if length is -1, read in all the frames from all blocks
-    if length == -1:
-        frame_end = 0
-        # add up all the frames divided by their channel number
-        for block in metadata['ephys_experiments'][experiment]['blocks']:
-            frame_end += block['num_frames'] / metadata['ephys_experiments'][experiment]['num_channels']
-        frame_end = int(frame_end)
-    else:
-        frame_end = start + length
+   
+    frame_end = start + length
 
     # open file
     with smart_open.open(datafile, 'rb') as file:
@@ -349,6 +329,7 @@ def load_data_maxwell(metadata, batch_uuid, experiment: str, channels, start, le
             if channels is not None:
                 sorted_channels = np.sort(channels) 
                 undo_sort_channels = np.argsort(np.argsort(channels))
+
                 dataset = dataset[sorted_channels, start:frame_end]
             else:
                 dataset = dataset[:, start:frame_end]
