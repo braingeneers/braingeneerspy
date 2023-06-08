@@ -134,20 +134,22 @@ class SpikeData:
                 times = arg1.events['times']
                 idces = arg1.events['senders']
                 try:
-                    N = arg2
-                    cells = np.arange(N) + 1
+                    maxcell = arg2
+                    cells = np.arange(maxcell) + 1
                 except (TypeError, ValueError):
                     cells = np.array(arg2)
-                    N = cells.max()
-                cellrev = np.zeros(N + 1, int)
+                    print(cells)
+                    maxcell = cells.max()
+                cellrev = np.zeros(maxcell + 1, int)
                 cellrev[cells] = np.arange(len(cells))
 
                 # Store the underlying NEST cell IDs in the neuron_data.
                 self.neuron_data['nest_id'] = cells
 
+                cellset = set(cells)
                 self.train = [[] for _ in cells]
                 for i, t in zip(idces, times):
-                    if i <= N:
+                    if i in cellset:
                         self.train[cellrev[i]].append(t)
 
             # If that fails, we must have lists of indices and times.
