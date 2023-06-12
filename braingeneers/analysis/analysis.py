@@ -16,6 +16,7 @@ import braingeneers.utils.smart_open_braingeneers as smart_open
 from braingeneers.utils.common_utils import get_basepath
 from typing import List, Tuple, Union, Optional, Iterable, Dict, Any
 from dataclasses import dataclass
+from deprecated import deprecated
 
 __all__ = ['DCCResult', 'read_phy_files', 'SpikeData', 'filter',
            'fano_factors', 'pearson', 'cumulative_moving_average',
@@ -32,6 +33,8 @@ class NeuronAttributes:
     position: Tuple[float, float]
     amplitudes: List[float]
     template: np.ndarray
+
+    # These lists are the same length and correspond to each other
     neighbor_channels: np.ndarray
     neighbor_positions: List[Tuple[float, float]]
     neighbor_templates: List[np.ndarray]
@@ -294,7 +297,7 @@ class SpikeData:
         # Install the metadata and neuron_data.
         self.metadata = metadata.copy()
         self.neuron_attributes = neuron_attributes.copy()
-        self.neuron_data = neuron_data.copy()
+        self._neuron_data = neuron_data.copy()
 
         # If two arguments are provided, they're either a NEST spike
         # detector plus NodeCollection, or just a list of indices and
@@ -316,7 +319,7 @@ class SpikeData:
                 cellrev[cells] = np.arange(len(cells))
 
                 # Store the underlying NEST cell IDs in the neuron_data.
-                self.neuron_data['nest_id'] = cells
+                self._neuron_data['nest_id'] = cells
 
                 self.train = [[] for _ in cells]
                 for i, t in zip(idces, times):
@@ -381,7 +384,7 @@ class SpikeData:
             self.raw_time = np.zeros((0,))
 
         # Double-check that the neuron_data has the right number of values.
-        for k, values in self.neuron_data.items():
+        for k, values in self._neuron_data.items():
             if len(values) != self.N:
                 raise ValueError('Malformed metadata: '
                                  f'neuron_data[{k}] should have '
@@ -398,6 +401,11 @@ class SpikeData:
         return heapq.merge(*[zip(itertools.repeat(i), t)
                              for (i, t) in enumerate(self.train)],
                            key=lambda x: x[1])
+    
+    @property
+    @deprecated('Use NeuronAttributes instead of neuron_data, with the function load_spike_data()')
+    def neuron_data(self):
+        return self._neuron_data
 
     def idces_times(self):
         '''
