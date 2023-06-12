@@ -6,17 +6,150 @@ import heapq
 import io
 import zipfile
 import numpy as np
+import glob
+import posixpath
 from scipy import sparse, stats, signal, interpolate, ndimage
 import pandas as pd
 import powerlaw
-
+from braingeneers.utils import s3wrangler
+import braingeneers.utils.smart_open_braingeneers as smart_open
+from braingeneers.utils.common_utils import get_basepath
+from typing import List, Tuple, Union, Optional, Iterable, Dict, Any
+from dataclasses import dataclass
 
 __all__ = ['DCCResult', 'read_phy_files', 'SpikeData', 'filter',
            'fano_factors', 'pearson', 'cumulative_moving_average',
-           'burst_detection', 'ThresholdedSpikeData']
+           'burst_detection', 'ThresholdedSpikeData', 'NeuronAttributes', 
+           'load_spike_data']
 
 
 DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
+
+@dataclass
+class NeuronAttributes:
+    new_cluster_id: int
+    channel: np.ndarray
+    position: Tuple[float, float]
+    amplitudes: List[float]
+    template: np.ndarray
+    neighbor_channels: np.ndarray
+    neighbor_positions: List[Tuple[float, float]]
+    neighbor_templates: List[np.ndarray]
+
+    def __init__(self, *args, **kwargs):
+        self.new_cluster_id = kwargs.pop("new_cluster_id")
+        self.channel = kwargs.pop("channel")
+        self.position = kwargs.pop("position")
+        self.amplitudes = kwargs.pop("amplitudes")
+        self.template = kwargs.pop("template")
+        self.neighbor_channels = kwargs.pop("neighbor_channels")
+        self.neighbor_positions = kwargs.pop("neighbor_positions")
+        self.neighbor_templates = kwargs.pop("neighbor_templates")
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    def add_attribute(self, key, value):
+        setattr(self, key, value)
+
+    def list_attributes(self):
+        return [attr for attr in dir(self) if not attr.startswith('__') and not callable(getattr(self, attr))]
+
+
+
+    
+    
+def load_spike_data(uuid, experiment=None, basepath=None, fs=20000.0):
+    """
+    Loads spike data from a dataset.
+
+    :param uuid: the UUID for a specific dataset.
+    :param experiment: an optional string to specify a particular experiment in the dataset.
+    :param basepath: an optional string to specify a basepath for the dataset.
+    :return: SpikeData class with a list of spike time lists and a list of NeuronAttributes.
+    """
+
+    if basepath is None:
+        basepath = get_basepath()
+
+    prefix = f'ephys/{uuid}/derived/kilosort2/{experiment}'
+    path = posixpath.join(basepath, prefix)
+    
+    if path.startswith('s3://'):
+        # If path is an s3 path, use wrangler
+        file_list = s3wrangler.list_objects(path)
+
+        zip_files = [file for file in file_list if file.endswith('.zip')]
+
+        if not zip_files:
+            raise ValueError('No zip files found in specified location.')
+        elif len(zip_files) > 1:
+            print('Multiple zip files found. Using the first one.')
+
+        path = zip_files[0]
+
+    else:
+        # If path is a local path, check locally
+        file_list = glob.glob(path + '*.zip')
+        
+
+        zip_files = [file for file in file_list if file.endswith('.zip')]
+
+        if not zip_files:
+            raise ValueError('No zip files found in specified location.')
+        elif len(zip_files) > 1:
+            print('Multiple zip files found. Using the first one.')
+
+        path = zip_files[0]
+
+    with smart_open.open(path, 'rb') as f:
+        with zipfile.ZipFile(f, 'r') as f_zip:
+            assert 'params.py' in f_zip.namelist(), "Wrong spike sorting output."
+            with io.TextIOWrapper(f_zip.open('params.py'), encoding='utf-8') as params:
+                for line in params:
+                    if "sample_rate" in line:
+                        fs = float(line.split()[-1])
+            clusters = np.load(f_zip.open('spike_clusters.npy')).squeeze()
+            templates = np.load(f_zip.open('templates.npy'))
+            channels = np.load(f_zip.open('channel_map.npy')).squeeze()
+            spike_templates = np.load(f_zip.open('spike_templates.npy')).squeeze()
+            spike_times = np.load(f_zip.open('spike_times.npy')).squeeze() / fs * 1e3
+            positions = np.load(f_zip.open('channel_positions.npy'))
+            amplitudes = np.load(f_zip.open("amplitudes.npy")).squeeze()
+
+            if 'cluster_info.tsv' in f_zip.namelist():
+                cluster_info = pd.read_csv(f_zip.open('cluster_info.tsv'), sep='\t')
+                cluster_id = np.array(cluster_info['cluster_id'])
+                labeled_clusters = cluster_id[cluster_info['group'] != "noise"]
+            else:
+                labeled_clusters = np.unique(clusters)
+
+    df = pd.DataFrame({"clusters": clusters, "spikeTimes": spike_times, "amplitudes": amplitudes})
+    cluster_agg = df.groupby("clusters").agg({"spikeTimes": lambda x: list(x),
+                                              "amplitudes": lambda x: list(x)})
+    cluster_agg = cluster_agg[cluster_agg.index.isin(labeled_clusters)]
+    cls_temp = dict(zip(clusters, spike_templates))
+
+    neuron_attributes = []
+    for i in range(len(labeled_clusters)):
+        c = labeled_clusters[i]
+        nbgh_chan_idx = np.nonzero(templates[cls_temp[c]].any(0))[0]
+        neuron_attributes.append(
+            NeuronAttributes(
+                new_cluster_id=c,
+                channel=channels[np.argmax(templates[cls_temp[c]].max(0))],
+                position=positions[np.argmax(templates[cls_temp[c]].max(0))],
+                amplitudes=cluster_agg["amplitudes"][c],
+                template=templates[cls_temp[c]].T,
+                neighbor_channels=channels[nbgh_chan_idx],
+                neighbor_positions=positions[nbgh_chan_idx],
+                neighbor_templates=[templates[cls_temp[c]].T[n] for n in nbgh_chan_idx]
+            )
+        )
+
+    spike_data = SpikeData(cluster_agg["spikeTimes"].to_list(), neuron_attributes = neuron_attributes)
+
+    return spike_data
+
 
 
 def read_phy_files(path: str, fs=20000.0):
@@ -88,13 +221,53 @@ def read_phy_files(path: str, fs=20000.0):
 
 
 class SpikeData:
-    '''
-    Generic representation for spiking data from spike sorters and
-    simulations.
-    '''
+    """
+    Class for handling and manipulating neuronal spike data.
+
+    This class provides a way to load, process, and analyze spike
+    data from different input types, including NEST spike recorder,
+    lists of indices and times, lists of channel-time pairs, lists of
+    Neuron objects, or even prebuilt spike trains. 
+
+    Each instance of SpikeData has the following attributes:
+
+    - train: The main data attribute. This is a list of numpy arrays, 
+      where each array contains the spike times for a particular neuron.
+
+    - N: The number of neurons in the dataset.
+
+    - length: The length of the spike train, defaults to the time of 
+      the last spike.
+
+    - neuron_attributes: A list of neuronAttributes for each neuron.
+      spikeData.neuron_attributes[i].template is the neuronAttributes object
+      for neuron i, specifically for the template feature.
+
+    - neuron_data: A dictionary where each key-value pair represents 
+      an additional attribute of neurons.
+
+    - metadata: A dictionary containing any additional information or 
+      metadata about the spike data.
+
+    - raw_data: If provided, this numpy array contains the raw time 
+      series data.
+
+    - raw_time: This is either a numpy array of sample times, or a 
+      single float representing a sample rate in kHz.
+
+    In addition to these data attributes, the SpikeData class also 
+    provides some useful methods for working with spike data, such as 
+    iterating through spike times or (index, time) pairs for all units 
+    in time order.
+
+    Note that SpikeData expects spike times to be in units of 
+    milliseconds, unless a list of Neuron objects is given; these have 
+    spike times in units of samples, which are converted to 
+    milliseconds using the sample rate saved in the Neuron object.
+    """
 
     def __init__(self, arg1, arg2=None, *, N=None, length=None,
-                 neuron_data={}, metadata={},
+                 neuron_attributes = [], neuron_data={}, metadata={},
                  raw_data=None, raw_time=None):
         '''
         Parses different argument list possibilities into the desired
@@ -120,6 +293,7 @@ class SpikeData:
         '''
         # Install the metadata and neuron_data.
         self.metadata = metadata.copy()
+        self.neuron_attributes = neuron_attributes.copy()
         self.neuron_data = neuron_data.copy()
 
         # If two arguments are provided, they're either a NEST spike
@@ -299,7 +473,12 @@ class SpikeData:
         train = [ts for i, ts in enumerate(self.train) if cond(i)]
         neuron_data = {k: [v for i, v in enumerate(vs) if cond(i)]
                        for k, vs in self.neuron_data.items()}
+        
+        neuron_attributes = [self.neuron_attributes[i] for i in units] # TODO work with by
+
+        
         return SpikeData(train, length=self.length, N=len(train),
+                         neuron_attributes=neuron_attributes,
                          neuron_data=neuron_data,
                          metadata=self.metadata,
                          raw_time=self.raw_time,
@@ -340,6 +519,7 @@ class SpikeData:
         # Subset and propagate the raw data.
         rawmask = (self.raw_time >= lower) & (self.raw_time <= end)
         return SpikeData(train, length=end - start, N=self.N,
+                         neuron_attributes=self.neuron_attributes,
                          neuron_data=self.neuron_data,
                          metadata=self.metadata,
                          raw_time=self.raw_time[rawmask] - start,
@@ -358,9 +538,10 @@ class SpikeData:
 
 
     def append(self, spikeData, offset=0):
-        '''Appends a spikeData object to the current object
+        '''Appends a spikeData object to the current object. These must have
+        the same number of neurons.
 
-        :param: spikeData: spikeData object to append
+        :param: spikeData: spikeData object to append to the current object
         '''
         train = ([np.hstack([tr1, tr2 + self.length + offset]) for tr1, tr2 in zip(self.train,spikeData.train)])
         raw_data = np.concatenate((self.raw_data, spikeData.raw_data), axis=1)
@@ -370,6 +551,7 @@ class SpikeData:
         #metadata = self.metadata + spikeData.metadata
         #neuron_data = self.neuron_data + spikeData.neuron_data
         return SpikeData(train, length=length, N=self.N,
+            neuron_attributes=self.neuron_attributes,
             neuron_data=self.neuron_data,
             raw_time=raw_time, raw_data=raw_data)
 
@@ -590,8 +772,14 @@ class SpikeData:
                         from a time to each spike in the train
         '''
         latencies = []
+        if len(times) == 0:
+            return latencies
+        
         for train in self.train:
             cur_latencies = []
+            if len(train) == 0:
+                latencies.append(cur_latencies)
+                continue
             for time in times:
                 # Subtract time from all spikes in the train
                 # and take the absolute value
