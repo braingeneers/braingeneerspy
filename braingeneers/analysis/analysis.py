@@ -274,25 +274,26 @@ class SpikeData:
                  raw_data=None, raw_time=None):
         '''
         Parses different argument list possibilities into the desired
-        format: a list indexed by unit ID, where each element is
-        a list of spike times. The five possibilities accepted are:
-        (1) a pair of lists corresponding to unit indices and times,
-        (2) a NEST spike recorder plus the collection of nodes to
-        record from, (3) a list of lists of spike times, (4) a list of
-        channel-time pairs, (5) a list of Neuron objects whose
-        parameter spike_time is a list of spike times.
-        Metadata can also be passed in to the constructor, on a global
-        basis in a dict called `metadata` or on a per-neuron basis in
-        a dict of lists `neuron_data`.
-        Raw timeseries data can be passed in as `raw_data`. If this is
-        used, `raw_time` is also obligatory. This can be a series of
-        sample times or just a sample rate in kHz. In this case, it is
-        assumed that the start of the raw data corresponds with t=0,
-        and a raw time array is generated.
-        Spike times should be in units of milliseconds, unless a list
-        of Neurons is given; these have spike times in units of
-        samples, which are converted to milliseconds using the sample
-        rate saved in the Neuron object.
+        format: a list indexed by unit ID, where each element is a list of
+        spike times. The five possibilities accepted are: (1) a pair of
+        lists corresponding to unit indices and times, (2) a NEST spike
+        recorder plus the collection of nodes to record from, (3) a list of
+        lists of spike times, (4) a list of channel-time pairs, (5) a list
+        of Neuron objects whose parameter spike_time is a list of spike
+        times. Metadata can also be passed in to the constructor, on
+        a global basis in a dict called `metadata` or on a per-neuron basis
+        in a dict of lists `neuron_data`.
+
+        Arbitrary raw timeseries data, not associated with particular units,
+        can be passed in as `raw_data`, an array whose last dimension
+        corresponds to the times given in `raw_time`. The `raw_time` argument
+        can also be a sample rate in kHz, in which case it is generated
+        assuming that the start of the raw data corresponds with t=0.
+
+        Spike times should be in units of milliseconds, unless a list of
+        Neurons is given; these have spike times in units of samples, which
+        are converted to milliseconds using the sample rate saved in the
+        Neuron object.
         '''
         # Install the metadata and neuron_data.
         self.metadata = metadata.copy()
@@ -310,20 +311,21 @@ class SpikeData:
                 times = arg1.events['times']
                 idces = arg1.events['senders']
                 try:
-                    N = arg2
-                    cells = np.arange(N) + 1
+                    maxcell = arg2
+                    cells = np.arange(maxcell) + 1
                 except (TypeError, ValueError):
                     cells = np.array(arg2)
-                    N = cells.max()
-                cellrev = np.zeros(N + 1, int)
+                    maxcell = cells.max()
+                cellrev = np.zeros(maxcell + 1, int)
                 cellrev[cells] = np.arange(len(cells))
 
                 # Store the underlying NEST cell IDs in the neuron_data.
                 self._neuron_data['nest_id'] = cells
 
+                cellset = set(cells)
                 self.train = [[] for _ in cells]
                 for i, t in zip(idces, times):
-                    if i <= N:
+                    if i in cellset:
                         self.train[cellrev[i]].append(t)
 
             # If that fails, we must have lists of indices and times.
@@ -386,9 +388,8 @@ class SpikeData:
         # Double-check that the neuron_data has the right number of values.
         for k, values in self._neuron_data.items():
             if len(values) != self.N:
-                raise ValueError('Malformed metadata: '
-                                 f'neuron_data[{k}] should have '
-                                 f'{self.N} items.')
+                raise ValueError(f'Malformed metadata: neuron_data[{k}]'
+                                 f'should have {self.N} items.')
 
     @property
     def times(self):
@@ -531,7 +532,7 @@ class SpikeData:
                          neuron_data=self.neuron_data,
                          metadata=self.metadata,
                          raw_time=self.raw_time[rawmask] - start,
-                         raw_data=self.raw_data[:, rawmask])
+                         raw_data=self.raw_data[..., rawmask])
 
     def __getitem__(self, key):
         '''
@@ -819,10 +820,9 @@ class SpikeData:
             
 
 
-def filter(raw_data, fs_Hz=20000, filter_order=3,
-                filter_lo_Hz=300, filter_hi_Hz=6000,
-                time_step_size_s=10, channel_step_size = 100,
-                verbose = 0, zi = None, return_zi = False):
+def filter(raw_data, fs_Hz=20000, filter_order=3, filter_lo_Hz=300,
+           filter_hi_Hz=6000, time_step_size_s=10, channel_step_size=100,
+           verbose=0, zi=None, return_zi=False):
     '''
     Filter the raw data using a bandpass filter.
 
@@ -852,7 +852,8 @@ def filter(raw_data, fs_Hz=20000, filter_order=3,
     if zi is None:
         # Filter initial state
         zi = signal.lfilter_zi(b, a)
-        zi = np.vstack([zi*np.mean(raw_data[ch,:5]) for ch in range(raw_data.shape[0])])
+        zi = np.vstack([zi*np.mean(raw_data[ch,:5])
+                        for ch in range(raw_data.shape[0])])
 
     # Step through the data in chunks and filter it
     for ch_start in range(0, raw_data.shape[0], channel_step_size):
@@ -869,27 +870,6 @@ def filter(raw_data, fs_Hz=20000, filter_order=3,
                     axis=1, zi=zi[ch_start:ch_end,:])
 
     return data if not return_zi else (data, zi)
-
-
-        # # Step through the data in chunks, filtering each one.
-        # for f_step in np.arange(filter_step_size, raw_data.shape[1],
-        #                         filter_step_size):
-        #     # Filter one chunk of data.
-
-        #     print('filtering')
-        #     y, zi = signal.lfilter(b, a,
-        #                 raw_data[:, f_step-filter_step_size:f_step], zi=zi)
-        #     print('Did filter step', f_step/fs_Hz,'seconds')
-        #     # Save the filtered chunk.
-        #     data[:, f_step-filter_step_size:f_step] = y
-
-        #     # If its the last chunk of data
-        #     if f_step + filter_step_size > raw_data.shape[1]:
-        #         # Filter the last chunk of data.
-        #         y, zi = signal.lfilter(b, a,
-        #                     raw_data[:, f_step:], zi=zi)
-        #         # Save the filtered chunk.
-        #         data[:, f_step:] = y
 
 
 def _resampled_isi(spikes, times, sigma_ms):
