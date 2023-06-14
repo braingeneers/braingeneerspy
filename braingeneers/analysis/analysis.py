@@ -33,6 +33,7 @@ class NeuronAttributes:
     position: Tuple[float, float]
     amplitudes: List[float]
     template: np.ndarray
+    templates: np.ndarray
 
     # These lists are the same length and correspond to each other
     neighbor_channels: np.ndarray
@@ -45,6 +46,7 @@ class NeuronAttributes:
         self.position = kwargs.pop("position")
         self.amplitudes = kwargs.pop("amplitudes")
         self.template = kwargs.pop("template")
+        self.templates = kwargs.pop("templates")
         self.neighbor_channels = kwargs.pop("neighbor_channels")
         self.neighbor_positions = kwargs.pop("neighbor_positions")
         self.neighbor_templates = kwargs.pop("neighbor_templates")
@@ -136,15 +138,21 @@ def load_spike_data(uuid, experiment=None, basepath=None, fs=20000.0):
     for i in range(len(labeled_clusters)):
         c = labeled_clusters[i]
         nbgh_chan_idx = np.nonzero(templates[cls_temp[c]].any(0))[0]
+        nbgh_temps = np.transpose(templates[cls_temp[c]][:, templates[cls_temp[c]].any(0)])
+        best_chan_idx = np.argmax(np.ptp(nbgh_temps, axis=1))
+        best_chan_temp = nbgh_temps[best_chan_idx]
+        best_channel = channels[nbgh_chan_idx[best_chan_idx]]
+        best_position = tuple(positions[nbgh_chan_idx[best_chan_idx]])
         neuron_attributes.append(
             NeuronAttributes(
                 new_cluster_id=c,
-                channel=channels[np.argmax(templates[cls_temp[c]].max(0))],
-                position=positions[np.argmax(templates[cls_temp[c]].max(0))],
+                channel=best_channel,
+                position=best_position,
                 amplitudes=cluster_agg["amplitudes"][c],
-                template=templates[cls_temp[c]].T,
+                template=best_chan_temp,
+                templates=templates[cls_temp[c]].T,
                 neighbor_channels=channels[nbgh_chan_idx],
-                neighbor_positions=positions[nbgh_chan_idx],
+                neighbor_positions=[tuple(positions[idx]) for idx in nbgh_chan_idx],
                 neighbor_templates=[templates[cls_temp[c]].T[n] for n in nbgh_chan_idx]
             )
         )
@@ -169,7 +177,9 @@ def read_phy_files(path: str, fs=20000.0):
     """
     assert path[-3:] == 'zip', 'Only zip files supported!'
     import braingeneers.utils.smart_open_braingeneers as smart_open
-    with smart_open.open(path, 'rb') as f:
+    with smart_open.open(path, 'rb') as f0:
+        f = io.BytesIO(f0.read())
+        
         with zipfile.ZipFile(f, 'r') as f_zip:
             assert 'params.py' in f_zip.namelist(), "Wrong spike sorting output."
             with io.TextIOWrapper(f_zip.open('params.py'), encoding='utf-8') as params:
