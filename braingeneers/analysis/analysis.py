@@ -28,7 +28,7 @@ DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
 
 @dataclass
 class NeuronAttributes:
-    new_cluster_id: int
+    cluster_id: int
     channel: np.ndarray
     position: Tuple[float, float]
     amplitudes: List[float]
@@ -41,7 +41,7 @@ class NeuronAttributes:
     neighbor_templates: List[np.ndarray]
 
     def __init__(self, *args, **kwargs):
-        self.new_cluster_id = kwargs.pop("new_cluster_id")
+        self.cluster_id = kwargs.pop("cluster_id")
         self.channel = kwargs.pop("channel")
         self.position = kwargs.pop("position")
         self.amplitudes = kwargs.pop("amplitudes")
@@ -63,7 +63,7 @@ class NeuronAttributes:
 
     
     
-def load_spike_data(uuid, experiment=None, basepath=None, fs=20000.0, verbose=False):
+def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=20000.0, verbose=False):
     """
     Loads spike data from a dataset.
 
@@ -78,33 +78,41 @@ def load_spike_data(uuid, experiment=None, basepath=None, fs=20000.0, verbose=Fa
 
     prefix = f'ephys/{uuid}/derived/kilosort2/{experiment}'
     path = posixpath.join(basepath, prefix)
-    
-    if path.startswith('s3://'):
-        # If path is an s3 path, use wrangler
-        file_list = s3wrangler.list_objects(path)
 
-        zip_files = [file for file in file_list if file.endswith('.zip')]
 
-        if not zip_files:
-            raise ValueError('No zip files found in specified location.')
-        elif len(zip_files) > 1:
-            print('Multiple zip files found. Using the first one.')
-
-        path = zip_files[0]
-
+    if full_path is not None:
+        print('Using full path')
+        path = full_path
     else:
-        # If path is a local path, check locally
-        file_list = glob.glob(path + '*.zip')
-        
+    
+        if path.startswith('s3://'):
+            # If path is an s3 path, use wrangler
+            file_list = s3wrangler.list_objects(path)
 
-        zip_files = [file for file in file_list if file.endswith('.zip')]
+            zip_files = [file for file in file_list if file.endswith('.zip')]
 
-        if not zip_files:
-            raise ValueError('No zip files found in specified location.')
-        elif len(zip_files) > 1:
-            print('Multiple zip files found. Using the first one.')
+            if not zip_files:
+                raise ValueError('No zip files found in specified location.')
+            elif len(zip_files) > 1:
+                print('Multiple zip files found. Using the first one.')
 
-        path = zip_files[0]
+            path = zip_files[0]
+
+        else:
+            # If path is a local path, check locally
+            file_list = glob.glob(path + '*.zip')
+            
+
+            zip_files = [file for file in file_list if file.endswith('.zip')]
+
+            if not zip_files:
+                raise ValueError('No zip files found in specified location.')
+            elif len(zip_files) > 1:
+                print('Multiple zip files found. Using the first one.')
+
+            path = zip_files[0]
+
+    
 
     with smart_open.open(path, 'rb') as f0:
         f = io.BytesIO(f0.read())
@@ -145,6 +153,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, fs=20000.0, verbose=Fa
     if verbose:
         print('Creating neuron attributes...')
     neuron_attributes = []
+    
     for i in range(len(labeled_clusters)):
         c = labeled_clusters[i]
         nbgh_chan_idx = np.nonzero(templates[cls_temp[c]].any(0))[0]
@@ -155,7 +164,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, fs=20000.0, verbose=Fa
         best_position = tuple(positions[nbgh_chan_idx[best_chan_idx]])
         neuron_attributes.append(
             NeuronAttributes(
-                new_cluster_id=c,
+                cluster_id=c,
                 channel=best_channel,
                 position=best_position,
                 amplitudes=cluster_agg["amplitudes"][c],
