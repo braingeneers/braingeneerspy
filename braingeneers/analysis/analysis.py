@@ -63,7 +63,7 @@ class NeuronAttributes:
 
     
     
-def load_spike_data(uuid, experiment=None, basepath=None, fs=20000.0):
+def load_spike_data(uuid, experiment=None, basepath=None, fs=20000.0, verbose=False):
     """
     Loads spike data from a dataset.
 
@@ -107,13 +107,19 @@ def load_spike_data(uuid, experiment=None, basepath=None, fs=20000.0):
         path = zip_files[0]
 
     with smart_open.open(path, 'rb') as f0:
-    f = io.BytesIO(f0.read())
+        f = io.BytesIO(f0.read())
+        if verbose:
+            print('Opening zip file...')
         with zipfile.ZipFile(f, 'r') as f_zip:
             assert 'params.py' in f_zip.namelist(), "Wrong spike sorting output."
+            if verbose:
+                print('Reading params.py...')
             with io.TextIOWrapper(f_zip.open('params.py'), encoding='utf-8') as params:
                 for line in params:
                     if "sample_rate" in line:
                         fs = float(line.split()[-1])
+            if verbose:
+                print('Reading spike data...')
             clusters = np.load(f_zip.open('spike_clusters.npy')).squeeze()
             templates = np.load(f_zip.open('templates.npy'))
             channels = np.load(f_zip.open('channel_map.npy')).squeeze()
@@ -128,13 +134,16 @@ def load_spike_data(uuid, experiment=None, basepath=None, fs=20000.0):
                 labeled_clusters = cluster_id[cluster_info['group'] != "noise"]
             else:
                 labeled_clusters = np.unique(clusters)
-
+    if verbose:
+        print('Reorganizing data...')
     df = pd.DataFrame({"clusters": clusters, "spikeTimes": spike_times, "amplitudes": amplitudes})
     cluster_agg = df.groupby("clusters").agg({"spikeTimes": lambda x: list(x),
                                               "amplitudes": lambda x: list(x)})
     cluster_agg = cluster_agg[cluster_agg.index.isin(labeled_clusters)]
     cls_temp = dict(zip(clusters, spike_templates))
 
+    if verbose:
+        print('Creating neuron attributes...')
     neuron_attributes = []
     for i in range(len(labeled_clusters)):
         c = labeled_clusters[i]
@@ -158,8 +167,12 @@ def load_spike_data(uuid, experiment=None, basepath=None, fs=20000.0):
             )
         )
 
+    if verbose:
+        print('Creating spike data...')
     spike_data = SpikeData(cluster_agg["spikeTimes"].to_list(), neuron_attributes = neuron_attributes)
 
+    if verbose:
+        print('Done.')
     return spike_data
 
 
