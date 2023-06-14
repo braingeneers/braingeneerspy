@@ -106,7 +106,8 @@ def load_spike_data(uuid, experiment=None, basepath=None, fs=20000.0):
 
         path = zip_files[0]
 
-    with smart_open.open(path, 'rb') as f:
+    with smart_open.open(path, 'rb') as f0:
+    f = io.BytesIO(f0.read())
         with zipfile.ZipFile(f, 'r') as f_zip:
             assert 'params.py' in f_zip.namelist(), "Wrong spike sorting output."
             with io.TextIOWrapper(f_zip.open('params.py'), encoding='utf-8') as params:
