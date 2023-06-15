@@ -34,6 +34,7 @@ class NeuronAttributes:
     amplitudes: List[float]
     template: np.ndarray
     templates: np.ndarray
+    label: str
 
     # These lists are the same length and correspond to each other
     neighbor_channels: np.ndarray
@@ -47,6 +48,7 @@ class NeuronAttributes:
         self.amplitudes = kwargs.pop("amplitudes")
         self.template = kwargs.pop("template")
         self.templates = kwargs.pop("templates")
+        self.label = kwargs.pop("label")
         self.neighbor_channels = kwargs.pop("neighbor_channels")
         self.neighbor_positions = kwargs.pop("neighbor_positions")
         self.neighbor_templates = kwargs.pop("neighbor_templates")
@@ -63,7 +65,8 @@ class NeuronAttributes:
 
     
     
-def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=20000.0, verbose=False):
+def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=20000.0,
+                    groups_to_load = ["good", "mua", "", "unsorted"], verbose=False):
     """
     Loads spike data from a dataset.
 
@@ -138,10 +141,15 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
 
             if 'cluster_info.tsv' in f_zip.namelist():
                 cluster_info = pd.read_csv(f_zip.open('cluster_info.tsv'), sep='\t')
-                cluster_id = np.array(cluster_info['cluster_id'])
-                labeled_clusters = cluster_id[cluster_info['group'] != "noise"]
+                cluster_id = np.array(clusteuidr_info['cluster_id'])
+                print(cluster_info['group'])
+                labeled_clusters = cluster_id[cluster_info['group'].isin(groups_to_load)]
             else:
                 labeled_clusters = np.unique(clusters)
+                # Generate blank labels
+                cluster_info = pd.DataFrame({"cluster_id": labeled_clusters, "group": [""] * len(labeled_clusters)})
+
+    assert len(labeled_clusters) > 0, "No clusters found."
     if verbose:
         print('Reorganizing data...')
     df = pd.DataFrame({"clusters": clusters, "spikeTimes": spike_times, "amplitudes": amplitudes})
@@ -170,6 +178,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
                 amplitudes=cluster_agg["amplitudes"][c],
                 template=best_chan_temp,
                 templates=templates[cls_temp[c]].T,
+                label = cluster_info['group'][cluster_info['cluster_id'] == c].values[0],
                 neighbor_channels=channels[nbgh_chan_idx],
                 neighbor_positions=[tuple(positions[idx]) for idx in nbgh_chan_idx],
                 neighbor_templates=[templates[cls_temp[c]].T[n] for n in nbgh_chan_idx]
