@@ -73,9 +73,10 @@ def list_sorted_files(uuid, basepath=None):
     if basepath is None:
         basepath = get_basepath()
     if 's3://' in basepath:
-        return s3wrangler.list_objects('s3://braingeneers/ephys/' + uuid + '/derived/kilosort2/')
+        return s3wrangler.list_objects(basepath + 'ephys/' + uuid + '/derived/kilosort2/')
     else:
-        return glob.glob(os.path.join(basepath, f'ephys/{uuid}/derived/kilosort2/*'))
+        # return glob.glob(os.path.join(basepath, f'ephys/{uuid}/derived/kilosort2/*'))
+        return glob.glob(basepath + f'ephys/{uuid}/derived/kilosort2/*')
 
 
     
@@ -156,7 +157,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
 
             if 'cluster_info.tsv' in f_zip.namelist():
                 cluster_info = pd.read_csv(f_zip.open('cluster_info.tsv'), sep='\t')
-                cluster_id = np.array(clusteuidr_info['cluster_id'])
+                cluster_id = np.array(cluster_info['cluster_id'])
                 print(cluster_info['group'])
                 labeled_clusters = cluster_id[cluster_info['group'].isin(groups_to_load)]
             else:
