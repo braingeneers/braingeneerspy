@@ -158,7 +158,6 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
             if 'cluster_info.tsv' in f_zip.namelist():
                 cluster_info = pd.read_csv(f_zip.open('cluster_info.tsv'), sep='\t')
                 cluster_id = np.array(cluster_info['cluster_id'])
-                print(cluster_info['group'])
                 labeled_clusters = cluster_id[cluster_info['group'].isin(groups_to_load)]
             else:
                 labeled_clusters = np.unique(clusters)
