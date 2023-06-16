@@ -62,6 +62,21 @@ class NeuronAttributes:
         return [attr for attr in dir(self) if not attr.startswith('__') and not callable(getattr(self, attr))]
 
 
+def list_sorted_files(uuid, basepath=None):
+    """
+    Lists files in a directory.
+
+    :param path: the path to the directory.
+    :param pattern: the pattern to match.
+    :return: a list of files.
+    """
+    if basepath is None:
+        basepath = get_basepath()
+    if 's3://' in basepath:
+        return s3wrangler.list_objects('s3://braingeneers/ephys/' + uuid + '/derived/kilosort2/')
+    else:
+        return glob.glob(os.path.join(basepath, f'ephys/{uuid}/derived/kilosort2/*'))
+
 
     
     
