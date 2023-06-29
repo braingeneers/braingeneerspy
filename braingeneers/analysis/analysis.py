@@ -539,8 +539,10 @@ class SpikeData:
         train = [ts for i, ts in enumerate(self.train) if cond(i)]
         neuron_data = {k: [v for i, v in enumerate(vs) if cond(i)]
                        for k, vs in self.neuron_data.items()}
-        
-        neuron_attributes = [self.neuron_attributes[i] for i in units] # TODO work with by
+                       
+        neuron_attributes = []
+        if len(self.neuron_attributes) == len(units):
+            neuron_attributes = [self.neuron_attributes[i] for i in units] # TODO work with by
 
         
         return SpikeData(train, length=self.length, N=len(train),
@@ -716,6 +718,28 @@ class SpikeData:
         else:
             f15 = binned[N85:].sum() / binned.sum()
             return (f15 - 0.15) / 0.85
+
+    def concatenate_spike_data(self, sd):
+        '''
+        Adds neurons from sd to this spike data object.
+        '''
+        if sd.length == self.length:
+            self.train += sd.train
+            self.N += sd.N
+            self.raw_data += sd.raw_data
+            self.raw_time += sd.raw_time
+            # TODO: Consider the case where two separate neurons have the same index!
+            self.neuron_data.update(sd.neuron_data)
+            self.metadata.update(sd.metadata)
+        else:
+            sd = sd.subtime(0, self.length)
+            self.train += sd.train
+            self.N += sd.N
+            self.raw_data += sd.raw_data
+            self.raw_time += sd.raw_time
+            # TODO: Consider the case where two separate neurons have the same index!
+            self.neuron_data.update(sd.neuron_data)
+            self.metadata.update(sd.metadata)
 
     def spike_time_tilings(self, delt=20):
         '''
