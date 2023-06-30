@@ -256,6 +256,8 @@ def read_phy_files(path: str, fs=20000.0):
 
     cls_temp = dict(zip(clusters, spike_templates))
     neuron_dict = dict.fromkeys(np.arange(len(labeled_clusters)), None)
+
+    neuron_attributes = []
     for i in range(len(labeled_clusters)):
         c = labeled_clusters[i]
         nbgh_chan_idx = np.nonzero(templates[cls_temp[c]].any(0))[0]
@@ -271,11 +273,25 @@ def read_phy_files(path: str, fs=20000.0):
                           "amplitudes": cls_amp, "template": best_chan_temp,
                           "neighbor_channels": nbgh_channels, "neighbor_positions": nbgh_postions,
                           "neighbor_templates": nbgh_temps}
+        neuron_attributes.append(
+            NeuronAttributes(
+                cluster_id=c,
+                channel=best_channel,
+                position=best_position,
+                amplitudes=cluster_agg["amplitudes"][c],
+                template=best_chan_temp,
+                templates=templates[cls_temp[c]].T,
+                label = cluster_info['group'][cluster_info['cluster_id'] == c].values[0],
+                neighbor_channels=channels[nbgh_chan_idx],
+                neighbor_positions=[tuple(positions[idx]) for idx in nbgh_chan_idx],
+                neighbor_templates=[templates[cls_temp[c]].T[n] for n in nbgh_chan_idx]
+            )
+        )
 
     config_dict = dict(zip(channels, positions))
     neuron_data = {0: neuron_dict}
     metadata = {0: config_dict}
-    spikedata = SpikeData(list(cluster_agg["spikeTimes"]), neuron_data=neuron_data, metadata=metadata)
+    spikedata = SpikeData(list(cluster_agg["spikeTimes"]), neuron_data=neuron_data, metadata=metadata, neuron_attributes=neuron_attributes)
     return spikedata
 
 
@@ -459,7 +475,7 @@ class SpikeData:
         return heapq.merge(*[zip(itertools.repeat(i), t)
                              for (i, t) in enumerate(self.train)],
                            key=lambda x: x[1])
-    
+        
     @property
     @deprecated('Use NeuronAttributes instead of neuron_data, with the function load_spike_data()')
     def neuron_data(self):
@@ -541,7 +557,7 @@ class SpikeData:
                        for k, vs in self.neuron_data.items()}
                        
         neuron_attributes = []
-        if len(self.neuron_attributes) == len(units):
+        if len(self.neuron_attributes) >= len(units):
             neuron_attributes = [self.neuron_attributes[i] for i in units] # TODO work with by
 
         
@@ -611,11 +627,12 @@ class SpikeData:
 
         :param: spikeData: spikeData object to append to the current object
         '''
+        assert self.N == spikeData.N, 'Number of neurons must be the same'
         train = ([np.hstack([tr1, tr2 + self.length + offset]) for tr1, tr2 in zip(self.train,spikeData.train)])
         raw_data = np.concatenate((self.raw_data, spikeData.raw_data), axis=1)
         raw_time = np.concatenate((self.raw_time, spikeData.raw_time))
         length = self.length + spikeData.length + offset
-        assert self.N == spikeData.N, 'Number of neurons must be the same'
+        # TODO: Concatenate meta data, neuron data, and neuron attributes
         #metadata = self.metadata + spikeData.metadata
         #neuron_data = self.neuron_data + spikeData.neuron_data
         return SpikeData(train, length=length, N=self.N,
@@ -723,6 +740,7 @@ class SpikeData:
         '''
         Adds neurons from sd to this spike data object.
         '''
+        
         if sd.length == self.length:
             self.train += sd.train
             self.N += sd.N
@@ -731,6 +749,7 @@ class SpikeData:
             # TODO: Consider the case where two separate neurons have the same index!
             self.neuron_data.update(sd.neuron_data)
             self.metadata.update(sd.metadata)
+            self.neuron_attributes += sd.neuron_attributes
         else:
             sd = sd.subtime(0, self.length)
             self.train += sd.train
@@ -740,6 +759,8 @@ class SpikeData:
             # TODO: Consider the case where two separate neurons have the same index!
             self.neuron_data.update(sd.neuron_data)
             self.metadata.update(sd.metadata)
+            self.neuron_attributes += sd.neuron_attributes
+
 
     def spike_time_tilings(self, delt=20):
         '''
