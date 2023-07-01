@@ -52,7 +52,7 @@ DEPENDENCIES = {
         'paho-mqtt',
     ],
     'analysis': [
-        'scipy>=1.8.0',
+        'scipy>=1.10.0',
         'pandas',
         'powerlaw',
         'matplotlib',
