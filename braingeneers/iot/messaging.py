@@ -7,6 +7,7 @@ import json
 import inspect
 import logging
 import os
+import re
 import time
 import io
 import configparser
@@ -23,7 +24,6 @@ import pickle
 
 
 AWS_REGION = 'us-west-2'
-PRP_ENDPOINT = 'https://s3.nautilus.optiputer.net'
 AWS_PROFILE = 'aws-braingeneers-iot'
 REDIS_HOST = 'redis.braingeneers.gi.ucsc.edu'
 REDIS_PORT = 6379
@@ -134,6 +134,7 @@ class MessageBroker:
         self.shadow_interface = sh.DatabaseInteractor()
 
         self._subscribed_data_streams = set()  # keep track of subscribed data streams
+        self._subscribed_message_callback_map = {}  # keep track of subscribed message callbacks
 
     class NamedQueue:
         """ Internal class, use: MessageBroker.get_queue() """
@@ -328,8 +329,7 @@ class MessageBroker:
 
         return result
 
-    def subscribe_message(self, topic: str, callback: Callable) -> \
-            Union[Callable, CallableQueue]:
+    def subscribe_message(self, topic: str, callback: Callable) -> Union[Callable, CallableQueue]:
         """
         Subscribes to receive messages on a given topic. When providing a topic you will be
         subscribing to all messages on that topic and any sub topic. For example, subscribing to
@@ -363,14 +363,39 @@ class MessageBroker:
         :param timeout_sec: number of seconds to wait to verify connection successful.
         :return: the original callable, this is returned for convenience sake only, it's not altered in any way.
         """
-        def on_message(client, userdata, msg):
-            # this modifies callback for compatibility with code written for the AWS SDK
-            callback(msg.topic, json.loads(msg.payload.decode()))
 
-        self.mqtt_connection.subscribe(topic, qos=2)
+        def on_message(_client, _userdata, msg):
+            """ this modifies callback for compatibility with code written for the AWS SDK """
+            _callback = None
+
+            for _topic_regex, _callback in self._subscribed_message_callback_map.items():
+                if re.match(_topic_regex, msg.topic):
+                    _callback = self._subscribed_message_callback_map[_topic_regex]
+                    break
+
+            assert _callback is not None, 'No callback found for topic {msg.topic}'
+
+            _callback(msg.topic, json.loads(msg.payload.decode()))
+
+        # keep track of callback functions for each topic
+        # replace the topic with a regex that matches wildcards
+        topic_regex = _mqtt_topic_regex(topic)
+        self._subscribed_message_callback_map[topic_regex] = callback
+
+        self.mqtt_connection.subscribe(topic=topic, qos=2)
         self.mqtt_connection.on_message = on_message
 
         return callback
+
+    def unsubscribe_message(self, topic: str) -> None:
+        """
+        Unsubscribes from a topic, this will stop receiving messages on that topic.
+
+        :param topic: an MQTT topic as documented at
+        """
+        self.mqtt_connection.unsubscribe(topic=topic)
+        topic_regex = _mqtt_topic_regex(topic)
+        del self._subscribed_message_callback_map[topic_regex]
 
     def publish_data_stream(self, stream_name: str, data: Dict[Union[str, bytes], bytes], stream_size: int) -> None:
         """
@@ -638,8 +663,6 @@ class MessageBroker:
         Not in use with current implementation of shadows interface
         
         """
-        print('')
-        print(f'_callback_subscribe_device_state_change\n\tdevice_name: {device_name}\n\ttopic: {topic}\n\tmessage: {message}')  # todo debug step, remove
 
         # Call users callback once for each updated key
         for k in set(device_state_keys).intersection(message['state']['reported'].keys()):
@@ -767,3 +790,9 @@ class TemporaryEnvironment:
             del os.environ[self.env]
         else:
             os.environ[self.env] = self.save_original_env_value
+
+
+def _mqtt_topic_regex(topic: str) -> str:
+    """ Converts a topic string with wildcards to a regex string """
+    return "^" + topic.replace("+", "[^/]+").replace("#", ".*") + "$"
+

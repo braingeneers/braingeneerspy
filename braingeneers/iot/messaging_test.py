@@ -123,6 +123,26 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         with self.mb.get_lock('unittest'):
             print('lock granted')
 
+    def test_unsubscribe(self):
+        q = messaging.CallableQueue()
+        self.mb.subscribe_message('test/unittest', callback=q)
+        self.mb.unsubscribe_message('test/unittest')
+        self.mb.publish_message('test/unittest', message={'test': 1})
+        with self.assertRaises(queue.Empty):
+            q.get(timeout=3)
+
+    def test_two_subscribers(self):
+        q1 = messaging.CallableQueue()
+        q2 = messaging.CallableQueue()
+        self.mb.subscribe_message('test/unittest1', callback=q1)
+        self.mb.subscribe_message('test/unittest2', callback=q2)
+        self.mb.publish_message('test/unittest1', message={'test': 1})
+        self.mb.publish_message('test/unittest2', message={'test': 2})
+        topic1, message1 = q1.get(timeout=5)
+        topic2, message2 = q2.get(timeout=5)
+        self.assertDictEqual(message1, {'test': 1})
+        self.assertDictEqual(message2, {'test': 2})
+
     # def test_list_devices_basic(self):
     #     q = self.mb_test_device.subscribe_message('test/unittest', callback=messaging.CallableQueue())
     #     self.mb_test_device.publish_message('test/unittest', message={'test': 'true'})
