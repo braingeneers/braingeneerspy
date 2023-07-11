@@ -295,15 +295,16 @@ class MessageBroker:
         """
         self.shadow_interface.create_interaction_thing(device_type, device_name)
 
-    def publish_message(self, topic: str, message: (dict, list, str), confirm_receipt: bool = False) -> None:
+    def publish_message(self, topic: str, message: (object, str) = None, confirm_receipt: bool = False) -> None:
         """
         Publish a message on a topic. Example:
-            publish('/devices/ephys/marvin', '{"START_EXPERIMENT":None, "UUID":"2020-11-27-e-primary-axion-morning"}')
+            publish('devices/ephys/marvin', {"START_EXPERIMENT": None, "UUID": "2020-11-27-e-primary-axion-morning"})
 
         :param topic: an MQTT topic as documented at https://github.com/braingeneers/wiki/blob/main/shared/mqtt.md
-        :param message: a message in dictionary/list format, JSON serializable, or a JSON string. May be None.
-        :param confirm_receipt: blocks until the message send is confirmed. This will cause the `publish_message` function
-            to block for a network delay
+        :param message: a JSON serializable object or string. It may be None.
+        :param confirm_receipt: blocks until the message send is confirmed. This will cause the `publish_message`
+            function to block for a network delay, if your application exits before the message
+            can be sent this may be necessary.
         """
         barrier = None
 
@@ -311,7 +312,7 @@ class MessageBroker:
             barrier = threading.Barrier(2, timeout=10)
             original_callback = self.mqtt_connection.on_publish
 
-            def on_publish_callback(client, userdata, msg):
+            def on_publish_callback(_client, _userdata, _msg):
                 barrier.wait()
                 self.mqtt_connection.on_publish = original_callback
 
@@ -329,7 +330,7 @@ class MessageBroker:
 
         return result
 
-    def subscribe_message(self, topic: str, callback: Callable) -> Union[Callable, CallableQueue]:
+    def subscribe_message(self, topic: str, callback: Callable = None) -> Union[Callable, CallableQueue]:
         """
         Subscribes to receive messages on a given topic. When providing a topic you will be
         subscribing to all messages on that topic and any sub topic. For example, subscribing to
@@ -350,40 +351,50 @@ class MessageBroker:
             You can poll for new messages instead of subscribing to push notifications (which happen
             in a separate thread) using the following example:
 
-            mb = MessageBroker('test')  # device named test
-            q = messaging.CallableQueue()  # a queue.Queue object that stores (topic, message) tuples
-            mb.subscribe_message('test', q)  # subscribe to all topics under test
-            topic, message = q.get()
-            print(f'Topic {topic} received message {message}')  # Print message
+                mb = MessageBroker()  # an unnamed connection
+                q = messaging.CallableQueue()  # a queue.Queue object that stores (topic, message) tuples
+                mb.subscribe_message('test', q)  # subscribe to all topics under test
+                topic, message = q.get()
+                print(f'Topic {topic} received message {message}')  # Print message
+
+            The above code can be shortened to:
+                mb = MessageBroker()
+                q = mb.subscribe_message('test')
+                topic, message = q.get()
+                print(f'Topic {topic} received message {message}')  # Print message
 
         :param topic: an MQTT topic as documented at
             https://github.com/braingeneers/wiki/blob/main/shared/mqtt.md
         :param callback: a function with the signature mycallbackfunction(topic: str, message),
-            where message is a JSON object serialized to python format.
-        :param timeout_sec: number of seconds to wait to verify connection successful.
-        :return: the original callable, this is returned for convenience sake only, it's not altered in any way.
+            where message is a JSON object serialized to python format. If callback is None then
+            a CallableQueue object is created and returned and all messages go into that queue.
+        :return: the original callable, this is returned for convenience only, it's not altered in any way.
         """
+        callback = callback if callback is not None else CallableQueue()
+        assert isinstance(callback, Callable), 'callback must be a callable function (or CallableQueue object) ' \
+                                               'with a signature of (topic, message)'
 
         def on_message(_client, _userdata, msg):
-            """ this modifies callback for compatibility with code written for the AWS SDK """
-            _callback = None
+            try:
+                message = json.loads(msg.payload.decode())
+            except ValueError:
+                message = msg.payload.decode()
 
-            for _topic_regex, _callback in self._subscribed_message_callback_map.items():
-                if re.match(_topic_regex, msg.topic):
-                    _callback = self._subscribed_message_callback_map[_topic_regex]
-                    break
+            # Test each regex in the callback map to see if it matches the topic and call
+            # the appropriate callback function, we test all regexes because a topic may
+            # match multiple topic/regex subscriptions.
+            for topic_regex_loop, callback_loop in self._subscribed_message_callback_map.items():
+                if msg.topic.startswith('$') and not topic_regex_loop.startswith('^\\$'):
+                    continue
+                elif re.match(topic_regex_loop, msg.topic):
+                    callback_loop(msg.topic, message)
 
-            assert _callback is not None, 'No callback found for topic {msg.topic}'
+        if len(self._subscribed_message_callback_map) == 0:
+            self.mqtt_connection.on_message = on_message
 
-            _callback(msg.topic, json.loads(msg.payload.decode()))
-
-        # keep track of callback functions for each topic
-        # replace the topic with a regex that matches wildcards
         topic_regex = _mqtt_topic_regex(topic)
         self._subscribed_message_callback_map[topic_regex] = callback
-
         self.mqtt_connection.subscribe(topic=topic, qos=2)
-        self.mqtt_connection.on_message = on_message
 
         return callback
 
@@ -794,5 +805,5 @@ class TemporaryEnvironment:
 
 def _mqtt_topic_regex(topic: str) -> str:
     """ Converts a topic string with wildcards to a regex string """
-    return "^" + topic.replace("+", "[^/]+").replace("#", ".*") + "$"
+    return "^" + topic.replace("+", "[^/]+").replace("#", ".*").replace("$", "\\$") + "$"
 

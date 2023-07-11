@@ -17,11 +17,41 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         self.mb = messaging.MessageBroker(f'test-{uuid.uuid4()}')
         self.mb_test_device = messaging.MessageBroker('unittest')
         self.mb.create_device('test', 'Other')
-        # awscrt.io.init_logging(awscrt.io.LogLevel.Trace, 'stderr')  # enable Trace logging of AWS IOT
 
     def tearDown(self) -> None:
         self.mb.shutdown()
         self.mb_test_device.shutdown()
+
+    def test_subscribe_system_messages(self):
+        q = self.mb.subscribe_message('$SYS/#')
+        self.mb.publish_message('test/unittest', message={'test': 'true'})
+
+        t0 = time.time()
+        while time.time() - t0 < 5:
+            topic, message = q.get(timeout=5)
+            print(f'DEBUG TEST> {topic}')
+            if topic.startswith('$SYS'):
+                self.assertTrue(True)
+                break
+
+    def test_two_message_broker_objects(self):
+        """ Tests that two message broker objects can successfully publish and subscribe messages """
+        mb1 = messaging.MessageBroker()
+        mb2 = messaging.MessageBroker()
+        q1 = messaging.CallableQueue()
+        q2 = messaging.CallableQueue()
+        mb1.subscribe_message('test/unittest1', q1)
+        mb2.subscribe_message('test/unittest2', q2)
+        mb1.publish_message('test/unittest1', message={'test': 'true'})
+        mb2.publish_message('test/unittest2', message={'test': 'true'})
+        topic, message = q1.get()
+        self.assertEqual(topic, 'test/unittest1')
+        self.assertEqual(message, {'test': 'true'})
+        topic, message = q2.get()
+        self.assertEqual(topic, 'test/unittest2')
+        self.assertEqual(message, {'test': 'true'})
+        mb1.shutdown()
+        mb2.shutdown()
 
     def test_publish_subscribe_message(self):
         """ Uses a custom callback to test publish subscribe messages """
