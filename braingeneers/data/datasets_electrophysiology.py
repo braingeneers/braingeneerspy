@@ -215,6 +215,88 @@ def load_data(metadata: dict,
     return data_scaled
 
 
+
+def load_window(metadata, exp, window, dtype=np.float32, channels=None):
+    """Loads a window of data from an experiment
+    window is in frames
+    Parameters
+    ----------
+    metadata : dict
+        metadata dictionary
+    exp : str
+        experiment name
+    window : tuple
+        window start and end in frames
+    dtype : np.dtype
+        data type to return
+    
+    Returns
+    -------
+    data : np.array (n_channels, window_sz)
+    """
+    assert type(window[0]) == int, "Window start must be an integer"
+    assert type(window[1]) == int, "Window end must be an integer"
+    assert window[0] < window[1], "Window start must be less than window end"
+
+    lsb = 6.294*10**-6
+    gain = 512
+    sig_offset = 512
+    
+    # print("Loading window: ", window)
+    data = ephys.load_data(metadata, exp, offset=window[0],
+                            length=window[1]-window[0], dtype= dtype,
+                            channels = channels)
+    return (data -sig_offset) * lsb * gain*1000 # last is for V to mV
+
+
+
+def load_windows(metadata, exp, window_centers, window_sz, dtype=np.float16,
+                channels=None):
+    """Loads a window of data from an experiment
+    window is in frames
+    Parameters
+    ----------
+    metadata : dict
+        metadata dictionary
+    exp : str
+        experiment name
+    window_centers : list
+        list of window centers in frames
+    window_sz : int
+        window size in frames
+    dtype : np.dtype
+        data type to load
+    
+    Returns
+    -------
+    data : np.array (n_windows, n_channels, window_sz)
+
+    """
+    data = []
+    dataset_length = metadata['ephys_experiments'][exp]['blocks'][0]['num_frames']
+
+
+    for i,center in enumerate(window_centers):
+        # window is (start, end)
+        window = (center - window_sz//2, center + window_sz//2)
+
+        # Check if window is out of bounds
+        if window[0] < 0 or window[1] > dataset_length:
+            print("Window out of bounds, inserting zeros for window",window)
+            data_temp = np.zeros((data_temp.shape[0],window_sz),dtype=dtype)
+        else:
+            data_temp = load_window(metadata, exp, window, dtype=dtype, channels=channels)
+        
+        # Check if window is the right size
+        if data_temp.shape[1] != window_sz:
+            print("Data shape mismatch, inserting zeros for window",window)
+            data_temp = np.zeros((data_temp.shape[0],window_sz),dtype=dtype)
+        
+        data.append(data_temp)
+    return np.stack(data, axis=0)
+
+
+
 def load_data_raspi(metadata, batch_uuid, experiment: str, offset, length) -> NDArray[Int16]:
     """
     :param metadata:
@@ -557,12 +639,13 @@ def load_stims_maxwell(uuid: str, metadata_ephys_exp: dict = None, experiment_st
 
     stim_path = posixpath.join(get_basepath(), 'ephys', uuid, DATA_PATH, 
                                 exp_stim_log)
-    
+    import io
     print('Loading stim log from UUID: {}, log: {}'.format(uuid, exp_stim_log))
     print(stim_path)
     try:
         with smart_open.open(stim_path, 'rb') as f:
             # read the csv into dataframe
+            f = io.TextIOWrapper(f, encoding='utf-8')
             df = pd.read_csv(f, header=0)#, index_col=0)
         return df
         
