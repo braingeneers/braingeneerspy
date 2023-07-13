@@ -38,7 +38,7 @@ DEPENDENCIES = {
     'data': [
         'h5py',
         'smart_open @ git+https://github.com/davidparks21/smart_open.git@develop',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
-        'awswrangler @ git+https://github.com/aws/aws-sdk-pandas.git@3.0.0rc3',
+        'awswrangler==3.*',
         'pandas',
         'nptyping',
         'paho-mqtt',
@@ -57,7 +57,7 @@ DEPENDENCIES = {
         'powerlaw',
         'matplotlib',
         # Both of these dependencies are required for read_phy_files
-        'awswrangler @ git+https://github.com/aws/aws-sdk-pandas.git@3.0.0rc3',
+        'awswrangler==3.*',
         'smart_open @ git+https://github.com/davidparks21/smart_open.git@develop',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
     ],
     'ml': [
