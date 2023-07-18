@@ -29,6 +29,7 @@ def random_spikedata(units, spikes, rate=1.0):
     idces = np.random.randint(units, size=spikes)
     return ba.SpikeData(idces, times,
                         length=spikes/rate/units, N=units)
+                        
 
 class AnalysisTest(unittest.TestCase):
 
@@ -551,3 +552,24 @@ class AnalysisTest(unittest.TestCase):
 
         # Can do negative
         self.assertAlmostEqual(a.latencies([.1])[0][0], -.1)
+
+
+class SpikeAttributesTest(unittest.TestCase):
+
+    def testSpikeAttributes(self):
+        uuid = '2023-04-17-e-causal_v1'
+        sd = ba.load_spike_data(uuid)
+        self.assertTrue(isinstance(sd, ba.SpikeData))
+
+    # def testSpikeAttributesExperiment(self):
+    #     uuid = '2023-04-17-e-causal_v1'
+    #     exp = '20230419_160528_rec16169_phy.zip'
+    #     sd = ba.load_spike_data(uuid, exp)
+    #     self.assertTrue(isinstance(sd, ba.SpikeData))
+
+    def testSpikeAttributesDiffSorter(self):
+        uuid = '2023-04-17-e-causal_v1'
+        exp = 'data_phy.zip'
+        sorter = 'kilosort3'
+        sd = ba.load_spike_data(uuid, exp, sorter=sorter)
+        self.assertTrue(isinstance(sd, ba.SpikeData))

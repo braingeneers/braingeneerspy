@@ -28,6 +28,7 @@ DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
 
 @dataclass
 class NeuronAttributes:
+    experiment: str
     cluster_id: int
     channel: np.ndarray
     position: Tuple[float, float]
@@ -42,6 +43,7 @@ class NeuronAttributes:
     neighbor_templates: List[np.ndarray]
 
     def __init__(self, *args, **kwargs):
+        self.experiment = kwargs.pop("experiment")
         self.cluster_id = kwargs.pop("cluster_id")
         self.channel = kwargs.pop("channel")
         self.position = kwargs.pop("position")
@@ -82,7 +84,8 @@ def list_sorted_files(uuid, basepath=None):
     
     
 def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=20000.0,
-                    groups_to_load = ["good", "mua", "", "unsorted"], verbose=False):
+                    groups_to_load = ["good", "mua", "", "unsorted"], verbose=False,
+                    sorter = "kilosort2"):
     """
     Loads spike data from a dataset.
 
@@ -91,20 +94,24 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
     :param basepath: an optional string to specify a basepath for the dataset.
     :return: SpikeData class with a list of spike time lists and a list of NeuronAttributes.
     """
-
     if basepath is None:
         basepath = get_basepath()
 
-    prefix = f'ephys/{uuid}/derived/kilosort2/{experiment}'
+    if experiment is None:
+        experiment = ""
+    prefix = f'ephys/{uuid}/derived/{sorter}/{experiment}'
+    print('prefix:', prefix)
     path = posixpath.join(basepath, prefix)
 
 
     if full_path is not None:
-        print('Using full path')
+        experiment = full_path.split('/')[-1].split('.')[0]
+        print('Using full path, experiment:', experiment)
         path = full_path
     else:
     
         if path.startswith('s3://'):
+            print('Using s3 path for experiment:', experiment)
             # If path is an s3 path, use wrangler
             file_list = s3wrangler.list_objects(path)
 
@@ -118,6 +125,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
             path = zip_files[0]
 
         else:
+            print('Using local path for experiment:', experiment)
             # If path is a local path, check locally
             file_list = glob.glob(path + '*.zip')
             
@@ -187,6 +195,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
         best_position = tuple(positions[nbgh_chan_idx[best_chan_idx]])
         neuron_attributes.append(
             NeuronAttributes(
+                experiment=experiment,
                 cluster_id=c,
                 channel=best_channel,
                 position=best_position,
