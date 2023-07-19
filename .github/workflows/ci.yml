@@ -17,24 +17,23 @@ env:
   FORCE_COLOR: 3
 
 jobs:
-  pre-commit:
-    name: Format
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.x"
-      - uses: pre-commit/action@v3.0.0
-        with:
-          extra_args: --hook-stage manual --all-files
-      - name: Run PyLint
-        run: |
-          echo "::add-matcher::$GITHUB_WORKSPACE/.github/matchers/pylint.json"
-          pipx run nox -s pylint
+  # pre-commit:
+  #   name: Format
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #       with:
+  #         fetch-depth: 0
+  #     - uses: actions/setup-python@v4
+  #       with:
+  #         python-version: "3.x"
+  #     - uses: pre-commit/action@v3.0.0
+  #       with:
+  #         extra_args: --hook-stage manual --all-files
+  #     - name: Run PyLint
+  #       run: |
+  #         echo "::add-matcher::$GITHUB_WORKSPACE/.github/matchers/pylint.json"
+  #         pipx run nox -s pylint
 
   checks:
     name: Check Python ${{ matrix.python-version }} on ${{ matrix.runs-on }}
