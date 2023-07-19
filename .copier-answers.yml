@@ -1,0 +1,11 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: 2023.07.13
+_src_path: gh:scientific-python/cookie
+backend: hatch
+email: me@example.com
+full_name: Braingeneers
+license: MIT
+org: braingeneers
+project_name: braingeneers
+project_short_description: braingeneerspy
+url: https://github.com/braingeneers/braingeneerspy
