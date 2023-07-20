@@ -936,9 +936,42 @@ class SpikeData:
         return self.latencies(self.train[i], window_ms)
 
 
+    def randomized(self, dt=1.0, seed=None):
+        '''
+        Create a new SpikeData object which preserves the population rate
+        and mean firing rate of each neuron in an existing SpikeData by
+        randomly reallocating all spike times to different neurons at a
+        resolution given by dt, using resampling to maintain the
+        invariant that no neuron spikes twice in the same timestep.
+        '''
+        # Collect the spikes of the original Spikedata and define a new
+        # "randomized spike matrix" to store them in.
+        sm = self.sparse_raster(dt)
+        if sm.max() > 1:
+            print(sm.max())
+            raise ValueError(f'{dt = }ms is to coarse to randomize.')
+        rsm = np.zeros(sm.shape, int)
+        weights = sm.sum(0)
 
+        # Iterate over the units in order of how many spikes they have.
+        n_spikeses = sm.sum(1)
+        unit_order = np.argsort(n_spikeses)[::-1]
+        unit_order = unit_order[n_spikeses[unit_order] > 0]
 
+        # Choose spike times from the big list for each unit.
+        rng = np.random.RandomState(seed)
+        for unit in unit_order:
+            n_spikes = n_spikeses[unit]
+            p = weights / weights.sum()
+            rand_frames = rng.choice(
+                rsm.shape[1], n_spikes, replace=False, p=p)
+            weights[rand_frames] -= 1
+            rsm[unit,rand_frames] = 1
 
+        idces, times = np.nonzero(rsm)
+        return SpikeData(idces, times*dt, length=self.length, N=self.N,
+                         metadata=self.metadata, neuron_data=self.neuron_data,
+                         neuron_attributes=self.neuron_attributes)
 
 
 def filter(raw_data, fs_Hz=20000, filter_order=3, filter_lo_Hz=300,

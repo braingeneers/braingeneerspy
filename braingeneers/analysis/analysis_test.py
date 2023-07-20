@@ -29,9 +29,9 @@ def random_spikedata(units, spikes, rate=1.0):
     idces = np.random.randint(units, size=spikes)
     return ba.SpikeData(idces, times,
                         length=spikes/rate/units, N=units)
-                        
 
-class AnalysisTest(unittest.TestCase):
+
+class SpikeDataTest(unittest.TestCase):
 
     def assertSpikeDataEqual(self, sda, sdb, msg=None):
         'Assert that two SpikeData objects contain the same data.'
@@ -552,6 +552,15 @@ class AnalysisTest(unittest.TestCase):
 
         # Can do negative
         self.assertAlmostEqual(a.latencies([.1])[0][0], -.1)
+
+    def test_base_randomization(self):
+        sd = random_spikedata(100, 1000)
+        sd.train = [np.unique(np.round(t)) for t in sd.train]
+        rsd = sd.randomized(dt=0.1)
+        r = sd.raster()
+        rr = rsd.raster()
+        self.assertAll(r.sum(0) == rr.sum(0))
+        self.assertAll(r.sum(1) == rr.sum(1))
 
 
 class SpikeAttributesTest(unittest.TestCase):
