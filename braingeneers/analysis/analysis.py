@@ -8,19 +8,19 @@ import zipfile
 import numpy as np
 import glob
 import posixpath
-from scipy import sparse, stats, signal, interpolate, ndimage
+from scipy import sparse, stats, signal, ndimage
 import pandas as pd
 import powerlaw
 from braingeneers.utils import s3wrangler
 import braingeneers.utils.smart_open_braingeneers as smart_open
 from braingeneers.utils.common_utils import get_basepath
-from typing import List, Tuple, Union, Optional, Iterable, Dict, Any
+from typing import List, Tuple
 from dataclasses import dataclass
 from deprecated import deprecated
 
 __all__ = ['DCCResult', 'read_phy_files', 'SpikeData', 'filter',
            'fano_factors', 'pearson', 'cumulative_moving_average',
-           'burst_detection', 'ThresholdedSpikeData', 'NeuronAttributes', 
+           'burst_detection', 'ThresholdedSpikeData', 'NeuronAttributes',
            'load_spike_data']
 
 
@@ -81,11 +81,9 @@ def list_sorted_files(uuid, basepath=None):
         return glob.glob(basepath + f'ephys/{uuid}/derived/kilosort2/*')
 
 
-    
-    
-def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=20000.0,
-                    groups_to_load = ["good", "mua", "", "unsorted"], verbose=False,
-                    sorter = "kilosort2"):
+def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=20000.0,
+                    groups_to_load=["good", "mua", "", "unsorted"],
+                    verbose=False, sorter='kilosort2'):
     """
     Loads spike data from a dataset.
 
@@ -109,7 +107,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
         print('Using full path, experiment:', experiment)
         path = full_path
     else:
-    
+
         if path.startswith('s3://'):
             print('Using s3 path for experiment:', experiment)
             # If path is an s3 path, use wrangler
@@ -128,7 +126,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
             print('Using local path for experiment:', experiment)
             # If path is a local path, check locally
             file_list = glob.glob(path + '*.zip')
-            
+
 
             zip_files = [file for file in file_list if file.endswith('.zip')]
 
@@ -139,7 +137,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
 
             path = zip_files[0]
 
-    
+
 
     with smart_open.open(path, 'rb') as f0:
         f = io.BytesIO(f0.read())
@@ -207,7 +205,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
                 amplitudes=cluster_agg["amplitudes"][c],
                 template=nbgh_temps[0],
                 templates=templates[cls_temp[c]].T,
-                label = cluster_info['group'][cluster_info['cluster_id'] == c].values[0],
+                label=cluster_info['group'][cluster_info['cluster_id'] == c].values[0],
                 neighbor_channels=nbgh_channels,
                 neighbor_positions=nbgh_postions,
                 neighbor_templates=nbgh_temps
@@ -216,7 +214,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
 
     if verbose:
         print('Creating spike data...')
-    spike_data = SpikeData(cluster_agg["spikeTimes"].to_list(), neuron_attributes = neuron_attributes)
+    spike_data = SpikeData(cluster_agg["spikeTimes"].to_list(), neuron_attributes=neuron_attributes)
 
     if verbose:
         print('Done.')
@@ -240,7 +238,7 @@ def read_phy_files(path: str, fs=20000.0):
     import braingeneers.utils.smart_open_braingeneers as smart_open
     with smart_open.open(path, 'rb') as f0:
         f = io.BytesIO(f0.read())
-        
+
         with zipfile.ZipFile(f, 'r') as f_zip:
             assert 'params.py' in f_zip.namelist(), "Wrong spike sorting output."
             with io.TextIOWrapper(f_zip.open('params.py'), encoding='utf-8') as params:
@@ -303,7 +301,7 @@ def read_phy_files(path: str, fs=20000.0):
                 amplitudes=cluster_agg["amplitudes"][c],
                 template=best_chan_temp,
                 templates=templates[cls_temp[c]].T,
-                label = cluster_info['group'][cluster_info['cluster_id'] == c].values[0],
+                label=cluster_info['group'][cluster_info['cluster_id'] == c].values[0],
                 neighbor_channels=channels[nbgh_chan_idx],
                 neighbor_positions=[tuple(positions[idx]) for idx in nbgh_chan_idx],
                 neighbor_templates=[templates[cls_temp[c]].T[n] for n in nbgh_chan_idx]
@@ -325,47 +323,47 @@ class SpikeData:
     This class provides a way to load, process, and analyze spike
     data from different input types, including NEST spike recorder,
     lists of indices and times, lists of channel-time pairs, lists of
-    Neuron objects, or even prebuilt spike trains. 
+    Neuron objects, or even prebuilt spike trains.
 
     Each instance of SpikeData has the following attributes:
 
-    - train: The main data attribute. This is a list of numpy arrays, 
+    - train: The main data attribute. This is a list of numpy arrays,
       where each array contains the spike times for a particular neuron.
 
     - N: The number of neurons in the dataset.
 
-    - length: The length of the spike train, defaults to the time of 
+    - length: The length of the spike train, defaults to the time of
       the last spike.
 
     - neuron_attributes: A list of neuronAttributes for each neuron.
       spikeData.neuron_attributes[i].template is the neuronAttributes object
       for neuron i, specifically for the template feature.
 
-    - neuron_data: A dictionary where each key-value pair represents 
+    - neuron_data: A dictionary where each key-value pair represents
       an additional attribute of neurons.
 
-    - metadata: A dictionary containing any additional information or 
+    - metadata: A dictionary containing any additional information or
       metadata about the spike data.
 
-    - raw_data: If provided, this numpy array contains the raw time 
+    - raw_data: If provided, this numpy array contains the raw time
       series data.
 
-    - raw_time: This is either a numpy array of sample times, or a 
+    - raw_time: This is either a numpy array of sample times, or a
       single float representing a sample rate in kHz.
 
-    In addition to these data attributes, the SpikeData class also 
-    provides some useful methods for working with spike data, such as 
-    iterating through spike times or (index, time) pairs for all units 
+    In addition to these data attributes, the SpikeData class also
+    provides some useful methods for working with spike data, such as
+    iterating through spike times or (index, time) pairs for all units
     in time order.
 
-    Note that SpikeData expects spike times to be in units of 
-    milliseconds, unless a list of Neuron objects is given; these have 
-    spike times in units of samples, which are converted to 
+    Note that SpikeData expects spike times to be in units of
+    milliseconds, unless a list of Neuron objects is given; these have
+    spike times in units of samples, which are converted to
     milliseconds using the sample rate saved in the Neuron object.
     """
 
     def __init__(self, arg1, arg2=None, *, N=None, length=None,
-                 neuron_attributes = [], neuron_data={}, metadata={},
+                 neuron_attributes=[], neuron_data={}, metadata={},
                  raw_data=None, raw_time=None):
         '''
         Parses different argument list possibilities into the desired
@@ -497,7 +495,7 @@ class SpikeData:
         return heapq.merge(*[zip(itertools.repeat(i), t)
                              for (i, t) in enumerate(self.train)],
                            key=lambda x: x[1])
-        
+
     @property
     @deprecated('Use NeuronAttributes instead of neuron_data, with the function load_spike_data()')
     def neuron_data(self):
@@ -575,14 +573,13 @@ class SpikeData:
                 return self.neuron_data[by][i] in units
 
         train = [ts for i, ts in enumerate(self.train) if cond(i)]
-        neuron_data = {k: [v for i, v in enumerate(vs) if cond(i)]
-                       for k, vs in self.neuron_data.items()}
-                       
+        neuron_data = {k: [v for i,v in enumerate(vs) if cond(i)]
+                       for k,vs in self.neuron_data.items()}
+
         neuron_attributes = []
         if len(self.neuron_attributes) >= len(units):
-            neuron_attributes = [self.neuron_attributes[i] for i in units] # TODO work with by
+            neuron_attributes = [self.neuron_attributes[i] for i in units]  # TODO work with by
 
-        
         return SpikeData(train, length=self.length, N=len(train),
                          neuron_attributes=neuron_attributes,
                          neuron_data=neuron_data,
@@ -654,13 +651,13 @@ class SpikeData:
         raw_data = np.concatenate((self.raw_data, spikeData.raw_data), axis=1)
         raw_time = np.concatenate((self.raw_time, spikeData.raw_time))
         length = self.length + spikeData.length + offset
-        # TODO: Concatenate meta data, neuron data, and neuron attributes
-        #metadata = self.metadata + spikeData.metadata
-        #neuron_data = self.neuron_data + spikeData.neuron_data
+        assert self.N == spikeData.N, 'Number of neurons must be the same'
+        # metadata = self.metadata + spikeData.metadata
+        # neuron_data = self.neuron_data + spikeData.neuron_data
         return SpikeData(train, length=length, N=self.N,
-            neuron_attributes=self.neuron_attributes,
-            neuron_data=self.neuron_data,
-            raw_time=raw_time, raw_data=raw_data)
+                         neuron_attributes=self.neuron_attributes,
+                         neuron_data=self.neuron_data,
+                         raw_time=raw_time, raw_data=raw_data)
 
 
 
@@ -762,7 +759,7 @@ class SpikeData:
         '''
         Adds neurons from sd to this spike data object.
         '''
-        
+
         if sd.length == self.length:
             self.train += sd.train
             self.N += sd.N
@@ -907,7 +904,7 @@ class SpikeData:
         latencies = []
         if len(times) == 0:
             return latencies
-        
+
         for train in self.train:
             cur_latencies = []
             if len(train) == 0:
@@ -917,7 +914,7 @@ class SpikeData:
                 # Subtract time from all spikes in the train
                 # and take the absolute value
                 abs_diff_ind = np.argmin(np.abs(train - time))
-                
+
                 # Calculate the actual latency
                 latency = np.array(train)-time
                 latency = latency[abs_diff_ind]
@@ -938,10 +935,10 @@ class SpikeData:
 
         return self.latencies(self.train[i], window_ms)
 
-    
 
-    
-            
+
+
+
 
 
 def filter(raw_data, fs_Hz=20000, filter_order=3, filter_lo_Hz=300,
@@ -970,8 +967,8 @@ def filter(raw_data, fs_Hz=20000, filter_order=3, filter_lo_Hz=300,
 
 
     # Get filter params
-    b, a = signal.butter(fs=fs_Hz, btype='bandpass', #output='sos',
-                        N=filter_order, Wn=[filter_lo_Hz, filter_hi_Hz])
+    b, a = signal.butter(fs=fs_Hz, btype='bandpass',
+                         N=filter_order, Wn=[filter_lo_Hz, filter_hi_Hz])
 
     if zi is None:
         # Filter initial state
@@ -990,8 +987,8 @@ def filter(raw_data, fs_Hz=20000, filter_order=3, filter_lo_Hz=300,
             t_end = min(t_start + time_step_size, raw_data.shape[1])
 
             data[ch_start:ch_end, t_start:t_end], zi[ch_start:ch_end,:] = signal.lfilter(
-                    b, a, raw_data[ch_start:ch_end, t_start:t_end],
-                    axis=1, zi=zi[ch_start:ch_end,:])
+                b, a, raw_data[ch_start:ch_end, t_start:t_end],
+                axis=1, zi=zi[ch_start:ch_end,:])
 
     return data if not return_zi else (data, zi)
 
