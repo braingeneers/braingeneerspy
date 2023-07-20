@@ -156,7 +156,8 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
             if verbose:
                 print('Reading spike data...')
             clusters = np.load(f_zip.open('spike_clusters.npy')).squeeze()
-            templates = np.load(f_zip.open('templates.npy'))
+            templates_w = np.load(f_zip.open('templates.npy'))
+            wmi = np.load(f_zip.open('whitening_mat_inv.npy'))
             channels = np.load(f_zip.open('channel_map.npy')).squeeze()
             spike_templates = np.load(f_zip.open('spike_templates.npy')).squeeze()
             spike_times = np.load(f_zip.open('spike_times.npy')).squeeze() / fs * 1e3
@@ -184,28 +185,32 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path = None, fs=2
     if verbose:
         print('Creating neuron attributes...')
     neuron_attributes = []
-    
+
+    # un-whiten the templates before finding the best channel
+    templates = np.dot(templates_w, wmi)
+
     for i in range(len(labeled_clusters)):
         c = labeled_clusters[i]
-        nbgh_chan_idx = np.nonzero(templates[cls_temp[c]].any(0))[0]
-        nbgh_temps = np.transpose(templates[cls_temp[c]][:, templates[cls_temp[c]].any(0)])
-        best_chan_idx = np.argmax(np.ptp(nbgh_temps, axis=1))
-        best_chan_temp = nbgh_temps[best_chan_idx]
-        best_channel = channels[nbgh_chan_idx[best_chan_idx]]
-        best_position = tuple(positions[nbgh_chan_idx[best_chan_idx]])
+        temp = templates[cls_temp[c]].T
+        amp = np.max(temp, axis=1) - np.min(temp, axis=1)
+        sorted_idx = [ind for _, ind in sorted(zip(amp, np.arange(len(amp))))]
+        nbgh_chan_idx = sorted_idx[::-1][:12]
+        nbgh_temps = temp[sorted_idx]
+        nbgh_channels = channels[nbgh_chan_idx]
+        nbgh_postions = [tuple(positions[idx]) for idx in nbgh_chan_idx]
         neuron_attributes.append(
             NeuronAttributes(
                 experiment=experiment,
                 cluster_id=c,
-                channel=best_channel,
-                position=best_position,
+                channel=nbgh_channels[0],
+                position=nbgh_postions[0],
                 amplitudes=cluster_agg["amplitudes"][c],
-                template=best_chan_temp,
+                template=nbgh_temps[0],
                 templates=templates[cls_temp[c]].T,
                 label = cluster_info['group'][cluster_info['cluster_id'] == c].values[0],
-                neighbor_channels=channels[nbgh_chan_idx],
-                neighbor_positions=[tuple(positions[idx]) for idx in nbgh_chan_idx],
-                neighbor_templates=[templates[cls_temp[c]].T[n] for n in nbgh_chan_idx]
+                neighbor_channels=nbgh_channels,
+                neighbor_positions=nbgh_postions,
+                neighbor_templates=nbgh_temps
             )
         )
 
@@ -245,6 +250,8 @@ def read_phy_files(path: str, fs=20000.0):
             clusters = np.load(f_zip.open('spike_clusters.npy')).squeeze()
             templates = np.load(f_zip.open('templates.npy'))  # (cluster_id, samples, channel_id)
             channels = np.load(f_zip.open('channel_map.npy')).squeeze()
+            templates_w = np.load(f_zip.open('templates.npy'))
+            wmi = np.load(f_zip.open('whitening_mat_inv.npy'))
             spike_templates = np.load(f_zip.open('spike_templates.npy')).squeeze()
             spike_times = np.load(f_zip.open('spike_times.npy')).squeeze() / fs * 1e3  # in ms
             positions = np.load(f_zip.open('channel_positions.npy'))
@@ -266,19 +273,25 @@ def read_phy_files(path: str, fs=20000.0):
     cls_temp = dict(zip(clusters, spike_templates))
     neuron_dict = dict.fromkeys(np.arange(len(labeled_clusters)), None)
 
+    # un-whitten the templates before finding the best channel
+    templates = np.dot(templates_w, wmi)
+
     neuron_attributes = []
     for i in range(len(labeled_clusters)):
         c = labeled_clusters[i]
-        nbgh_chan_idx = np.nonzero(templates[cls_temp[c]].any(0))[0]
-        nbgh_temps = np.transpose(templates[cls_temp[c]][:, templates[cls_temp[c]].any(0)])
-        best_chan_idx = np.argmax(np.ptp(nbgh_temps, axis=1))
-        best_chan_temp = nbgh_temps[best_chan_idx]
+        temp = templates[cls_temp[c]]
+        amp = np.max(temp, axis=0) - np.min(temp, axis=0)
+        sorted_idx = [ind for _, ind in sorted(zip(amp, np.arange(len(amp))))]
+        nbgh_chan_idx = sorted_idx[::-1][:12]
+        nbgh_temps = temp.transpose()[sorted_idx]
+        best_chan_temp = nbgh_temps[0]
         nbgh_channels = channels[nbgh_chan_idx]
         nbgh_postions = [tuple(positions[idx]) for idx in nbgh_chan_idx]
-        best_channel = channels[nbgh_chan_idx[best_chan_idx]]
-        best_position = tuple(positions[nbgh_chan_idx[best_chan_idx]])
+        best_channel = nbgh_channels[0]
+        best_position = nbgh_postions[0]
+        # neighbor_templates = dict(zip(nbgh_postions, nbgh_temps))
         cls_amp = cluster_agg["amplitudes"][c]
-        neuron_dict[i] = {"channel": best_channel, "position": best_position,
+        neuron_dict[i] = {"cluster_id": c, "channel": best_channel, "position": best_position,
                           "amplitudes": cls_amp, "template": best_chan_temp,
                           "neighbor_channels": nbgh_channels, "neighbor_positions": nbgh_postions,
                           "neighbor_templates": nbgh_temps}
