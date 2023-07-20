@@ -620,7 +620,7 @@ class MessageBroker:
             import braingeneers.iot.messaging.MessageBroker as MessageBroker
 
             mb = MessageBroker()
-            q = mb.queue()
+            q = mb.get_queue('spikesorting/9999-00-00-e-test')
             q.put({'serializable': 'objects only'})  # objects must serialize with Python pickle
             task = q.get()                           # may be running on a different computer or process
 
