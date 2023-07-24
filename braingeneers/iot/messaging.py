@@ -31,6 +31,33 @@ logger = logging.getLogger()
 logger.level = logging.INFO
 
 
+class MQTTError(RuntimeError):
+    """Exception raised for errors during MQTT operations."""
+
+    def __init__(self, message_info):
+        mqtt_error_codes = {
+            0: "No error. The message was published successfully.",
+            1: "Out of memory. The client failed to allocate memory for the message.",
+            2: "A network error occurred.",
+            3: "Invalid function arguments were provided.",
+            4: "The client is not currently connected.",
+            5: "The server refused our connection, the client failed to authenticate.",
+            6: "Message not found (internal error).",
+            7: "The connection to the server was lost.",
+            8: "A TLS error occurred.",
+            9: "Payload size is too large.",
+            10: "This feature has not been implemented.",
+            11: "Problem with authentication.",
+            12: "Access denied by ACL.",
+            13: "An unknown error occurred.",
+            14: "Check 'errno' for the error code.",
+            15: "The queue size has been exceeded."
+        }
+
+        err_message = mqtt_error_codes.get(message_info.rc, 'Unknown error code.')
+        super().__init__(f"MQTT Error {message_info.rc}: {err_message}")
+
+
 class CallableQueue(queue.Queue):
     def __call__(self, *args):
         self.put(args)
@@ -319,7 +346,8 @@ class MessageBroker:
             self.mqtt_connection.on_publish = on_publish_callback
 
         payload = json.dumps(message) if not isinstance(message, str) else message
-        result = self.mqtt_connection.publish(
+        assert len(payload.encode('utf-8')) < 268435455, 'Message payloads are limited to 256MB'
+        message_info = self.mqtt_connection.publish(
             topic=topic,
             payload=payload,
             qos=2,
@@ -328,7 +356,8 @@ class MessageBroker:
         if confirm_receipt is True:
             barrier.wait()
 
-        return result
+        if message_info.rc != 0:
+            raise MQTTError(message_info)
 
     def subscribe_message(self, topic: str, callback: Callable = None) -> Union[Callable, CallableQueue]:
         """
@@ -736,12 +765,16 @@ class MessageBroker:
                 else:
                     logger.error("Failed to connect to MQTT, return code %d\n", rc)
 
+            def on_log(client, userdata, level, buf):
+                logger.debug("MQTT log: %s", buf)
+
             client_id = f'braingeneerspy-{random.randint(0, 1000)}'
 
             self._mqtt_connection = mqtt_client.Client(client_id)
             self._mqtt_connection.username_pw_set(self._mqtt_profile_id, self._mqtt_profile_key)
             self._mqtt_connection.on_connect = on_connect
             self._mqtt_connection.connect(self._mqtt_endpoint, self._mqtt_port)
+            self._mqtt_connection.on_log = on_log
             self._mqtt_connection.loop_start()
 
         return self._mqtt_connection

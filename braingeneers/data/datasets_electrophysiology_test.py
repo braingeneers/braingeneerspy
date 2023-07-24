@@ -10,6 +10,16 @@ import numpy as np
 
 
 class MaxwellReaderTests(unittest.TestCase):
+
+    @skip_unittest_if_offline
+    def test_online_maxwell_stitched_uuid(self):
+        uuid = '2023-04-17-e-causal_v1'
+        metadata = ephys.load_metadata(uuid)
+        data = ephys.load_data(
+            metadata=metadata, experiment=0, offset=0, length=4, channels=[0, 1]
+        )
+        self.assertEqual(data.shape, (2, 4))  # trivial check that we read data
+
     @skip_unittest_if_offline
     def test_online_maxwell_load_data(self):
         uuid = '2022-05-18-e-connectoid'
