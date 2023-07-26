@@ -4,46 +4,49 @@ import numpy as np
 import braingeneers.analysis as ba
 from collections import namedtuple
 
-Neuron = namedtuple('Neuron', 'spike_time fs')
+Neuron = namedtuple("Neuron", "spike_time fs")
+
 
 class DerpSpikeRecorder:
-    'Weird mockup of a NEST spike recorder.'
+    "Weird mockup of a NEST spike recorder."
+
     def __init__(self, idces, times):
         self.events = dict(senders=idces, times=times)
+
     def __getattr__(self, attr):
         return self.events[attr]
+
     def __iter__(self):
         yield self
 
+
 def sd_from_counts(counts):
-    'Generate a SpikeData whose raster matches given counts.'
-    times = np.hstack([i*np.ones(c) for i,c in enumerate(counts)])
+    "Generate a SpikeData whose raster matches given counts."
+    times = np.hstack([i * np.ones(c) for i, c in enumerate(counts)])
     return ba.SpikeData([times + 0.5], length=len(counts))
 
+
 def random_spikedata(units, spikes, rate=1.0):
-    '''
+    """
     Generate SpikeData with a given number of units, total number of
     spikes, and overall mean firing rate.
-    '''
-    times = np.random.rand(spikes)*spikes/rate/units
+    """
+    times = np.random.rand(spikes) * spikes / rate / units
     idces = np.random.randint(units, size=spikes)
-    return ba.SpikeData(idces, times,
-                        length=spikes/rate/units, N=units)
+    return ba.SpikeData(idces, times, length=spikes / rate / units, N=units)
 
 
 class SpikeDataTest(unittest.TestCase):
-
     def assertSpikeDataEqual(self, sda, sdb, msg=None):
-        'Assert that two SpikeData objects contain the same data.'
-        for a,b in zip(sda.train, sdb.train):
-            self.assertTrue(len(a) == len(b) and np.allclose(a, b),
-                            msg=msg)
+        "Assert that two SpikeData objects contain the same data."
+        for a, b in zip(sda.train, sdb.train):
+            self.assertTrue(len(a) == len(b) and np.allclose(a, b), msg=msg)
 
     def assertSpikeDataSubtime(self, sd, sdsub, tmin, tmax, msg=None):
-        'Assert that a subtime of a SpikeData is correct.'
+        "Assert that a subtime of a SpikeData is correct."
         self.assertEqual(len(sd.train), len(sdsub.train))
         self.assertEqual(sdsub.length, tmax - tmin)
-        for n,nsub in zip(sd.train, sdsub.train):
+        for n, nsub in zip(sd.train, sdsub.train):
             self.assertAll(nsub <= tmax - tmin, msg=msg)
             if tmin > 0:
                 self.assertAll(nsub > 0, msg=msg)
@@ -54,11 +57,11 @@ class SpikeDataTest(unittest.TestCase):
             self.assertTrue(len(nsub) == n_in_range, msg=msg)
 
     def assertAll(self, bools, msg=None):
-        'Assert that two arrays are equal elementwise.'
+        "Assert that two arrays are equal elementwise."
         self.assertTrue(np.all(bools), msg=msg)
 
     def assertClose(self, a, b, msg=None, **kw):
-        'Assert that two arrays are equal within tolerance.'
+        "Assert that two arrays are equal within tolerance."
         self.assertTrue(np.allclose(a, b, **kw), msg=msg)
 
     def test_sd_from_counts(self):
@@ -86,7 +89,7 @@ class SpikeDataTest(unittest.TestCase):
 
         # Test 'list of Neuron()s' constructor.
         fs = 10
-        ns = [Neuron(spike_time=ts*fs, fs=fs*1e3) for ts in sd.train]
+        ns = [Neuron(spike_time=ts * fs, fs=fs * 1e3) for ts in sd.train]
         sd3 = ba.SpikeData(ns)
         self.assertSpikeDataEqual(sd, sd3)
 
@@ -107,17 +110,16 @@ class SpikeDataTest(unittest.TestCase):
         # Test subset() constructor.
         idces = [1, 2, 3]
         sdsub = sd.subset(idces)
-        for i,j in enumerate(idces):
+        for i, j in enumerate(idces):
             self.assertAll(sdsub.train[i] == sd.train[j])
 
         # Make sure you can subset by neuron_data, not just raw index.
-        sdsub = sd6.subset([4,5])
-        sdsub2 = sd6.subset([4,5], by='nest_id')
+        sdsub = sd6.subset([4, 5])
+        sdsub2 = sd6.subset([4, 5], by="nest_id")
         self.assertSpikeDataEqual(sdsub, sdsub2)
 
         # Make sure the previous is actually using neuron_data.
-        sdsub3 = sd6.subset([3,4,5], by='nest_id'
-                            ).subset([4,5], by='nest_id')
+        sdsub3 = sd6.subset([3, 4, 5], by="nest_id").subset([4, 5], by="nest_id")
         self.assertSpikeDataEqual(sdsub, sdsub3)
 
         # Test subtime() constructor idempotence.
@@ -145,14 +147,12 @@ class SpikeDataTest(unittest.TestCase):
         self.assertSpikeDataSubtime(sd, sdtime, 20, 100)
 
         # Test consistency between subtime() and frames().
-        for i,frame in enumerate(sd.frames(20)):
-            self.assertSpikeDataEqual(frame,
-                                      sd.subtime(i*20, (i+1)*20))
+        for i, frame in enumerate(sd.frames(20)):
+            self.assertSpikeDataEqual(frame, sd.subtime(i * 20, (i + 1) * 20))
 
         # Regression test for overlap parameter of frames().
-        for i,frame in enumerate(sd.frames(20, overlap=10)):
-            self.assertSpikeDataEqual(frame,
-                                      sd.subtime(i*10, i*10+20))
+        for i, frame in enumerate(sd.frames(20, overlap=10)):
+            self.assertSpikeDataEqual(frame, sd.subtime(i * 10, i * 10 + 20))
 
     def test_raster(self):
         # Generate Poisson spike trains and make sure no spikes are
@@ -168,19 +168,15 @@ class SpikeDataTest(unittest.TestCase):
         # no matter how many spikes there are.
         N = 10
         length = 1e4
-        sdA = ba.SpikeData(np.zeros(N, int),
-                           np.random.rand(N) * length,
-                           length=length)
-        sdB = ba.SpikeData(np.zeros(N, int),
-                           np.random.rand(N) * length,
-                           length=length)
+        sdA = ba.SpikeData(np.zeros(N, int), np.random.rand(N) * length, length=length)
+        sdB = ba.SpikeData(np.zeros(N, int), np.random.rand(N) * length, length=length)
         self.assertEqual(sdA.raster().shape, sdB.raster().shape)
 
         # Corner cases of raster binning rules: spikes exactly at
         # 0 end up in the first bin, but other bins should be
         # lower-open and upper-closed.
         ground_truth = [[1, 1, 0, 1]]
-        sd = ba.SpikeData([0,0,0], [0,20,40])
+        sd = ba.SpikeData([0, 0, 0], [0, 20, 40])
         self.assertEqual(sd.length, 40)
         self.assertAll(sd.raster(10) == ground_truth)
 
@@ -189,20 +185,16 @@ class SpikeDataTest(unittest.TestCase):
         binned = np.array([list(sd.binned(10))])
         self.assertAll(sd.raster(10) == binned)
 
-
     def test_rates(self):
         # Generate random spike trains of varying lengths and
         # therefore rates to calculate.
         counts = np.random.poisson(100, size=50)
-        sd = ba.SpikeData([np.random.rand(n)
-                           for n in counts], length=1)
+        sd = ba.SpikeData([np.random.rand(n) for n in counts], length=1)
         self.assertAll(sd.rates() == counts)
 
         # Test the other possible units of rates.
-        self.assertAll(sd.rates('Hz') == counts*1000)
-        self.assertRaises(ValueError,
-                          lambda: sd.rates('bad_unit'))
-
+        self.assertAll(sd.rates("Hz") == counts * 1000)
+        self.assertRaises(ValueError, lambda: sd.rates("bad_unit"))
 
     def test_pearson(self):
         # These four cells are constructed so that A is perfectly
@@ -223,11 +215,7 @@ class SpikeDataTest(unittest.TestCase):
 
         # Finally, check the calculated Pearson coefficients to ensure
         # they're numerically close enough to the intended values.
-        true_pearson = [
-            [1, 1, -1, 0],
-            [1, 1, -1, 0],
-            [-1, -1, 1, 0],
-            [0, 0, 0, 1]]
+        true_pearson = [[1, 1, -1, 0], [1, 1, -1, 0], [-1, -1, 1, 0], [0, 0, 0, 1]]
         sparse_pearson = ba.pearson(raster)
         self.assertClose(sparse_pearson, true_pearson)
 
@@ -243,13 +231,13 @@ class SpikeDataTest(unittest.TestCase):
     def test_burstiness_index(self):
         # Something completely uniform should have zero burstiness,
         # but ensure there's no spike at time zero.
-        uniform = ba.SpikeData([0.5+np.arange(1000)])
+        uniform = ba.SpikeData([0.5 + np.arange(1000)])
         self.assertEqual(uniform.burstiness_index(10), 0)
 
         # All spikes at the same time is technically super bursty,
         # just make sure that they happen late enough that there are
         # actually several bins to count.
-        atonce = ba.SpikeData([[1]]*1000)
+        atonce = ba.SpikeData([[1]] * 1000)
         self.assertEqual(atonce.burstiness_index(0.01), 1)
 
         # Added code to deal with a corner case so it's really ALWAYS
@@ -262,21 +250,21 @@ class SpikeDataTest(unittest.TestCase):
         # a list of just the one array.
         N = 10000
         ar = np.arange(N)
-        ii = ba.SpikeData(np.zeros(N,int), ar).interspike_intervals()
-        self.assertTrue((ii[0]==1).all())
-        self.assertEqual(len(ii[0]), N-1)
+        ii = ba.SpikeData(np.zeros(N, int), ar).interspike_intervals()
+        self.assertTrue((ii[0] == 1).all())
+        self.assertEqual(len(ii[0]), N - 1)
         self.assertEqual(len(ii), 1)
 
         # Also make sure multiple spike trains do the same thing.
         ii = ba.SpikeData(ar % 10, ar).interspike_intervals()
         self.assertEqual(len(ii), 10)
         for i in ii:
-            self.assertTrue((i==10).all())
-            self.assertEqual(len(i), N/10 - 1)
+            self.assertTrue((i == 10).all())
+            self.assertEqual(len(i), N / 10 - 1)
 
         # Finally, check with random ISIs.
         truth = np.random.rand(N)
-        spikes = ba.SpikeData(np.zeros(N,int), truth.cumsum())
+        spikes = ba.SpikeData(np.zeros(N, int), truth.cumsum())
         ii = spikes.interspike_intervals()
         self.assertClose(ii[0], truth[1:])
 
@@ -317,22 +305,21 @@ class SpikeDataTest(unittest.TestCase):
         self.assertEqual(ba.analysis._sttc_ta([], 1, 100), 0)
 
         # When spikes don't overlap, you should get exactly 2ndt.
-        self.assertEqual(ba.analysis._sttc_ta(np.arange(42)+1, 0.5, 100), 42.0)
+        self.assertEqual(ba.analysis._sttc_ta(np.arange(42) + 1, 0.5, 100), 42.0)
 
         # When spikes overlap fully, you should get exactly (tmax-tmin) + 2dt
-        self.assertEqual(ba.analysis._sttc_ta(np.arange(42)+100,
-                                              100, 300), 241)
+        self.assertEqual(ba.analysis._sttc_ta(np.arange(42) + 100, 100, 300), 241)
 
     def test_spike_time_tiling_na(self):
         # Trivial base cases.
-        self.assertEqual(ba.analysis._sttc_na([1,2,3], [], 1), 0)
-        self.assertEqual(ba.analysis._sttc_na([], [1,2,3], 1), 0)
+        self.assertEqual(ba.analysis._sttc_na([1, 2, 3], [], 1), 0)
+        self.assertEqual(ba.analysis._sttc_na([], [1, 2, 3], 1), 0)
 
         self.assertEqual(ba.analysis._sttc_na([1], [2], 0.5), 0)
         self.assertEqual(ba.analysis._sttc_na([1], [2], 1), 1)
 
         # Make sure closed intervals are being used.
-        na = ba.analysis._sttc_na(np.arange(10), np.arange(10)+0.5, 0.5)
+        na = ba.analysis._sttc_na(np.arange(10), np.arange(10) + 0.5, 0.5)
         self.assertEqual(na, 10)
 
         # Skipping multiple spikes in spike train B.
@@ -356,20 +343,18 @@ class SpikeDataTest(unittest.TestCase):
         foo = random_spikedata(2, N)
         self.assertEqual(foo.spike_time_tiling(0, 0, 1), 1.0)
         self.assertEqual(foo.spike_time_tiling(1, 1, 1), 1.0)
-        self.assertEqual(foo.spike_time_tiling(0, 1, 1),
-                         foo.spike_time_tiling(1, 0, 1))
+        self.assertEqual(foo.spike_time_tiling(0, 1, 1), foo.spike_time_tiling(1, 0, 1))
 
         # Exactly the same thing, but for the matrix of STTCs.
         sttc = foo.spike_time_tilings(1)
-        self.assertEqual(sttc.shape, (2,2))
-        self.assertEqual(sttc[0,1], sttc[1,0])
-        self.assertEqual(sttc[0,0], 1.0)
-        self.assertEqual(sttc[1,1], 1.0)
+        self.assertEqual(sttc.shape, (2, 2))
+        self.assertEqual(sttc[0, 1], sttc[1, 0])
+        self.assertEqual(sttc[0, 0], 1.0)
+        self.assertEqual(sttc[1, 1], 1.0)
 
         # Default arguments, inferred value of tmax.
         tmax = max(foo.train[0].ptp(), foo.train[1].ptp())
-        self.assertEqual(foo.spike_time_tiling(0, 1),
-                         foo.spike_time_tiling(0, 1, tmax))
+        self.assertEqual(foo.spike_time_tiling(0, 1), foo.spike_time_tiling(0, 1, tmax))
 
         # The uncorrelated spike trains above should stay near zero.
         # I'm not sure how many significant figures to expect with the
@@ -379,9 +364,8 @@ class SpikeDataTest(unittest.TestCase):
         # Two spike trains that are in complete disagreement. This
         # should be exactly -0.8, but there's systematic error
         # proportional to 1/N, even in their original implementation.
-        bar = ba.SpikeData([np.arange(N)+0.0, np.arange(N)+0.5])
-        self.assertAlmostEqual(bar.spike_time_tiling(0, 1, 0.4),
-                               -0.8, int(np.log10(N)))
+        bar = ba.SpikeData([np.arange(N) + 0.0, np.arange(N) + 0.5])
+        self.assertAlmostEqual(bar.spike_time_tiling(0, 1, 0.4), -0.8, int(np.log10(N)))
 
         # As you vary dt, that alternating spike train actually gets
         # the STTC to go continuously from 0 to approach a limit of
@@ -391,8 +375,9 @@ class SpikeDataTest(unittest.TestCase):
         # Make sure it stays within range even for spike trains with
         # completely random lengths.
         for _ in range(100):
-            baz = ba.SpikeData([np.random.rand(np.random.poisson(100))
-                                for _ in range(2)])
+            baz = ba.SpikeData(
+                [np.random.rand(np.random.poisson(100)) for _ in range(2)]
+            )
             sttc = baz.spike_time_tiling(0, 1, np.random.lognormal())
             self.assertLessEqual(sttc, 1)
             self.assertGreaterEqual(sttc, -1)
@@ -413,31 +398,27 @@ class SpikeDataTest(unittest.TestCase):
     def test_binning(self):
         # Here's a totally arbitrary list of spike times to bin.
         spikes = ba.SpikeData([[1, 2, 5, 15, 16, 20, 22, 25]])
-        self.assertListEqual(list(spikes.binned(4)),
-                             [2, 1, 0, 2, 1, 1, 1])
+        self.assertListEqual(list(spikes.binned(4)), [2, 1, 0, 2, 1, 1, 1])
 
     def test_avalanches(self):
         # The simple case where there are avalanches in the middle.
         sd = sd_from_counts([1, 2, 3, 4, 3, 2, 1, 0, 1, 2, 3, 2, 1, 0])
-        self.assertListEqual(
-            [len(av) for av in sd.avalanches(1, bin_size=1)],
-            [5, 3])
+        self.assertListEqual([len(av) for av in sd.avalanches(1, bin_size=1)], [5, 3])
         self.assertListEqual(
             [sum(av) for av in sd.avalanches(1, bin_size=1)],
-            [2+3+4+3+2, 2+3+2])
+            [2 + 3 + 4 + 3 + 2, 2 + 3 + 2],
+        )
 
         # Also the duration-size lists of the same data.
         durations, sizes = sd.avalanche_duration_size(1, bin_size=1)
-        self.assertListEqual(list(durations), [5,3])
-        self.assertListEqual(list(sizes), [2+3+4+3+2, 2+3+2])
+        self.assertListEqual(list(durations), [5, 3])
+        self.assertListEqual(list(sizes), [2 + 3 + 4 + 3 + 2, 2 + 3 + 2])
 
         # Ensure that avalanches coinciding with the start and end of
         # recording don't get counted because there's no way to know
         # how long they are.
-        sd = sd_from_counts([2,5,3, 0,1,0,0, 2,2, 0,0,0,0, 4,3,4, 0, 42])
-        self.assertListEqual(
-            [len(av) for av in sd.avalanches(1, bin_size=1)],
-            [2, 3])
+        sd = sd_from_counts([2, 5, 3, 0, 1, 0, 0, 2, 2, 0, 0, 0, 0, 4, 3, 4, 0, 42])
+        self.assertListEqual([len(av) for av in sd.avalanches(1, bin_size=1)], [2, 3])
 
         # Corner cases where there are no avalanches: no transitions
         # because threshold too low, because threshold too high,
@@ -463,58 +444,65 @@ class SpikeDataTest(unittest.TestCase):
 
     def test_metadata(self):
         # Make sure there's an error if the metadata is gibberish.
-        self.assertRaises(ValueError,
-                          lambda: ba.SpikeData([], N=5, length=100,
-                                               neuron_data=dict(trash=[47])))
+        self.assertRaises(
+            ValueError,
+            lambda: ba.SpikeData([], N=5, length=100, neuron_data=dict(trash=[47])),
+        )
 
         # Overall propagation testing...
-        foo = ba.SpikeData([], N=5, length=1000,
-                           metadata=dict(name='Marvin'),
-                           neuron_data=dict(size=np.random.rand(5)))
+        foo = ba.SpikeData(
+            [],
+            N=5,
+            length=1000,
+            metadata=dict(name="Marvin"),
+            neuron_data=dict(size=np.random.rand(5)),
+        )
 
         # Make sure subset propagates all metadata and correctly
         # subsets the neuron_data.
         subset = [1, 3]
-        truth = foo.neuron_data['size'][subset]
+        truth = foo.neuron_data["size"][subset]
         bar = foo.subset(subset)
         self.assertDictEqual(foo.metadata, bar.metadata)
-        self.assertAll(bar.neuron_data['size'] == truth)
+        self.assertAll(bar.neuron_data["size"] == truth)
 
         # Change the metadata of foo and see that it's copied, so the
         # change doesn't propagate.
-        foo.metadata['name'] = 'Ford'
+        foo.metadata["name"] = "Ford"
         baz = bar.subtime(500, 1000)
         self.assertDictEqual(bar.metadata, baz.metadata)
         self.assertIsNot(bar.metadata, baz.metadata)
-        self.assertNotEqual(foo.metadata['name'], bar.metadata['name'])
+        self.assertNotEqual(foo.metadata["name"], bar.metadata["name"])
         self.assertDictEqual(bar.neuron_data, baz.neuron_data)
 
     def test_raw_data(self):
         # Make sure there's an error if only one of raw_data and
         # raw_time is provided to the constructor.
-        self.assertRaises(ValueError,
-                          lambda: ba.SpikeData([], N=5, length=100,
-                                               raw_data=[]))
-        self.assertRaises(ValueError,
-                          lambda: ba.SpikeData([], N=5, length=100,
-                                               raw_time=42))
+        self.assertRaises(
+            ValueError, lambda: ba.SpikeData([], N=5, length=100, raw_data=[])
+        )
+        self.assertRaises(
+            ValueError, lambda: ba.SpikeData([], N=5, length=100, raw_time=42)
+        )
 
         # Make sure inconsistent lengths throw an error as well.
-        self.assertRaises(ValueError,
-                          lambda: ba.SpikeData([], N=5, length=100,
-                                               raw_data=np.zeros((5,100)),
-                                               raw_time=np.arange(42)))
+        self.assertRaises(
+            ValueError,
+            lambda: ba.SpikeData(
+                [], N=5, length=100, raw_data=np.zeros((5, 100)), raw_time=np.arange(42)
+            ),
+        )
 
         # Check automatic generation of the time array.
-        sd = ba.SpikeData([], N=5, length=100,
-                          raw_data=np.random.rand(5,100),
-                          raw_time=1.0)
+        sd = ba.SpikeData(
+            [], N=5, length=100, raw_data=np.random.rand(5, 100), raw_time=1.0
+        )
         self.assertAll(sd.raw_time == np.arange(100))
 
         # Make sure the raw data is sliced properly with time.
         sd2 = sd.subtime(20, 30)
         self.assertAll(sd2.raw_time == np.arange(11))
-        self.assertAll(sd2.raw_data == sd.raw_data[:,20:31])
+        self.assertAll(sd2.raw_data == sd.raw_data[:, 20:31])
 
     def test_isi_rate(self):
         # Calculate the firing rate of a single neuron using the inverse ISI.
@@ -523,12 +511,11 @@ class SpikeDataTest(unittest.TestCase):
         # give you exactly the correct rate, here 1 kHz.
         spikes = np.arange(10)
         when = np.random.rand(1000) * 12 - 1
-        self.assertAll(ba.analysis._resampled_isi(spikes, when,
-                                                  sigma_ms=0.0) == 1)
+        self.assertAll(ba.analysis._resampled_isi(spikes, when, sigma_ms=0.0) == 1)
 
         # Also check that the rate is correctly calculated for some varying
         # examples.
-        sd = ba.SpikeData([[0, 1/k, 10+1/k] for k in np.arange(1, 100)])
+        sd = ba.SpikeData([[0, 1 / k, 10 + 1 / k] for k in np.arange(1, 100)])
         self.assertAll(sd.resampled_isi(0).round(2) == np.arange(1, 100))
         self.assertAll(sd.resampled_isi(10).round(2) == 0.1)
 
@@ -541,32 +528,32 @@ class SpikeDataTest(unittest.TestCase):
 
     def test_latencies(self):
         a = ba.SpikeData([[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]])
-        b = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]) - .2
+        b = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]) - 0.2
         # Make sure the latencies are correct, this is latencies relative
         # to the input (b), so should all be .2 after
         self.assertAlmostEqual(a.latencies(b)[0][0], 0.2)
         self.assertAlmostEqual(a.latencies(b)[0][-1], 0.2)
 
         # Small enough window, should be no latencies.
-        self.assertEqual(a.latencies(b,.1)[0], [])
+        self.assertEqual(a.latencies(b, 0.1)[0], [])
 
         # Can do negative
-        self.assertAlmostEqual(a.latencies([.1])[0][0], -.1)
+        self.assertAlmostEqual(a.latencies([0.1])[0][0], -0.1)
 
     def test_base_randomization(self):
-        sd = random_spikedata(100, 1000)
-        sd.train = [np.unique(np.round(t)) for t in sd.train]
-        rsd = sd.randomized(dt=0.1)
-        r = sd.raster()
-        rr = rsd.raster()
+        r = np.random.rand(100, 1000) < 0.1
+        rr = ba.randomize_raster(r)
+        print(r)
+        print(rr)
+        print(r.sum(0), r.sum(1))
+        print(rr.sum(0), rr.sum(1))
         self.assertAll(r.sum(0) == rr.sum(0))
         self.assertAll(r.sum(1) == rr.sum(1))
 
 
 class SpikeAttributesTest(unittest.TestCase):
-
     def testSpikeAttributes(self):
-        uuid = '2023-04-17-e-causal_v1'
+        uuid = "2023-04-17-e-causal_v1"
         sd = ba.load_spike_data(uuid)
         self.assertTrue(isinstance(sd, ba.SpikeData))
 
@@ -577,8 +564,8 @@ class SpikeAttributesTest(unittest.TestCase):
     #     self.assertTrue(isinstance(sd, ba.SpikeData))
 
     def testSpikeAttributesDiffSorter(self):
-        uuid = '2023-04-17-e-causal_v1'
-        exp = 'data_phy.zip'
-        sorter = 'kilosort3'
+        uuid = "2023-04-17-e-causal_v1"
+        exp = "data_phy.zip"
+        sorter = "kilosort3"
         sd = ba.load_spike_data(uuid, exp, sorter=sorter)
         self.assertTrue(isinstance(sd, ba.SpikeData))

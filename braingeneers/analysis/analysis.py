@@ -21,7 +21,7 @@ from deprecated import deprecated
 __all__ = ['DCCResult', 'read_phy_files', 'SpikeData', 'filter',
            'fano_factors', 'pearson', 'cumulative_moving_average',
            'burst_detection', 'ThresholdedSpikeData', 'NeuronAttributes',
-           'load_spike_data']
+           'load_spike_data', 'randomize_raster']
 
 
 DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
@@ -759,7 +759,6 @@ class SpikeData:
         '''
         Adds neurons from sd to this spike data object.
         '''
-
         if sd.length == self.length:
             self.train += sd.train
             self.N += sd.N
@@ -935,14 +934,12 @@ class SpikeData:
 
         return self.latencies(self.train[i], window_ms)
 
-
     def randomized(self, dt=1.0, seed=None):
         '''
-        Create a new SpikeData object which preserves the population rate
-        and mean firing rate of each neuron in an existing SpikeData by
-        randomly reallocating all spike times to different neurons at a
-        resolution given by dt, using resampling to maintain the
-        invariant that no neuron spikes twice in the same timestep.
+        Create a new SpikeData object which preserves the population
+        rate and mean firing rate of each neuron in an existing
+        SpikeData by randomly reallocating all spike times to different
+        neurons at a resolution given by dt.
         '''
         # Collect the spikes of the original Spikedata and define a new
         # "randomized spike matrix" to store them in.
@@ -950,28 +947,37 @@ class SpikeData:
         if sm.max() > 1:
             print(sm.max())
             raise ValueError(f'{dt = }ms is to coarse to randomize.')
-        rsm = np.zeros(sm.shape, int)
-        weights = sm.sum(0)
 
-        # Iterate over the units in order of how many spikes they have.
-        n_spikeses = sm.sum(1)
-        unit_order = np.argsort(n_spikeses)[::-1]
-        unit_order = unit_order[n_spikeses[unit_order] > 0]
-
-        # Choose spike times from the big list for each unit.
-        rng = np.random.RandomState(seed)
-        for unit in unit_order:
-            n_spikes = n_spikeses[unit]
-            p = weights / weights.sum()
-            rand_frames = rng.choice(
-                rsm.shape[1], n_spikes, replace=False, p=p)
-            weights[rand_frames] -= 1
-            rsm[unit,rand_frames] = 1
-
-        idces, times = np.nonzero(rsm)
+        idces, times = np.nonzero(randomize_raster(sm, seed))
         return SpikeData(idces, times*dt, length=self.length, N=self.N,
                          metadata=self.metadata, neuron_data=self.neuron_data,
                          neuron_attributes=self.neuron_attributes)
+
+
+def randomize_raster(raster, seed=None):
+    '''
+    Randomize a raster by taking out all the spikes in each time bin and
+    randomly reallocating them from the total spikes of each neuron.
+    '''
+    rsm = np.zeros(raster.shape, int)
+    weights = raster.sum(1)
+
+    # Iterate over the bins in order of how many spikes they have.
+    n_spikeses = raster.sum(0)
+    bin_order = np.argsort(n_spikeses)[::-1]
+    bin_order = bin_order[n_spikeses[bin_order] > 0]
+
+    # Choose which units to assign spikes to in each bin.
+    rng = np.random.RandomState(seed)
+    for bin in bin_order:
+        n_spikes = n_spikeses[bin]
+        p = weights / weights.sum()
+        rand_units = rng.choice(
+            rsm.shape[0], n_spikes, replace=False, p=p)
+        weights[rand_units] -= 1
+        rsm[rand_units,bin] = 1
+
+    return rsm
 
 
 def filter(raw_data, fs_Hz=20000, filter_order=3, filter_lo_Hz=300,
