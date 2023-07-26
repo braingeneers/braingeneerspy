@@ -543,10 +543,6 @@ class SpikeDataTest(unittest.TestCase):
     def test_base_randomization(self):
         r = np.random.rand(100, 1000) < 0.1
         rr = ba.randomize_raster(r)
-        print(r)
-        print(rr)
-        print(r.sum(0), r.sum(1))
-        print(rr.sum(0), rr.sum(1))
         self.assertAll(r.sum(0) == rr.sum(0))
         self.assertAll(r.sum(1) == rr.sum(1))
 
