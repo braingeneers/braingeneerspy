@@ -1,6 +1,7 @@
 import unittest
 from scipy import stats, sparse
 import numpy as np
+from braingeneers import skip_unittest_if_offline
 import braingeneers.analysis as ba
 from collections import namedtuple
 
@@ -548,9 +549,21 @@ class SpikeDataTest(unittest.TestCase):
 
 
 class SpikeAttributesTest(unittest.TestCase):
+    @skip_unittest_if_offline
     def testSpikeAttributes(self):
         uuid = "2023-04-17-e-causal_v1"
         sd = ba.load_spike_data(uuid)
+        self.assertTrue(isinstance(sd, ba.SpikeData))
+
+    @skip_unittest_if_offline
+    def testReadPhyFiles(self):
+        from braingeneers.utils.common_utils import get_basepath
+        from posixpath import join
+        uuid = "2023-04-17-e-connectoid16235_CCH"
+        sorter = "kilosort2"
+        file = "Trace_20230418_15_10_08_chip16235_curated_s1.zip"
+        path = join(get_basepath(), "ephys", uuid, "derived", sorter, file)
+        sd = ba.read_phy_files(path)
         self.assertTrue(isinstance(sd, ba.SpikeData))
 
     # def testSpikeAttributesExperiment(self):
@@ -559,6 +572,7 @@ class SpikeAttributesTest(unittest.TestCase):
     #     sd = ba.load_spike_data(uuid, exp)
     #     self.assertTrue(isinstance(sd, ba.SpikeData))
 
+    @skip_unittest_if_offline
     def testSpikeAttributesDiffSorter(self):
         uuid = "2023-04-17-e-causal_v1"
         exp = "data_phy.zip"
