@@ -222,6 +222,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
 
 
 
+@deprecated('Prefer load_spike_data()', version='0.1.13')
 def read_phy_files(path: str, fs=20000.0):
     """
     :param path: a s3 or local path to a zip of phy files.
