@@ -28,7 +28,6 @@ DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
 
 @dataclass
 class NeuronAttributes:
-    experiment: str
     cluster_id: int
     channel: np.ndarray
     position: Tuple[float, float]
@@ -43,7 +42,6 @@ class NeuronAttributes:
     neighbor_templates: List[np.ndarray]
 
     def __init__(self, *args, **kwargs):
-        self.experiment = kwargs.pop("experiment")
         self.cluster_id = kwargs.pop("cluster_id")
         self.channel = kwargs.pop("channel")
         self.position = kwargs.pop("position")
@@ -198,7 +196,6 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
         nbgh_postions = [tuple(positions[idx]) for idx in nbgh_chan_idx]
         neuron_attributes.append(
             NeuronAttributes(
-                experiment=experiment,
                 cluster_id=c,
                 channel=nbgh_channels[0],
                 position=nbgh_postions[0],
@@ -214,7 +211,9 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
 
     if verbose:
         print('Creating spike data...')
-    spike_data = SpikeData(cluster_agg["spikeTimes"].to_list(), neuron_attributes=neuron_attributes)
+    
+    metadata = {"experiment":experiment}
+    spike_data = SpikeData(cluster_agg["spikeTimes"].to_list(), neuron_attributes=neuron_attributes, metadata=metadata)
 
     if verbose:
         print('Done.')
