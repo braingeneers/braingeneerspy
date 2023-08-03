@@ -1,30 +1,45 @@
-import os
-import itertools
 import contextlib
-from collections import namedtuple
+import glob
 import heapq
 import io
-import zipfile
-import numpy as np
-import glob
+import itertools
+from logging import getLogger
+import os
 import posixpath
-from scipy import sparse, stats, signal, ndimage
+import zipfile
+from collections import namedtuple
+from dataclasses import dataclass
+from typing import List, Tuple
+
+import numpy as np
 import pandas as pd
 import powerlaw
-from braingeneers.utils import s3wrangler
-import braingeneers.utils.smart_open_braingeneers as smart_open
-from braingeneers.utils.common_utils import get_basepath
-from typing import List, Tuple
-from dataclasses import dataclass
 from deprecated import deprecated
+from scipy import sparse, stats, signal, ndimage
 
-__all__ = ['DCCResult', 'read_phy_files', 'SpikeData', 'filter',
-           'fano_factors', 'pearson', 'cumulative_moving_average',
-           'burst_detection', 'ThresholdedSpikeData', 'NeuronAttributes',
-           'load_spike_data', 'randomize_raster']
+import braingeneers.utils.smart_open_braingeneers as smart_open
+from braingeneers.utils import s3wrangler
+from braingeneers.utils.common_utils import get_basepath
 
+
+__all__ = [
+    "DCCResult",
+    "read_phy_files",
+    "SpikeData",
+    "filter",
+    "fano_factors",
+    "pearson",
+    "cumulative_moving_average",
+    "burst_detection",
+    "ThresholdedSpikeData",
+    "NeuronAttributes",
+    "load_spike_data",
+    "randomize_raster",
+]
 
 DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
+
+logger = getLogger("braingeneers.analysis")
 
 @dataclass
 class NeuronAttributes:
@@ -80,8 +95,7 @@ def list_sorted_files(uuid, basepath=None):
 
 
 def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=20000.0,
-                    groups_to_load=["good", "mua", "", "unsorted"],
-                    verbose=False, sorter='kilosort2'):
+                    groups_to_load=["good", "mua", "", "unsorted"], sorter='kilosort2'):
     """
     Loads spike data from a dataset.
 
@@ -96,18 +110,18 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
     if experiment is None:
         experiment = ""
     prefix = f'ephys/{uuid}/derived/{sorter}/{experiment}'
-    print('prefix:', prefix)
+    logger.info('prefix:', prefix)
     path = posixpath.join(basepath, prefix)
 
 
     if full_path is not None:
         experiment = full_path.split('/')[-1].split('.')[0]
-        print('Using full path, experiment:', experiment)
+        logger.info('Using full path, experiment:', experiment)
         path = full_path
     else:
 
         if path.startswith('s3://'):
-            print('Using s3 path for experiment:', experiment)
+            logger.info('Using s3 path for experiment:', experiment)
             # If path is an s3 path, use wrangler
             file_list = s3wrangler.list_objects(path)
 
@@ -116,12 +130,12 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
             if not zip_files:
                 raise ValueError('No zip files found in specified location.')
             elif len(zip_files) > 1:
-                print('Multiple zip files found. Using the first one.')
+                logger.warning('Multiple zip files found. Using the first one.')
 
             path = zip_files[0]
 
         else:
-            print('Using local path for experiment:', experiment)
+            logger.info('Using local path for experiment:', experiment)
             # If path is a local path, check locally
             file_list = glob.glob(path + '*.zip')
 
@@ -131,7 +145,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
             if not zip_files:
                 raise ValueError('No zip files found in specified location.')
             elif len(zip_files) > 1:
-                print('Multiple zip files found. Using the first one.')
+                logger.warning('Multiple zip files found. Using the first one.')
 
             path = zip_files[0]
 
@@ -139,18 +153,15 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
 
     with smart_open.open(path, 'rb') as f0:
         f = io.BytesIO(f0.read())
-        if verbose:
-            print('Opening zip file...')
+        logger.debug('Opening zip file...')
         with zipfile.ZipFile(f, 'r') as f_zip:
             assert 'params.py' in f_zip.namelist(), "Wrong spike sorting output."
-            if verbose:
-                print('Reading params.py...')
+            logger.debug('Reading params.py...')
             with io.TextIOWrapper(f_zip.open('params.py'), encoding='utf-8') as params:
                 for line in params:
                     if "sample_rate" in line:
                         fs = float(line.split()[-1])
-            if verbose:
-                print('Reading spike data...')
+            logger.debug('Reading spike data...')
             clusters = np.load(f_zip.open('spike_clusters.npy')).squeeze()
             templates_w = np.load(f_zip.open('templates.npy'))
             wmi = np.load(f_zip.open('whitening_mat_inv.npy'))
@@ -170,16 +181,14 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
                 cluster_info = pd.DataFrame({"cluster_id": labeled_clusters, "group": [""] * len(labeled_clusters)})
 
     assert len(labeled_clusters) > 0, "No clusters found."
-    if verbose:
-        print('Reorganizing data...')
+    logger.debug('Reorganizing data...')
     df = pd.DataFrame({"clusters": clusters, "spikeTimes": spike_times, "amplitudes": amplitudes})
     cluster_agg = df.groupby("clusters").agg({"spikeTimes": lambda x: list(x),
                                               "amplitudes": lambda x: list(x)})
     cluster_agg = cluster_agg[cluster_agg.index.isin(labeled_clusters)]
     cls_temp = dict(zip(clusters, spike_templates))
 
-    if verbose:
-        print('Creating neuron attributes...')
+    logger.debug('Creating neuron attributes...')
     neuron_attributes = []
 
     # un-whiten the templates before finding the best channel
@@ -209,14 +218,12 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
             )
         )
 
-    if verbose:
-        print('Creating spike data...')
-    
+    logger.debug('Creating spike data...')
+
     metadata = {"experiment":experiment}
     spike_data = SpikeData(cluster_agg["spikeTimes"].to_list(), neuron_attributes=neuron_attributes, metadata=metadata)
 
-    if verbose:
-        print('Done.')
+    logger.debug('Done.')
     return spike_data
 
 
@@ -1018,8 +1025,7 @@ def filter(raw_data, fs_Hz=20000, filter_order=3, filter_lo_Hz=300,
     for ch_start in range(0, raw_data.shape[0], channel_step_size):
         ch_end = min(ch_start + channel_step_size, raw_data.shape[0])
 
-        if verbose:
-            print(f'Filtering channels {ch_start} to {ch_end}')
+        logger.debug(f'Filtering channels {ch_start} to {ch_end}')
 
         for t_start in range(0, raw_data.shape[1], time_step_size):
             t_end = min(t_start + time_step_size, raw_data.shape[1])
@@ -1316,5 +1322,5 @@ class ThresholdedSpikeData(SpikeData):
                 length = self.length
             return SpikeData(self.idces, self.times_ms, N=N, length=length)
         else:
-            print('No spikes found.')
+            logger.warning('No spikes found.')
             return None
