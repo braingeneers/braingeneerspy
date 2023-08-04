@@ -952,7 +952,8 @@ class SpikeData:
         # "randomized spike matrix" to store them in.
         sm = self.sparse_raster(dt)
         if sm.max() > 1:
-            raise ValueError(f'{dt = }ms is to coarse to randomize.')
+            logger.warn(f'Discretizing at {dt = }ms loses some spikes.')
+            sm = sm > 0
 
         idces, times = np.nonzero(randomize_raster(sm, seed))
         return SpikeData(idces, times*dt, length=self.length, N=self.N,
