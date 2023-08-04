@@ -547,6 +547,38 @@ class SpikeDataTest(unittest.TestCase):
         self.assertAll(r.sum(0) == rr.sum(0))
         self.assertAll(r.sum(1) == rr.sum(1))
 
+    def test_best_effort_sample(self):
+        # Make sure it crashes if the requested sample is impossible.
+        weights = np.arange(100) == 42
+        with self.assertRaises(ValueError):
+            ba.best_effort_sample(weights, 10)
+
+        # Make sure the same thing works if there are enough entries.
+        weights = 10 * (np.arange(100) == 42)
+        sample = ba.best_effort_sample(weights, 10)
+        self.assertEqual(len(sample), 10)
+        self.assertAll(sample == 42)
+
+        # Make sure it doesn't use replacement if it doesn't have to.
+        weights = np.ones(100)
+        sample = ba.best_effort_sample(weights, 100)
+        self.assertEqual(len(sample), 100)
+        self.assertAll(np.sort(sample) == np.arange(100))
+
+    def test_randomization_issue_13(self):
+        # Having this rate too high is causing a ValueError.
+        rates = np.linspace(0.0, 0.5, 100)
+        r = np.random.rand(len(rates), 1000) < rates[:, np.newaxis]
+        rr = ba.randomize_raster(r)
+        self.assertAll(r.sum(0) == rr.sum(0))
+        self.assertAll(r.sum(1) == rr.sum(1))
+
+        # Also make sure it works on rasters with multiple spikes per bin.
+        r = np.random.randint(10, size=(100, 1000))
+        rr = ba.randomize_raster(r)
+        self.assertAll(r.sum(0) == rr.sum(0))
+        self.assertAll(r.sum(1) == rr.sum(1))
+
 
 class SpikeAttributesTest(unittest.TestCase):
     @skip_unittest_if_offline
@@ -554,11 +586,16 @@ class SpikeAttributesTest(unittest.TestCase):
         uuid = "2023-04-17-e-causal_v1"
         sd = ba.load_spike_data(uuid)
         self.assertTrue(isinstance(sd, ba.SpikeData))
+        r = sd.raster(1)
+        rr = sd.randomized(1).raster(1)
+        self.assertAll(r.sum(0) == rr.sum(0))
+        self.assertAll(r.sum(1) == rr.sum(1))
 
     @skip_unittest_if_offline
     def testReadPhyFiles(self):
         from braingeneers.utils.common_utils import get_basepath
         from posixpath import join
+
         uuid = "2023-04-17-e-connectoid16235_CCH"
         sorter = "kilosort2"
         file = "Trace_20230418_15_10_08_chip16235_curated_s1.zip"

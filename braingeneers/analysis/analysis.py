@@ -35,6 +35,7 @@ __all__ = [
     "NeuronAttributes",
     "load_spike_data",
     "randomize_raster",
+    "best_effort_sample",
 ]
 
 DCCResult = namedtuple('DCCResult', 'dcc p_size p_duration')
@@ -961,11 +962,34 @@ class SpikeData:
                          neuron_attributes=self.neuron_attributes)
 
 
+
+def best_effort_sample(counts, M, rng=np.random):
+    """
+    Given a discrete distribution over the integers 0...N-1 in the form of
+    an array of N counts, sample M elements from the distribution without
+    replacement if possible. If not possible, sample with replacement but
+    without exceeding the counts.
+    """
+    N = len(counts)
+    try:
+        return rng.choice(N, size=M, replace=False, p=counts / counts.sum())
+    except ValueError:
+        pigeonhole = np.arange(len(counts))[counts > 0]
+        new_counts = np.maximum(counts - 1, 0)
+        if new_counts.sum() == 0:
+            raise
+        choices = best_effort_sample(new_counts, M - len(pigeonhole), rng)
+        ret = np.concatenate((pigeonhole, choices))
+        rng.shuffle(ret)
+        return ret
+
+
+
 def randomize_raster(raster, seed=None):
-    '''
+    """
     Randomize a raster by taking out all the spikes in each time bin and
     randomly reallocating them from the total spikes of each neuron.
-    '''
+    """
     rsm = np.zeros(raster.shape, int)
     weights = raster.sum(1)
 
@@ -977,13 +1001,11 @@ def randomize_raster(raster, seed=None):
     # Choose which units to assign spikes to in each bin.
     rng = np.random.RandomState(seed)
     for bin in bin_order:
-        n_spikes = n_spikeses[bin]
-        p = weights / weights.sum()
-        rand_units = rng.choice(
-            rsm.shape[0], n_spikes, replace=False, p=p)
-        weights[rand_units] -= 1
-        rsm[rand_units,bin] = 1
+        for unit in best_effort_sample(weights, n_spikeses[bin], rng):
+            weights[unit] -= 1
+            rsm[unit, bin] += 1
 
+    print(weights)
     return rsm
 
 
