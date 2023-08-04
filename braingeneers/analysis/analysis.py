@@ -1004,7 +1004,6 @@ def randomize_raster(raster, seed=None):
             weights[unit] -= 1
             rsm[unit, bin] += 1
 
-    print(weights)
     return rsm
 
 
