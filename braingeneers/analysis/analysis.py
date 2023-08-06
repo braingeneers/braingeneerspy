@@ -986,7 +986,7 @@ class SpikeData:
 
         return self.latencies(self.train[i], window_ms)
 
-    def randomized(self, dt=1.0, seed=None):
+    def randomized(self, bin_size=1.0, seed=None):
         '''
         Create a new SpikeData object which preserves the population
         rate and mean firing rate of each neuron in an existing
@@ -995,13 +995,14 @@ class SpikeData:
         '''
         # Collect the spikes of the original Spikedata and define a new
         # "randomized spike matrix" to store them in.
-        sm = self.sparse_raster(dt)
+        sm = self.sparse_raster(bin_size)
         if sm.max() > 1:
-            logger.warning(f"Discretizing at {dt = }ms aliases some spikes.")
+            logger.warning(f"Discretizing at {bin_size = }ms aliases some spikes.")
 
         idces, times = np.nonzero(randomize_raster(sm, seed))
+        times_ms = times*bin_size + bin_size/2
         return SpikeData.from_idces_times(
-            idces, times*dt, length=self.length, N=self.N,
+            idces, times_ms, length=self.length, N=self.N,
             metadata=self.metadata, neuron_data=self._neuron_data,
             neuron_attributes=self.neuron_attributes
         )
