@@ -31,7 +31,6 @@ __all__ = [
     "pearson",
     "cumulative_moving_average",
     "burst_detection",
-    "ThresholdedSpikeData",
     "NeuronAttributes",
     "load_spike_data",
     "randomize_raster",
@@ -370,92 +369,137 @@ class SpikeData:
     milliseconds using the sample rate saved in the Neuron object.
     """
 
-    def __init__(self, arg1, arg2=None, *, N=None, length=None,
+    @staticmethod
+    def from_idces_times(idces, times, N=None, **kwargs):
+        """
+        Create a SpikeData object with N total units based on lists of unit
+        indices and spike times. If N is not provided, it is set to the
+        maximum index in idces + 1.
+
+        All metadata parameters of the regular constructor are accepted.
+        """
+        return SpikeData(_train_from_i_t_list(idces, times, N),
+                         N=N, **kwargs)
+
+    @staticmethod
+    def from_nest(spike_recorder, nodes, neuron_data={}, **kwargs):
+        """
+        Create a SpikeData object from a NEST spike recorder. The second
+        argument can be either an integer number of nodes, or a
+        NodeCollection (or other iterable of integers) indicating which
+        units to include.
+
+        All metadata parameters of the regular constructor are accepted.
+        """
+        # These are indices and times, but since nodes may (and in many
+        # cases *must*) subset the indices, we can't just use the
+        # idces+times constructor.
+        idces = spike_recorder.events['senders']
+        times = spike_recorder.events['times']
+        try:
+            maxcell = nodes
+            cells = np.arange(maxcell) + 1
+        except (TypeError, ValueError):
+            cells = np.array(nodes)
+            maxcell = cells.max()
+        cellrev = np.zeros(maxcell + 1, int)
+        cellrev[cells] = np.arange(len(cells))
+
+        cellset = set(cells)
+        train = [[] for _ in cells]
+        for i, t in zip(idces, times):
+            if i in cellset:
+                train[cellrev[i]].append(t)
+
+        neuron_data['nest_id'] = cells
+        return SpikeData(train, neuron_data=neuron_data, **kwargs)
+
+    @staticmethod
+    def from_events(events, N=None, **kwargs):
+        """
+        Create a SpikeData object with N total units based on a list of
+        events, each an (index, time) pair. If N is not provided, it is
+        set to the maximum index + 1.
+
+        All metadata parameters of the regular constructor are accepted.
+        """
+        idces, times = [], []
+        for i, t in events:
+            idces.append(i)
+            times.append(t)
+        return SpikeData.from_idces_times(idces, times, N, **kwargs)
+
+    @staticmethod
+    def from_mbt_neurons(neurons, **kwargs):
+        """
+        Create a SpikeData object from a list of Neuron objects as in the
+        MuscleBeachTools package by extracting their list of spike times and
+        converting the units to milliseconds.
+
+        All metadata parameters of the regular constructor are accepted.
+        """
+        return SpikeData([np.asarray(n.spike_time) / n.fs * 1e3
+                          for n in neurons],
+                         **kwargs)
+
+    @staticmethod
+    def from_thresholding(data, fs_Hz=20e3, threshold_sigma=5.0,
+                          filter_order=3, filter_lo_Hz=300.0,
+                          filter_hi_Hz=6e3, time_step_sec=10.0,
+                          do_filter=True, hysteresis=True,
+                          direction='both'):
+        """
+        Create a SpikeData object from raw data by filtering and
+        thresholding raw electrophysiological data formatted as an array
+        with shape (channels, time).
+        """
+        if do_filter:
+            data = filter(data, fs_Hz, filter_order, filter_lo_Hz,
+                          filter_hi_Hz, time_step_sec)
+
+        threshold = threshold_sigma * np.std(data, axis=1, keepdims=True)
+
+        if direction == 'both':
+            raster = (data > threshold) | (data < -threshold)
+        elif direction == 'up':
+            raster = data > threshold
+        elif direction == 'down':
+            raster = data < -threshold
+
+        if hysteresis:
+            raster = np.diff(np.array(raster, dtype=int), axis=1) == 1
+
+        unit_idces, time_indices = np.nonzero(raster)
+        times_ms = time_indices / fs_Hz * 1e3
+        N = data.shape[0]
+        fs_kHz = fs_Hz / 1e3
+
+        return SpikeData(_train_from_i_t_list(unit_idces, times_ms, N),
+                         N=N, length=data.shape[1] / fs_kHz,
+                         raw_data=data, raw_time=fs_kHz)
+
+
+    def __init__(self, train, *, N=None, length=None,
                  neuron_attributes=[], neuron_data={}, metadata={},
                  raw_data=None, raw_time=None):
         '''
-        Parses different argument list possibilities into the desired
-        format: a list indexed by unit ID, where each element is a list of
-        spike times. The five possibilities accepted are: (1) a pair of
-        lists corresponding to unit indices and times, (2) a NEST spike
-        recorder plus the collection of nodes to record from, (3) a list of
-        lists of spike times, (4) a list of channel-time pairs, (5) a list
-        of Neuron objects whose parameter spike_time is a list of spike
-        times. Metadata can also be passed in to the constructor, on
-        a global basis in a dict called `metadata` or on a per-neuron basis
-        in a dict of lists `neuron_data`.
+        Initialize a SpikeData object using a list of spike trains, each a
+        list of spike times in milliseconds.
 
         Arbitrary raw timeseries data, not associated with particular units,
         can be passed in as `raw_data`, an array whose last dimension
         corresponds to the times given in `raw_time`. The `raw_time` argument
         can also be a sample rate in kHz, in which case it is generated
         assuming that the start of the raw data corresponds with t=0.
-
-        Spike times should be in units of milliseconds, unless a list of
-        Neurons is given; these have spike times in units of samples, which
-        are converted to milliseconds using the sample rate saved in the
-        Neuron object.
         '''
         # Install the metadata and neuron_data.
         self.metadata = metadata.copy()
         self.neuron_attributes = neuron_attributes.copy()
         self._neuron_data = neuron_data.copy()
 
-        # If two arguments are provided, they're either a NEST spike
-        # detector plus NodeCollection, or just a list of indices and
-        # times.
-        if arg2 is not None:
-
-            # First, try parsing spikes from a NEST spike detector. Accept
-            # either a number of cells or a NodeCollection as arg2.
-            try:
-                times = arg1.events['times']
-                idces = arg1.events['senders']
-                try:
-                    maxcell = arg2
-                    cells = np.arange(maxcell) + 1
-                except (TypeError, ValueError):
-                    cells = np.array(arg2)
-                    maxcell = cells.max()
-                cellrev = np.zeros(maxcell + 1, int)
-                cellrev[cells] = np.arange(len(cells))
-
-                # Store the underlying NEST cell IDs in the neuron_data.
-                self._neuron_data['nest_id'] = cells
-
-                cellset = set(cells)
-                self.train = [[] for _ in cells]
-                for i, t in zip(idces, times):
-                    if i in cellset:
-                        self.train[cellrev[i]].append(t)
-
-            # If that fails, we must have lists of indices and times.
-            except AttributeError:
-                self.train = _train_from_i_t_list(arg1, arg2, N)
-
-        else:
-            # The input could be a list [musclebeachtools.Neuron]
-            try:
-                self.train = [np.asarray(n.spike_time) / n.fs * 1e3
-                              for n in arg1]
-
-            # Now it could be either (channel, time) pairs or
-            # a complete prebuilt spike train.
-            except AttributeError:
-
-                # If all the elements are length 2, it must be pairs.
-                if all([len(arg) == 2 for arg in arg1]):
-                    idces = [i for i, _ in arg1]
-                    times = [t for i, t in arg1]
-                    self.train = _train_from_i_t_list(idces, times, N)
-                # Otherwise, it's just a plain spike train.
-                else:
-                    self.train = arg1
-
-        # Make sure each individual spike train is sorted, because
-        # none of the formats guarantee this but all the algorithms
-        # expect it. This also copies each array to avoid aliasing.
-        self.train = [np.sort(times) for times in self.train]
+        # Make sure each individual spike train is sorted. As a side effect,
+        # also copy each array to avoid aliasing.
+        self.train = [np.sort(times) for times in train]
 
         # The length of the spike train defaults to the last spike
         # time it contains.
@@ -953,12 +997,14 @@ class SpikeData:
         # "randomized spike matrix" to store them in.
         sm = self.sparse_raster(dt)
         if sm.max() > 1:
-            logger.warn(f'Discretizing at {dt = }ms loses some spikes.')
+            logger.warning(f"Discretizing at {dt = }ms aliases some spikes.")
 
         idces, times = np.nonzero(randomize_raster(sm, seed))
-        return SpikeData(idces, times*dt, length=self.length, N=self.N,
-                         metadata=self.metadata, neuron_data=self.neuron_data,
-                         neuron_attributes=self.neuron_attributes)
+        return SpikeData.from_idces_times(
+            idces, times*dt, length=self.length, N=self.N,
+            metadata=self.metadata, neuron_data=self._neuron_data,
+            neuron_attributes=self.neuron_attributes
+        )
 
 
 
@@ -1239,7 +1285,7 @@ def pearson(spikes):
 
 
 def cumulative_moving_average(hist):
-    'The culmulative moving average for a histogram. Return a list of CMA.'
+    'The cumulative moving average for a histogram. Return a list of CMA.'
     ret = []
     for h in hist:
         cma = 0
@@ -1276,72 +1322,3 @@ def burst_detection(spike_times, burst_threshold, spike_num_thr=3):
         for i in range(loc[1]):
             burst_set.append(spike_times[loc[0]+i])
     return spike_num_list, burst_set
-
-
-
-
-class ThresholdedSpikeData(SpikeData):
-    '''
-    SpikeData generated by applying filtering and thresholding to raw ephys
-    data in [channels, time] format.
-    '''
-
-    def __init__(self, raw_data, fs_Hz=20000, threshold_sigma=5,
-                 filter_order=3, filter_lo_Hz=300, filter_hi_Hz=6000,
-                 time_step_size_s=10, do_filter=True, hysteresis=True,
-                 direction='both'):
-        '''
-        :param raw_data: [channels, time] array of raw ephys data
-        :param fs_Hz: sampling frequency of raw data in Hz
-        :param threshold_sigma: threshold for spike detection in units of
-               standard deviation
-        :param filter_spec: dictionary of filter parameters
-        :param filter_step_size_s: size of chunks to filter in seconds
-        '''
-        # Filter the data.
-        if do_filter:
-            data = filter(raw_data, fs_Hz, filter_order, filter_lo_Hz,
-                          filter_hi_Hz, time_step_size_s)
-        else:
-            # This is bad form
-            data = raw_data
-
-        threshold = threshold_sigma * np.std(data, axis=1, keepdims=True)
-
-        if direction == 'both':
-            raster = (data > threshold) | (data < -threshold)
-        elif direction == 'up':
-            raster = data > threshold
-        elif direction == 'down':
-            raster = data < -threshold
-
-        if hysteresis:
-            raster = np.diff(np.array(raster, dtype=int), axis=1) == 1
-
-        self.idces, t_idces = np.nonzero(raster)
-
-        self.times_ms = t_idces / fs_Hz * 1000
-
-        self.N = data.shape[0]
-        fs_ms = fs_Hz / 1000
-        self.length = data.shape[1] / fs_ms
-
-        # If no spikes were found, we can't do anything else.
-        if len(self.idces) == 0:
-            self.has_spikes = False
-        else:
-            self.has_spikes = True
-
-        # change this to be an instance of the parent class instead
-        # super().__init__(idces, times_ms, **kwargs)
-
-    def to_spikeData(self, N=None, length=None):
-        if self.has_spikes:
-            if N is None:
-                N = self.N
-            if length is None:
-                length = self.length
-            return SpikeData(self.idces, self.times_ms, N=N, length=length)
-        else:
-            logger.warning('No spikes found.')
-            return None
