@@ -243,7 +243,7 @@ class DatabaseInteractor:
 
             self.push()
 
-        def add_entry_to_ephys_params(self, uuid, timestamp, data_length, channels):
+        def add_entry_to_ephys_params(self, uuid, channels, timestamp, data_length):
             if self.attributes["ephys_parameters"] is None:
                 self.attributes["ephys_parameters"] = {}
               
@@ -262,7 +262,9 @@ class DatabaseInteractor:
             if timestamp not in self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"]:
                 self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp] = {}
             if "length" not in self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp] or self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp]["length"] is None:
-                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp]["length"] = [data_length]
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp]["length"] = []
+            if data_length not in self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp]["length"]:
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp]["length"].append(data_length)
 
             self.push() 
 
