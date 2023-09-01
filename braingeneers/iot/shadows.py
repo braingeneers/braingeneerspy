@@ -242,7 +242,32 @@ class DatabaseInteractor:
                 self.attributes["image_parameters"]["uuids"][key] = value
 
             self.push()
-        
+
+        def add_entry_to_ephys_params(self, uuid, channels, timestamp, data_length):
+            if self.attributes["ephys_parameters"] is None:
+                self.attributes["ephys_parameters"] = {}
+              
+            # structure is {"uuids" : {uuid: {"channels": {channel : {"timestamps" : {timestamp: "length : [data_length]}}}
+
+            if "uuids" not in self.attributes["ephys_parameters"] or self.attributes["ephys_parameters"]["uuids"] is None:
+                self.attributes["ephys_parameters"]["uuids"] = {}
+            if uuid not in self.attributes["ephys_parameters"]["uuids"]:
+                self.attributes["ephys_parameters"]["uuids"][uuid] = {}
+            if "channels" not in self.attributes["ephys_parameters"]["uuids"][uuid] or self.attributes["ephys_parameters"]["uuids"][uuid]["channels"] is None:
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"] = {}
+            if channels not in self.attributes["ephys_parameters"]["uuids"][uuid]["channels"]:
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels] = {}
+            if "timestamps" not in self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels] or self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"] is None:
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"] = {}
+            if timestamp not in self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"]:
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp] = {}
+            if "length" not in self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp] or self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp]["length"] is None:
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp]["length"] = []
+            if data_length not in self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp]["length"]:
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp]["length"].append(data_length)
+
+            self.push() 
+
         def add_experiment(self, experiment):
             if self.attributes["experiments"] is None:
                 self.attributes["experiments"] = []
