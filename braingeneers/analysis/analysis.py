@@ -200,7 +200,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
         amp = np.max(temp, axis=1) - np.min(temp, axis=1)
         sorted_idx = [ind for _, ind in sorted(zip(amp, np.arange(len(amp))))]
         nbgh_chan_idx = sorted_idx[::-1][:12]
-        nbgh_temps = temp[sorted_idx]
+        nbgh_temps = temp[nbgh_chan_idx]
         nbgh_channels = channels[nbgh_chan_idx]
         nbgh_postions = [tuple(positions[idx]) for idx in nbgh_chan_idx]
         neuron_attributes.append(
@@ -288,7 +288,7 @@ def read_phy_files(path: str, fs=20000.0):
         amp = np.max(temp, axis=0) - np.min(temp, axis=0)
         sorted_idx = [ind for _, ind in sorted(zip(amp, np.arange(len(amp))))]
         nbgh_chan_idx = sorted_idx[::-1][:12]
-        nbgh_temps = temp.transpose()[sorted_idx]
+        nbgh_temps = temp.transpose()[nbgh_chan_idx]
         best_chan_temp = nbgh_temps[0]
         nbgh_channels = channels[nbgh_chan_idx]
         nbgh_postions = [tuple(positions[idx]) for idx in nbgh_chan_idx]
