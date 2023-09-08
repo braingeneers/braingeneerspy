@@ -1,30 +1,25 @@
 from __future__ import annotations
 
-import collections
-import functools
 import os
 import json
 import warnings
+import copy
 
-import requests
 import matplotlib.pyplot as plt
 import numpy as np
 import shutil
 import h5py
 import braingeneers.utils.smart_open_braingeneers as smart_open
 from os import walk
-from deprecated import deprecated
 from collections import namedtuple
 import time
-from braingeneers.utils import s3wrangler
+from braingeneers.utils import s3wrangler, errors
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Tuple, Union, Iterable, Iterator
 from nptyping import NDArray, Int16, Float16, Float32, Float64
 import io
 import braingeneers
 from braingeneers.utils import common_utils
-from collections import OrderedDict
-# import sortedcontainers
 import itertools
 import posixpath
 import pandas as pd
@@ -182,6 +177,8 @@ def load_data(metadata: dict,
         data = load_data_axion(metadata, batch_uuid, experiment_str, channels, offset, length)
     elif hardware == 'Intan':
         data = load_data_intan(metadata, batch_uuid, experiment_str, channels, offset, length)
+    # elif hardware == 'MEArec':
+    #     data = load_data_mearec()
     elif hardware == 'Maxwell':
         # Check if all experiments in this UUID have been converted to row-major format already
         # Data has to be converted to row-major after recording in a batch process using `h5repack`
@@ -436,7 +433,7 @@ def load_data_maxwell(metadata, batch_uuid, experiment: str, channels, start, le
             table = 'sig' if 'sig' in h5file.keys() else '/data_store/data0000/groups/routed/raw'
             dataset = h5file[table]
             if channels is not None:
-                sorted_channels = np.sort(channels) 
+                sorted_channels = np.sort(channels)
                 undo_sort_channels = np.argsort(np.argsort(channels))
 
                 dataset = dataset[sorted_channels, start:frame_end]
@@ -826,7 +823,7 @@ def connect_kach_dir():
 # Usage. Supply the batch_name for the batch you would like to download.
 # If not downloaded into the local kach dir, it will be downloaded to improve loading time
 def sync_s3_to_kach(batch_name):
-    sync_command = f"aws --endpoint $ENDPOINT_URL s3 sync s3://braingeneers/ephys/" + batch_name + f" /home/jovyan/Projects/maxwell_analysis/ephys/" + batch_name
+    sync_command = f"aws --endpoint $ENDPOINT_URL s3 sync s3://braingeneers/ephys/{batch_name} /home/jovyan/Projects/maxwell_analysis/ephys/{batch_name}"
     os.system(sync_command)
 
 
@@ -1330,3 +1327,113 @@ def _axion_get_data(file_name, file_data_start_position,
 #     def __add__(self, value):
 #         self.keys_ordered.append(value)
 #         self.dict[value] = value
+
+def verify_previous_is_same(f1_value, f2_value, f1, f2, var_name):
+    """
+    Checks that verify_this_value is empty or equal to value.
+
+    Used to sanity check that multiple files in an experiment folder have,
+    for example, the same gain, offset, etc.
+    """
+    if not f2_value:
+        return f1_value
+    if f2_value != f1_value:
+        raise errors.ConflictingExperimentData(
+            f'Two experiment files (same directory), were found to have conflicting metadata:\n\n'
+            f'  {var_name}: {f1_value} in {f1}\n'
+            f'  {var_name}: {f2_value} in {f2}\n\n'
+            f'Are these different experiments (and therefore should be put into separate directories)?')
+
+
+def generate_metadata_mearec(batch_uuid: str, experiment_prefix: str = '', n_threads: int = 16, save: bool = False):
+    """
+    Generates metadata.json from MEArec data files on S3 from a standard UUID.
+
+    Assumes data files are stored in:
+        ${ENDPOINT}/ephys/YYYY-MM-DD-e-[descriptor]/original/experiments/*.raw
+        (ENDPOINT defaults to s3://braingeneers)
+
+    Limitations:
+     - timestamps are not taken from the original data files, the current time is used.
+
+    :param batch_uuid: standard ephys UUID
+    :param experiment_prefix: Currently unused.
+    :param n_threads: Currently unused; number of concurrent file reads (useful for parsing many network based files)
+    :param save: bool (default == False) saves the generated metadata file back to S3/ENDPOINT at batch_uuid
+    :return: (metadata_json: dict, ephys_experiments: dict) a tuple of two dictionaries which are
+        json serializable to metadata.json and experiment1.json.
+    """
+    path = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original/data/')
+    data_files = s3wrangler.list_objects(path=path, suffix=['.h5', '.hdf5'])
+    # filter out the "templates_" prefix and any other unneeded provenance files
+    h5_files = [f for f in data_files if f[len(path):].startswith('recordings_')]
+
+    if len(h5_files) == 0:
+        raise FileNotFoundError(f'No recordings_*.h5 / recordings_*.hdf5 files '
+                                f'found in {get_basepath()}/ephys/{batch_uuid}/original/data/')
+
+    current_time = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%dT%H:%M:%S')
+
+    old_ephys = dict()
+    old_h5_file = None
+    blocks = []
+    for h5_file in h5_files:
+        with smart_open.open(h5_file, 'rb') as fid:
+            with h5py.File(fid, "r") as f:
+
+                sampling_frequency = f["info"]["recordings"]["fs"][()]
+                if isinstance(sampling_frequency, bytes):
+                    sampling_frequency = sampling_frequency.decode("utf-8")
+                elif isinstance(sampling_frequency, np.generic):
+                    sampling_frequency = sampling_frequency.item()
+                sampling_frequency = float(sampling_frequency)
+
+                num_channels = f['channel_positions'].shape[0]
+                num_input_channels = num_channels - f['recordings'].shape[0]
+                num_voltage_channels = num_channels - num_input_channels
+
+                metadata = {
+                    'issue': '',
+                    'notes': 'This data is a simulated recording generated by MEArec.',
+                    'timestamp': current_time,
+                    'uuid': batch_uuid,
+                    'ephys_experiment': [{
+                        "name": "experiment0",
+                        "hardware": 'MEArec Simulated Recording',
+                        "notes": 'This data is a simulated recording generated by MEArec.',
+                        "timestamp": current_time,
+                        'sample_rate': verify_previous_is_same(sampling_frequency, old_ephys.get('sample_rate'), h5_file, old_h5_file, 'sample_rate'),
+                        'num_channels': verify_previous_is_same(num_channels, old_ephys.get('num_channels'), h5_file, old_h5_file, 'num_channels'),
+                        'num_current_input_channels': verify_previous_is_same(num_input_channels, old_ephys.get('num_current_input_channels'), h5_file, old_h5_file, 'num_current_input_channels'),
+                        'num_voltage_channels': verify_previous_is_same(num_voltage_channels, old_ephys.get('num_voltage_channels'), h5_file, old_h5_file, 'num_voltage_channels'),
+                        'channels': verify_previous_is_same(list(range(num_channels)), old_ephys.get('channels'), h5_file, old_h5_file, 'channels'),
+                        # the values "offset", "voltage_scaling_factor"/"gain, and "units" don't change in MEArec,
+                        # and are currently hard-coded in their rawIO reader (so we do the same):
+                        # units: https://github.com/NeuralEnsemble/python-neo/blob/354c8d9d5fbc4daad3547773d2f281f8c163d208/neo/rawio/mearecrawio.py#L97
+                        # gain: https://github.com/NeuralEnsemble/python-neo/blob/354c8d9d5fbc4daad3547773d2f281f8c163d208/neo/rawio/mearecrawio.py#L98
+                        # offset: https://github.com/NeuralEnsemble/python-neo/blob/354c8d9d5fbc4daad3547773d2f281f8c163d208/neo/rawio/mearecrawio.py#L99
+                        'offset': 0.,
+                        'voltage_scaling_factor': 1.,
+                        'units': '\u00b5V',
+                        'version': verify_previous_is_same(f.attrs.get("mearec_version", "0.0.0"), old_ephys.get('version'), h5_file, old_h5_file, 'MEArec version'),
+                    }]
+                }
+                old_ephys = copy.deepcopy(metadata['ephys_experiment'][0])
+                old_h5_file = copy.deepcopy(h5_file)
+                blocks.append({
+                    "num_frames": f['recordings'].shape[1],
+                    "path": h5_file,
+                    "timestamp": current_time,
+                    "data_order": "rowmajor"
+                })
+    metadata['ephys_experiment'][0]['blocks'] = blocks
+
+    if save:
+        with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+    return metadata
+
+
+# m = generate_metadata_mearec(batch_uuid='2023-08-29-e-mearec')
+# print(json.dumps(m, indent=4))

@@ -106,6 +106,42 @@ class MaxwellReaderTests(unittest.TestCase):
             ephys.load_data(metadata=metadata, experiment=0, offset=offset, length=length)
 
 
+class MEArecReaderTests(unittest.TestCase):
+    """The fake reader test."""
+    batch_uuid = '2023-08-29-e-mearec'
+
+    @skip_unittest_if_offline
+    def test_online_mearec_generate_metadata(self):
+        metadata = ephys.generate_metadata_mearec(self.batch_uuid)
+        experiment0 = list(metadata['ephys_experiments'].values())[0]
+
+        self.assertTrue(isinstance(metadata.get('notes'), str))
+        self.assertTrue('timestamp' in metadata)
+        self.assertEqual(metadata['uuid'], self.batch_uuid)
+
+        self.assertEqual(experiment0['hardware'], 'MEArec Simulated Recording')
+        self.assertEqual(experiment0['name'], 'experiment0')
+        self.assertTrue(isinstance(experiment0.get('notes'), str))
+        # self.assertEqual(experiment0['num_channels'], 384)
+        self.assertEqual(experiment0['num_current_input_channels'], 0)
+        # self.assertEqual(experiment0['num_voltage_channels'], 384)
+        self.assertEqual(experiment0['offset'], 0)
+        self.assertEqual(experiment0['sample_rate'], 32000)
+        self.assertTrue(isinstance(experiment0['sample_rate'], int))
+        # self.assertAlmostEqual(experiment0['voltage_scaling_factor'], -5.484861781483107e-08)
+        # self.assertTrue(isinstance(experiment0['voltage_scaling_factor'], float))
+        self.assertEqual(experiment0['units'], '\u00b5V')
+        # self.assertEqual(experiment0['version'], '1.0.0')
+
+        # self.assertEqual(len(experiment0['blocks']), 267)
+        # self.assertEqual(experiment0['blocks'][0]['num_frames'], 3750000)
+        # self.assertEqual(experiment0['blocks'][0]['path'], 'H28126_WK27_010320_Cohort_202000706_Wash(000).raw')
+        # self.assertTrue('T' in experiment0['blocks'][0]['timestamp'])
+
+        # validate json serializability
+        json.dumps(metadata)
+
+
 class AxionReaderTests(unittest.TestCase):
     """
     Online test cases require access to braingeneers/S3 including ~/.aws/credentials file
