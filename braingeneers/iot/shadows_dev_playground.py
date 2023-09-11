@@ -30,18 +30,19 @@ from credentials import API_KEY
 
 # endpoint = "http://localhost:1337/api"
 # endpoint = "http://braingeneers.gi.ucsc.edu:1337/api"
-ENDPOINT = "http://shadows-db.braingeneers.gi.ucsc.edu/api"
+# ENDPOINT = "http://shadows-db.braingeneers.gi.ucsc.edu/api"
 
-token = API_KEY
+# token = API_KEY
 # Create a shadow object
-instance = sh.DatabaseInteractor(overwrite_endpoint = ENDPOINT, overwrite_api_key=token)
-# instance = sh.DatabaseInteractor()
+# instance = sh.DatabaseInteractor(overwrite_endpoint = ENDPOINT, overwrite_api_key=token)
+instance = sh.DatabaseInteractor()
 # print(json.dumps(instance.get_device_state(13), indent=4))
 # print(instance.list_experiments())
 # print(instance.get_device_state_by_name("Evee"))
 # print(instance.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope"))
+print(instance.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope"))
 
-thing1 = instance.create_interaction_thing("BioPlateScope", "Ibolya")
+thing1 = instance.create_interaction_thing("Other", "delete_test")
 # shadow = {"params": {
 #                 "interval": 1,
 #                 "stack_size": 15,
@@ -65,6 +66,13 @@ thing1 = instance.create_interaction_thing("BioPlateScope", "Ibolya")
 #         }
 # thing1.add_to_shadow(shadow)
 print(json.dumps(thing1.to_json(), indent=4))
+
+thing1.move_to_trash()
+
+print(instance.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope"))
+
+print(json.dumps(thing1.to_json(), indent=4))
+
 # plate = instance.create_plate("ephys-tester",1,1)
 # plate.add_thing(thing1)
 # plate.add_entry_to_ephys_params(uuid="2023-04-17-e-causal_v1", channels="362-71-31-338-231-315-309-234", timestamp="20230419_153528", data_length="-1")
