@@ -42,6 +42,8 @@ instance = sh.DatabaseInteractor()
 # print(instance.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope"))
 print(instance.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope"))
 
+instance.empty_trash()
+
 thing1 = instance.create_interaction_thing("Other", "delete_test")
 # shadow = {"params": {
 #                 "interval": 1,
@@ -69,9 +71,13 @@ print(json.dumps(thing1.to_json(), indent=4))
 
 thing1.move_to_trash()
 
-print(instance.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope"))
+print(instance.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=Other"))
 
 print(json.dumps(thing1.to_json(), indent=4))
+
+# thing1.recover_from_trash()
+
+print(instance.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=Other"))
 
 # plate = instance.create_plate("ephys-tester",1,1)
 # plate.add_thing(thing1)

@@ -154,7 +154,7 @@ class DatabaseInteractor:
             url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
             headers = {"Authorization": "Bearer " + self.token}
             data = {"data": self.attributes}
-            print("pushing data", data)
+            # print("pushing data", data)
             response = requests.put(url, headers=headers, json=data)
             # print(response.json())
             # print(response.status_code)
@@ -201,8 +201,8 @@ class DatabaseInteractor:
                 # self.id = response.json()['data']['id']
                 # self.attributes = response.json()['data']['attributes']
                 self.attributes["marked_for_deletion"] = True
-                print("marked for deletion")
-                print(self.attributes)
+                # print("marked for deletion")
+                # print(self.attributes)
                 self.push()
 
         def recover_from_trash(self):
@@ -345,15 +345,17 @@ class DatabaseInteractor:
         """
         delete all objects with attribute marked_for_deletion set to True
         """
-        url = self.endpoint + "/"+self.api_object_id+"?filters[marked_for_deletion][$eq]=true&populate=%2A"
-        headers = {"Authorization": "Bearer " + self.token}
-        response = requests.get(url, headers=headers)
-        # print(response.json())
-        # print(response.status_code)
-        for item in response.json()['data']:
-            url = self.endpoint + "/"+self.api_object_id+"/" + str(item['id'])
-            response = requests.delete(url, headers=headers)
-            print("deleted object with id " + str(item['id']))
+        object_list = ["interaction-things", "experiments", "plates", "wells", "samples"]
+        for object in object_list:
+          url = self.endpoint + "/"+object+"?filters[marked_for_deletion][$eq]=true&populate=%2A"
+          headers = {"Authorization": "Bearer " + self.token}
+          response = requests.get(url, headers=headers)
+          # print(response.json())
+          # print(response.status_code)
+          for item in response.json()['data']:
+              url = self.endpoint + "/"+object+"/" + str(item['id'])
+              response = requests.delete(url, headers=headers)
+              print("deleted object of type: " + object + " with id " + str(item['id']))
         
     def create_interaction_thing(self, type, name):
         thing = self.__Thing(self.endpoint, self.token)
