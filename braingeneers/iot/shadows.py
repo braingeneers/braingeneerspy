@@ -50,6 +50,21 @@ class DatabaseInteractor:
             self.endpoint = overwrite_endpoint
         if overwrite_api_key:
             self.token = overwrite_api_key
+
+    def empty_trash(self):
+        """
+        delete all objects with attribute marked_for_deletion set to True
+        """
+        url = self.endpoint + "/"+self.api_object_id+"?filters[marked_for_deletion][$eq]=true&populate=%2A"
+        headers = {"Authorization": "Bearer " + self.token}
+        response = requests.get(url, headers=headers)
+        # print(response.json())
+        # print(response.status_code)
+        for item in response.json()['data']:
+            url = self.endpoint + "/"+self.api_object_id+"/" + str(item['id'])
+            response = requests.delete(url, headers=headers)
+            # print(response.status_code)
+        
     
     class __API_object:
         """
@@ -160,6 +175,36 @@ class DatabaseInteractor:
                 raise Exception("no " + self.api_object_id + " object with name " + name)
             else:
                 self.parse_API_response(response.json()['data'][0])
+          
+        def move_to_trash(self):
+            """
+            marks the object for deletion
+            """
+            url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
+            headers = {"Authorization": "Bearer " + self.token}
+            response = requests.get(url, headers=headers)
+            if len(response.json()['data']) == 0:
+                raise Exception("Object not found")
+            else:
+                self.id = response.json()['data'][0]['id']
+                self.attributes = response.json()['data'][0]['attributes']
+                self.attributes["marked_for_deletion"] = True
+                self.push()
+
+        def recover_from_trash(self):
+            """
+            unmarks the object for deletion
+            """
+            url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
+            headers = {"Authorization": "Bearer " + self.token}
+            response = requests.get(url, headers=headers)
+            if len(response.json()['data']) == 0:
+                raise Exception("Object not found")
+            else:
+                self.id = response.json()['data'][0]['id']
+                self.attributes = response.json()['data'][0]['attributes']
+                self.attributes["marked_for_deletion"] = False
+                self.push()
 
     class __Thing(__API_object):
         def __init__(self, endpoint, api_token):
