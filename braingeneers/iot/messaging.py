@@ -27,8 +27,6 @@ AWS_REGION = 'us-west-2'
 AWS_PROFILE = 'aws-braingeneers-iot'
 REDIS_HOST = 'redis.braingeneers.gi.ucsc.edu'
 REDIS_PORT = 6379
-logger = logging.getLogger()
-logger.level = logging.INFO
 
 
 class MQTTError(RuntimeError):
@@ -73,7 +71,7 @@ class MessageBroker:
     See documentation at: https://github.com/braingeneers/wiki/blob/main/shared/mqtt.md
 
     Assumes the following:
-        - `~/.aws/credentials` file has a profile [aws-braingeneers-iot] defined with AWS credentials
+        - `~/.aws/credentials_file` file has a profile [aws-braingeneers-iot] defined with AWS credentials_file
         - Python dependencies: `awsiotsdk, awscrt, boto3, redis`
 
     Public functions:
@@ -110,42 +108,53 @@ class MessageBroker:
         https://awslabs.github.io/aws-crt-python/
     """
 
-    def __init__(self, name: str = None, endpoint: str = AWS_REGION, credentials: (str, io.IOBase) = None):
+    def __init__(self, name: str = None, credentials_file: (str, io.IOBase) = None, logger: logging.Logger = None):
         """
+        Typical usage example:
+            mb = MessageBroker()
+            mb.publish_message('test/test', {"START_EXPERIMENT": None, "UUID": "2020-11-27-e-primary-axion-morning"})
+
+        Example with debug logging enabled:
+            import logging
+            logging.basicConfig(level=logging.DEBUG)
+            mb = MessageBroker(logger=logging.getLogger())
+            mb.publish_message('test/test', {"START_EXPERIMENT": None, "UUID": "2020-11-27-e-primary-axion-morning"})
+
         :param name: name of device or client, must be a globally unique string ID.
         :param endpoint: optional AWS endpoint, defaults to Braingeneers standard us-west-2
-        :param credentials: optional file path string or file-like object containing the
+        :param credentials_file: optional file path string or file-like object containing the
             standard `~/.aws/credentials` file. See https://github.com/braingeneers/wiki/blob/main/shared/permissions.md
             defaults to looking in `~/.aws/credentials` if left as None. This file expects to find profiles named
             'aws-braingeneers-iot' and 'redis' in it.
+        :param logger: optional logger object, defaults to a new logger with the name of this class.
         """
+        self.logger = logger if logger is not None else logging.getLogger(__name__)
         self.name = name if name is not None else str(uuid.uuid4())
-        self.endpoint = endpoint
 
-        if credentials is None:
-            credentials = os.path.expanduser('~/.aws/credentials')  # default credentials location
+        if credentials_file is None:
+            credentials_file = os.path.expanduser('~/.aws/credentials')  # default credentials_file location
 
-        if isinstance(credentials, str):
-            with open(credentials, 'r') as f:
+        if isinstance(credentials_file, str):
+            with open(credentials_file, 'r') as f:
                 self._credentials = f.read()
         else:
-            assert hasattr(credentials, 'read'), 'credentials parameter must be a filename string or file-like object.'
-            self._credentials = credentials.read()
+            assert hasattr(credentials_file, 'read'), 'credentials_file parameter must be a filename string or file-like object.'
+            self._credentials = credentials_file.read()
 
         config = configparser.ConfigParser()
         config.read_file(io.StringIO(self._credentials))
 
         assert 'braingeneers-mqtt' in config, \
-            'Your AWS credentials file is missing a section [braingeneers-mqtt], you may have the wrong ' \
-            'version of the credentials file.'
+            'Your AWS credentials_file file is missing a section [braingeneers-mqtt], you may have the wrong ' \
+            'version of the credentials_file file.'
         assert 'profile-id' in config['braingeneers-mqtt'], \
-            'Your AWS credentials file is malformed, profile-id is missing from the [braingeneers-mqtt] section.'
+            'Your AWS credentials_file file is malformed, profile-id is missing from the [braingeneers-mqtt] section.'
         assert 'profile-key' in config['braingeneers-mqtt'], \
-            'Your AWS credentials file is malformed, profile-key was not found under the [braingeneers-mqtt] section.'
+            'Your AWS credentials_file file is malformed, profile-key was not found under the [braingeneers-mqtt] section.'
         assert 'endpoint' in config['braingeneers-mqtt'], \
-            'Your AWS credentials file is malformed, endpoint was not found under the [braingeneers-mqtt] section.'
+            'Your AWS credentials_file file is malformed, endpoint was not found under the [braingeneers-mqtt] section.'
         assert 'port' in config['braingeneers-mqtt'], \
-            'Your AWS credentials file is malformed, ' \
+            'Your AWS credentials_file file is malformed, ' \
                                                       'port was not found under the [braingeneers-mqtt] section.'
 
         self.certs_temp_dir = None
@@ -162,6 +171,7 @@ class MessageBroker:
 
         self._subscribed_data_streams = set()  # keep track of subscribed data streams
         self._subscribed_message_callback_map = {}  # keep track of subscribed message callbacks
+        self._subscribe_message_lock = threading.Lock()  # lock for updating self._subscribed_message_callback_map
 
     class NamedQueue:
         """ Internal class, use: MessageBroker.get_queue() """
@@ -410,19 +420,23 @@ class MessageBroker:
                 message = msg.payload.decode()
 
             # Test each regex in the callback map to see if it matches the topic and call
-            # the appropriate callback function, we test all regexes because a topic may
-            # match multiple topic/regex subscriptions.
-            for topic_regex_loop, callback_loop in self._subscribed_message_callback_map.items():
-                if msg.topic.startswith('$') and not topic_regex_loop.startswith('^\\$'):
-                    continue
-                elif re.match(topic_regex_loop, msg.topic):
-                    callback_loop(msg.topic, message)
+            # the appropriate callback function, we test all regexes because a single topic may
+            # match multiple subscriptions.
+            with self._subscribe_message_lock:
+                matched_callbacks = [
+                    callback_loop
+                    for topic_regex_loop, callback_loop in self._subscribed_message_callback_map.items()
+                    if re.match(topic_regex_loop, msg.topic)
+                ]
+            for callback_loop in matched_callbacks:
+                callback_loop(msg.topic, message)
 
         if len(self._subscribed_message_callback_map) == 0:
             self.mqtt_connection.on_message = on_message
 
         topic_regex = _mqtt_topic_regex(topic)
-        self._subscribed_message_callback_map[topic_regex] = callback
+        with self._subscribe_message_lock:
+            self._subscribed_message_callback_map[topic_regex] = callback
         self.mqtt_connection.subscribe(topic=topic, qos=2)
 
         return callback
@@ -561,17 +575,6 @@ class MessageBroker:
         :return: a list of device names that match the filtering criteria.
         """
         raise NotImplementedError("This function is not implemented yet")
-        # query_string = 'connectivity.connected:true'  # always query for connected devices
-        # for k, v in filters.items():
-        #     if isinstance(v, (tuple, list)):
-        #         assert len(v) == 2, f'One or two values expected for filter {k}, found {v}'
-        #         query_string = f'{query_string}'
-        #     else:
-        #         query_string = f'{query_string} AND shadow.{k}:{v}'
-
-        # response = self.boto_iot_client.search_index(queryString=query_string)
-        # ret_val = [thing['thingName'] for thing in response['things']]
-        # return ret_val
 
     def get_device_state(self, device_name: str) -> dict:
         """
@@ -738,20 +741,6 @@ class MessageBroker:
             last_update_exclusive = '0-0'
         return last_update_exclusive
 
-    @staticmethod
-    def _callback_handler(topic, payload, callback):
-        """ Dispatches callbacks after performing json deserialization """
-        message = json.loads(payload)
-        callback(topic, message)
-
-    @staticmethod
-    def _on_connection_interrupted(*args, **kwargs):
-        logger.error(f'Connection interrupted: {args}, {kwargs}')
-
-    @staticmethod
-    def _on_connection_resumed(*args, **kwargs):
-        logger.error(f'Connection resumed: {args}, {kwargs}')
-
     @property
     def mqtt_connection(self):
         """ Lazy initialization of mqtt connection. """
@@ -759,41 +748,30 @@ class MessageBroker:
             '''
             root certs only required for https connection our current mqtt broker does not have this yet
             '''
+            # MQTT connection callbacks
             def on_connect(client, userdata, flags, rc):
                 if rc == 0:
-                    logger.info('MQTT connected: client:' + str(client) + ' userdata:' + str(userdata) + ' flags:' + str(flags) + ' rc:' + str(rc))
+                    self.logger.info('MQTT connected: client:' + str(client) + ' userdata:' + str(userdata) + ' flags:' + str(flags) + ' rc:' + str(rc))
                 else:
-                    logger.error("Failed to connect to MQTT, return code %d\n", rc)
+                    self.logger.error("Failed to connect to MQTT, return code %d\n", rc)
 
             def on_log(client, userdata, level, buf):
-                logger.debug("MQTT log: %s", buf)
+                self.logger.debug("MQTT log: %s", buf)
+
+            def on_disconnect(client, userdata, rc):
+                self.logger.warning("MQTT disconnected with result code %s, attempting reconnect.", str(rc))
+                self._mqtt_connection.reconnect()
 
             client_id = f'braingeneerspy-{random.randint(0, 1000)}'
-
             self._mqtt_connection = mqtt_client.Client(client_id)
             self._mqtt_connection.username_pw_set(self._mqtt_profile_id, self._mqtt_profile_key)
             self._mqtt_connection.on_connect = on_connect
-            self._mqtt_connection.connect(self._mqtt_endpoint, self._mqtt_port)
+            self._mqtt_connection.on_disconnect = on_disconnect
             self._mqtt_connection.on_log = on_log
+            self._mqtt_connection.connect(host=self._mqtt_endpoint, port=self._mqtt_port, keepalive=15)
             self._mqtt_connection.loop_start()
 
         return self._mqtt_connection
-
-    @property
-    def boto_iot_data_client(self):
-        """ Lazy initialization of boto3 client """
-        if self._boto_iot_data_client is None:
-            boto_session = boto3.Session(profile_name=AWS_PROFILE)
-            self._boto_iot_data_client = boto_session.client('iot-data', region_name=AWS_REGION, verify=False)
-        return self._boto_iot_data_client
-
-    @property
-    def boto_iot_client(self):
-        """ Lazy initialization of boto3 client """
-        if self._boto_iot_client is None:
-            boto_session = boto3.Session(profile_name=AWS_PROFILE)
-            self._boto_iot_client = boto_session.client('iot', region_name=AWS_REGION)
-        return self._boto_iot_client
 
     @property
     def redis_client(self) -> redis.Redis:
@@ -801,9 +779,9 @@ class MessageBroker:
         if self._redis_client is None:
             config = configparser.ConfigParser()
             config.read_file(io.StringIO(self._credentials))
-            assert 'redis' in config, 'Your AWS credentials file is missing a section [redis], ' \
-                                      'you may have the wrong version of the credentials file.'
-            assert 'redis_password' in config['redis'], 'Your AWS credentials file is malformed, ' \
+            assert 'redis' in config, 'Your AWS credentials_file file is missing a section [redis], ' \
+                                      'you may have the wrong version of the credentials_file file.'
+            assert 'redis_password' in config['redis'], 'Your AWS credentials_file file is malformed, ' \
                                                   'password was not found under the [redis] section.'
             self._redis_client = redis.Redis(
                 host=REDIS_HOST, port=REDIS_PORT, password=config['redis']['redis_password']
