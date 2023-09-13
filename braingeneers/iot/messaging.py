@@ -768,7 +768,7 @@ class MessageBroker:
             self._mqtt_connection = mqtt_client.Client(client_id)
             self._mqtt_connection.username_pw_set(self._mqtt_profile_id, self._mqtt_profile_key)
             self._mqtt_connection.on_connect = on_connect
-            self._mqtt_connection.on_disconnect = on_disconnect
+            # self._mqtt_connection.on_disconnect = on_disconnect
             self._mqtt_connection.on_log = on_log
             self._mqtt_connection.reconnect_delay_set(min_delay=1, max_delay=60)
             self._mqtt_connection.connect(host=self._mqtt_endpoint, port=self._mqtt_port, keepalive=15)
