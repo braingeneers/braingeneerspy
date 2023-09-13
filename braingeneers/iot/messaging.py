@@ -21,6 +21,7 @@ import braingeneers.iot.shadows as sh
 from paho.mqtt import client as mqtt_client
 from deprecated import deprecated
 import pickle
+from tenacity import retry, wait_exponential
 
 
 AWS_REGION = 'us-west-2'
@@ -758,6 +759,7 @@ class MessageBroker:
             def on_log(client, userdata, level, buf):
                 self.logger.debug("MQTT log: %s", buf)
 
+            @retry(wait=wait_exponential(multiplier=1, max=60))
             def on_disconnect(client, userdata, rc):
                 self.logger.warning("MQTT disconnected with result code %s, attempting reconnect.", str(rc))
                 self._mqtt_connection.reconnect()
