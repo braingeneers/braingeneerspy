@@ -33,7 +33,7 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
             self.mb.publish_message('test', 'message')
 
     def test_subscribe_system_messages(self):
-        q = self.mb.subscribe_message('$SYS/#')
+        q = self.mb.subscribe_message('$SYS/#', callback=None)
         self.mb.publish_message('test/unittest', message={'test': 'true'})
 
         t0 = time.time()
