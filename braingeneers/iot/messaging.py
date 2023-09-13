@@ -171,7 +171,7 @@ class MessageBroker:
         self.shadow_interface = sh.DatabaseInteractor()
 
         self._subscribed_data_streams = set()  # keep track of subscribed data streams
-        self._subscribed_message_callback_map = {}  # keep track of subscribed message callbacks
+        self._subscribed_message_callback_map = {}  # keep track of subscribed message callbacks, key is regex, value is tuple of (callback, topic)
         self._subscribe_message_lock = threading.Lock()  # lock for updating self._subscribed_message_callback_map
 
     class NamedQueue:
@@ -426,18 +426,19 @@ class MessageBroker:
             with self._subscribe_message_lock:
                 matched_callbacks = [
                     callback_loop
-                    for topic_regex_loop, callback_loop in self._subscribed_message_callback_map.items()
+                    for topic_regex_loop, (callback_loop, _) in self._subscribed_message_callback_map.items()
                     if re.match(topic_regex_loop, msg.topic)
                 ]
             for callback_loop in matched_callbacks:
                 callback_loop(msg.topic, message)
 
+        # set on_message callback if it's not already set
         if len(self._subscribed_message_callback_map) == 0:
             self.mqtt_connection.on_message = on_message
 
         topic_regex = _mqtt_topic_regex(topic)
         with self._subscribe_message_lock:
-            self._subscribed_message_callback_map[topic_regex] = callback
+            self._subscribed_message_callback_map[topic_regex] = (callback, topic)
         self.mqtt_connection.subscribe(topic=topic, qos=2)
 
         return callback
@@ -753,22 +754,22 @@ class MessageBroker:
             def on_connect(client, userdata, flags, rc):
                 if rc == 0:
                     self.logger.info('MQTT connected: client:' + str(client) + ' userdata:' + str(userdata) + ' flags:' + str(flags) + ' rc:' + str(rc))
+                    if len(self._subscribed_message_callback_map) > 0:
+                        with self._subscribe_message_lock:
+                            reconnect_topics = [topic for _, topic in self._subscribed_message_callback_map.values()]
+                        for topic in reconnect_topics:
+                            self.logger.info('Re-subscribing to topic: ' + topic)
+                            self.mqtt_connection.subscribe(topic, qos=2)
                 else:
                     self.logger.error("Failed to connect to MQTT, return code %d\n", rc)
 
             def on_log(client, userdata, level, buf):
                 self.logger.debug("MQTT log: %s", buf)
 
-            # @retry(wait=wait_exponential(multiplier=1, max=60), after=after_log(logging.getLogger(__name__), logging.WARNING))
-            # def on_disconnect(client, userdata, rc):
-            #     self.logger.warning("MQTT disconnected with result code %s, attempting reconnect.", str(rc))
-            #     self._mqtt_connection.reconnect()
-
             client_id = f'braingeneerspy-{random.randint(0, 1000)}'
             self._mqtt_connection = mqtt_client.Client(client_id)
             self._mqtt_connection.username_pw_set(self._mqtt_profile_id, self._mqtt_profile_key)
             self._mqtt_connection.on_connect = on_connect
-            # self._mqtt_connection.on_disconnect = on_disconnect
             self._mqtt_connection.on_log = on_log
             self._mqtt_connection.reconnect_delay_set(min_delay=1, max_delay=60)
             self._mqtt_connection.connect(host=self._mqtt_endpoint, port=self._mqtt_port, keepalive=15)
