@@ -370,7 +370,7 @@ class MessageBroker:
         if message_info.rc != 0:
             raise MQTTError(message_info)
 
-    def subscribe_message(self, topic: str, callback: Callable = None) -> Union[Callable, CallableQueue]:
+    def subscribe_message(self, topic: str, callback: Callable) -> Union[Callable, CallableQueue]:
         """
         Subscribes to receive messages on a given topic. When providing a topic you will be
         subscribing to all messages on that topic and any sub topic. For example, subscribing to
@@ -385,15 +385,15 @@ class MessageBroker:
                 print(f'Received message {message} on topic {topic}')  # Print message
 
             mb = MessageBroker('test')  # device named test
-            mb.subscribe('test', my_callback)  # subscribe to all topics under test
+            mb.subscribe(topic='test', my_callback)  # subscribe to all topics under test
 
         Polling messages instead of subscribing to push:
             You can poll for new messages instead of subscribing to push notifications (which happen
             in a separate thread) using the following example:
 
                 mb = MessageBroker()  # an unnamed connection
-                q = messaging.CallableQueue()  # a queue.Queue object that stores (topic, message) tuples
-                mb.subscribe_message('test', q)  # subscribe to all topics under test
+                # returns a queue.Queue object that stores (topic, message) tuples because callable=None
+                q = mb.subscribe_message(topic='test', callback=None)  # subscribe to all topics under test
                 topic, message = q.get()
                 print(f'Topic {topic} received message {message}')  # Print message
 
