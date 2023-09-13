@@ -759,10 +759,10 @@ class MessageBroker:
             def on_log(client, userdata, level, buf):
                 self.logger.debug("MQTT log: %s", buf)
 
-            @retry(wait=wait_exponential(multiplier=1, max=60), after=after_log(logging.getLogger(__name__), logging.WARNING))
-            def on_disconnect(client, userdata, rc):
-                self.logger.warning("MQTT disconnected with result code %s, attempting reconnect.", str(rc))
-                self._mqtt_connection.reconnect()
+            # @retry(wait=wait_exponential(multiplier=1, max=60), after=after_log(logging.getLogger(__name__), logging.WARNING))
+            # def on_disconnect(client, userdata, rc):
+            #     self.logger.warning("MQTT disconnected with result code %s, attempting reconnect.", str(rc))
+            #     self._mqtt_connection.reconnect()
 
             client_id = f'braingeneerspy-{random.randint(0, 1000)}'
             self._mqtt_connection = mqtt_client.Client(client_id)
@@ -770,6 +770,7 @@ class MessageBroker:
             self._mqtt_connection.on_connect = on_connect
             self._mqtt_connection.on_disconnect = on_disconnect
             self._mqtt_connection.on_log = on_log
+            self._mqtt_connection.reconnect_delay_set(min_delay=1, max_delay=60)
             self._mqtt_connection.connect(host=self._mqtt_endpoint, port=self._mqtt_port, keepalive=15)
             self._mqtt_connection.loop_start()
 
