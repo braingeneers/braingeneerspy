@@ -16,10 +16,34 @@ class DatabaseInteractor:
         - ~/.aws/credentials file exists and contains a section [strapi] with the following keys:
             - endpoint: the URL of the Strapi server
             - api_key: the API key for the Strapi server
+
+    class objects:
+        - __API_object: base class for all objects in the database
+        - __Thing: class for interaction thing objects
+        - __Experiment: class for experiment objects
+        - __Plate: class for plate objects
+        - __Well: class for well objects
+        - __Sample: class for sample objects
+
         
     Public functions:
-
-
+        - empty_trash: deletes all objects with attribute marked_for_deletion set to True
+        - create_interaction_thing: creates a new interaction thing object in the database
+        - create_plate: creates a new plate object in the database
+        - create_experiment: creates a new experiment object in the database
+        - start_image_capture: updates the shadow of the interaction thing with the uuid of the image run
+        - list_objects: returns a list of objects of a given type
+        - list_objects_with_name_and_id: returns a list of dictionaries with the name and id of each object
+        - list_experiments: returns a list of experiment names
+        - list_BioPlateScopes: returns a list of BioPlateScope names and ids
+        - list_devices_by_type: returns a list of device names and ids of a given type
+        - get_device_state: returns the shadow of a device given its id
+        - get_device_state_by_name: returns the shadow of a device given its name
+        - get_device: returns a device object given its id or name
+        - get_plate: returns a plate object given its id
+        - get_experiment: returns an experiment object given its id
+        - get_sample: returns a sample object given its id
+        - get_well: returns a well object given its id
     """
     def __init__(self , credentials: Union[str, io.IOBase] = None, overwrite_endpoint = None, overwrite_api_key = None) -> None:
         # self.endpoint = endpoint
@@ -50,6 +74,7 @@ class DatabaseInteractor:
             self.endpoint = overwrite_endpoint
         if overwrite_api_key:
             self.token = overwrite_api_key
+
     
     class __API_object:
         """
@@ -129,6 +154,7 @@ class DatabaseInteractor:
             url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
             headers = {"Authorization": "Bearer " + self.token}
             data = {"data": self.attributes}
+            # print("pushing data", data)
             response = requests.put(url, headers=headers, json=data)
             # print(response.json())
             # print(response.status_code)
@@ -160,6 +186,39 @@ class DatabaseInteractor:
                 raise Exception("no " + self.api_object_id + " object with name " + name)
             else:
                 self.parse_API_response(response.json()['data'][0])
+          
+        def move_to_trash(self):
+            """
+            marks the object for deletion
+            """
+            url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
+            headers = {"Authorization": "Bearer " + self.token}
+            response = requests.get(url, headers=headers)
+            if len(response.json()['data']) == 0:
+                raise Exception("Object not found")
+            else:
+                self.parse_API_response(response.json()['data'])
+                # self.id = response.json()['data']['id']
+                # self.attributes = response.json()['data']['attributes']
+                self.attributes["marked_for_deletion"] = True
+                # print("marked for deletion")
+                # print(self.attributes)
+                self.push()
+
+        def recover_from_trash(self):
+            """
+            unmarks the object for deletion
+            """
+            url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
+            headers = {"Authorization": "Bearer " + self.token}
+            response = requests.get(url, headers=headers)
+            if len(response.json()['data']) == 0:
+                raise Exception("Object not found")
+            else:
+                self.id = response.json()['data']['id']
+                self.attributes = response.json()['data']['attributes']
+                self.attributes["marked_for_deletion"] = False
+                self.push()
 
     class __Thing(__API_object):
         def __init__(self, endpoint, api_token):
@@ -242,7 +301,32 @@ class DatabaseInteractor:
                 self.attributes["image_parameters"]["uuids"][key] = value
 
             self.push()
-        
+
+        def add_entry_to_ephys_params(self, uuid, channels, timestamp, data_length):
+            if self.attributes["ephys_parameters"] is None:
+                self.attributes["ephys_parameters"] = {}
+              
+            # structure is {"uuids" : {uuid: {"channels": {channel : {"timestamps" : {timestamp: "length : [data_length]}}}
+
+            if "uuids" not in self.attributes["ephys_parameters"] or self.attributes["ephys_parameters"]["uuids"] is None:
+                self.attributes["ephys_parameters"]["uuids"] = {}
+            if uuid not in self.attributes["ephys_parameters"]["uuids"]:
+                self.attributes["ephys_parameters"]["uuids"][uuid] = {}
+            if "channels" not in self.attributes["ephys_parameters"]["uuids"][uuid] or self.attributes["ephys_parameters"]["uuids"][uuid]["channels"] is None:
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"] = {}
+            if channels not in self.attributes["ephys_parameters"]["uuids"][uuid]["channels"]:
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels] = {}
+            if "timestamps" not in self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels] or self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"] is None:
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"] = {}
+            if timestamp not in self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"]:
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp] = {}
+            if "length" not in self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp] or self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp]["length"] is None:
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp]["length"] = []
+            if data_length not in self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp]["length"]:
+                self.attributes["ephys_parameters"]["uuids"][uuid]["channels"][channels]["timestamps"][timestamp]["length"].append(data_length)
+
+            self.push() 
+
         def add_experiment(self, experiment):
             if self.attributes["experiments"] is None:
                 self.attributes["experiments"] = []
@@ -257,6 +341,22 @@ class DatabaseInteractor:
         def __init__(self, endpoint, api_token):
             super().__init__(endpoint, api_token, "samples")
 
+    def empty_trash(self):
+        """
+        delete all objects with attribute marked_for_deletion set to True
+        """
+        object_list = ["interaction-things", "experiments", "plates", "wells", "samples"]
+        for object in object_list:
+          url = self.endpoint + "/"+object+"?filters[marked_for_deletion][$eq]=true&populate=%2A"
+          headers = {"Authorization": "Bearer " + self.token}
+          response = requests.get(url, headers=headers)
+          # print(response.json())
+          # print(response.status_code)
+          for item in response.json()['data']:
+              url = self.endpoint + "/"+object+"/" + str(item['id'])
+              response = requests.delete(url, headers=headers)
+              print("deleted object of type: " + object + " with id " + str(item['id']))
+        
     def create_interaction_thing(self, type, name):
         thing = self.__Thing(self.endpoint, self.token)
         thing.attributes["name"] = name
@@ -305,45 +405,42 @@ class DatabaseInteractor:
         else: 
             #raise exception
             raise Exception("no plate associated with thing")
-
-
-    # a method that returns a list of all experiments by name
-    def list_objects(self, api_object_id, filter = "?"):
+ 
+    def list_objects(self, api_object_id, filter = "?", hide_deleted = True):
         """
         when you need a list of the objects in the database
-
         useful for populating dropdown lists in plotly dash
         """
+        if hide_deleted:
+            filter += "&filters[marked_for_deletion][$eq]=false"
         url = self.endpoint + "/"+  api_object_id + filter +"&populate=%2A"
         headers = {"Authorization": "Bearer " + self.token}
         response = requests.get(url, headers=headers)
-        # print(response.json())
-        # print(response.status_code)
         return response.json()['data']
 
-    def list_objects_with_name_and_id(self, api_object_id, filter = "?"):
+    def list_objects_with_name_and_id(self, api_object_id, filter = "?", hide_deleted = True):
         """
         when you need a list of the objects in the database
 
         returns a list of dictionaries with the name and id of each object
 
         """
-        response = self.list_objects(api_object_id, filter)
+        response = self.list_objects(api_object_id, filter, hide_deleted)
         return [{"label": x["attributes"]["name"], "value": x["id"]} for x in response]
 
-    def list_experiments(self):
-        response = self.list_objects("experiments")
+    def list_experiments(self, hide_deleted = True):
+        response = self.list_objects("experiments", "?", hide_deleted)
         output = []
         for i in response:
             # print(i["attributes"]["name"])
             output.append(i["attributes"]["name"])
         return output
 
-    def list_BioPlateScopes(self):
-        return self.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope")
+    def list_BioPlateScopes(self, hide_deleted = True):
+        return self.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]=BioPlateScope", hide_deleted)
 
-    def list_devices_by_type(self, thingTypeName):
-        return self.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]="+thingTypeName)
+    def list_devices_by_type(self, thingTypeName, hide_deleted = True):
+        return self.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]="+thingTypeName, hide_deleted)
 
     def get_device_state(self, thing_id):
         thing = self.__Thing(self.endpoint, self.token)

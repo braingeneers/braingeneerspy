@@ -24,16 +24,16 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         self.mb_test_device.shutdown()
 
     def test_publish_message_error(self):
-        self.mb.mqtt_connection = MagicMock()
+        self.mb._mqtt_connection = MagicMock()
 
-        # Mock a failed publish
-        mb.mqtt_connection.publish.return_value.rc = 1
+        # Mock a failed publish_message attempt
+        self.mb._mqtt_connection.publish.return_value.rc = 1
 
         with self.assertRaises(messaging.MQTTError):
-            mb.publish_message('test', 'message')
+            self.mb.publish_message('test', 'message')
 
     def test_subscribe_system_messages(self):
-        q = self.mb.subscribe_message('$SYS/#')
+        q = self.mb.subscribe_message('$SYS/#', callback=None)
         self.mb.publish_message('test/unittest', message={'test': 'true'})
 
         t0 = time.time()
@@ -68,6 +68,7 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         message_received_barrier = threading.Barrier(2, timeout=30)
 
         def unittest_subscriber(topic, message):
+            print(f'DEBUG> {topic}: {message}')
             self.assertEqual(topic, 'test/unittest')
             self.assertEqual(message, {'test': 'true'})
             message_received_barrier.wait()  # synchronize between threads

@@ -1,6 +1,7 @@
 import unittest
 from scipy import stats, sparse
 import numpy as np
+from braingeneers import skip_unittest_if_offline
 import braingeneers.analysis as ba
 from collections import namedtuple
 
@@ -31,9 +32,11 @@ def random_spikedata(units, spikes, rate=1.0):
     Generate SpikeData with a given number of units, total number of
     spikes, and overall mean firing rate.
     """
-    times = np.random.rand(spikes) * spikes / rate / units
     idces = np.random.randint(units, size=spikes)
-    return ba.SpikeData(idces, times, length=spikes / rate / units, N=units)
+    times = np.random.rand(spikes) * spikes / rate / units
+    return ba.SpikeData.from_idces_times(
+        idces, times, length=spikes / rate / units, N=units
+    )
 
 
 class SpikeDataTest(unittest.TestCase):
@@ -76,35 +79,35 @@ class SpikeDataTest(unittest.TestCase):
         idces = np.random.randint(5, size=100)
 
         # Test two-argument constructor and spike time list.
-        sd = ba.SpikeData(idces, times, length=100.0)
+        sd = ba.SpikeData.from_idces_times(idces, times, length=100.0)
         self.assertAll(np.sort(times) == list(sd.times))
 
         # Test event-list constructor.
-        sd1 = ba.SpikeData(list(zip(idces, times)))
+        sd1 = ba.SpikeData.from_events(list(zip(idces, times)))
         self.assertSpikeDataEqual(sd, sd1)
 
-        # Test 'list of lists' constructor.
+        # Test base constructor.
         sd2 = ba.SpikeData(sd.train)
         self.assertSpikeDataEqual(sd, sd2)
 
         # Test 'list of Neuron()s' constructor.
         fs = 10
         ns = [Neuron(spike_time=ts * fs, fs=fs * 1e3) for ts in sd.train]
-        sd3 = ba.SpikeData(ns)
+        sd3 = ba.SpikeData.from_mbt_neurons(ns)
         self.assertSpikeDataEqual(sd, sd3)
 
         # Test events.
-        sd4 = ba.SpikeData(list(sd.events))
+        sd4 = ba.SpikeData.from_events(sd.events)
         self.assertSpikeDataEqual(sd, sd4)
 
         # Test idces_times().
-        sd5 = ba.SpikeData(*sd.idces_times())
+        sd5 = ba.SpikeData.from_idces_times(*sd.idces_times())
         self.assertSpikeDataEqual(sd, sd5)
 
         # Test 'NEST SpikeRecorder' constructor, passing in an arange to
         # take the place of the NodeCollection you would usually use.
         recorder = DerpSpikeRecorder(idces, times)
-        sd6 = ba.SpikeData(recorder, np.arange(5))
+        sd6 = ba.SpikeData.from_nest(recorder, np.arange(5))
         self.assertSpikeDataEqual(sd, sd6)
 
         # Test subset() constructor.
@@ -168,15 +171,19 @@ class SpikeDataTest(unittest.TestCase):
         # no matter how many spikes there are.
         N = 10
         length = 1e4
-        sdA = ba.SpikeData(np.zeros(N, int), np.random.rand(N) * length, length=length)
-        sdB = ba.SpikeData(np.zeros(N, int), np.random.rand(N) * length, length=length)
+        sdA = ba.SpikeData.from_idces_times(
+            np.zeros(N, int), np.random.rand(N) * length, length=length
+        )
+        sdB = ba.SpikeData.from_idces_times(
+            np.zeros(N, int), np.random.rand(N) * length, length=length
+        )
         self.assertEqual(sdA.raster().shape, sdB.raster().shape)
 
         # Corner cases of raster binning rules: spikes exactly at
         # 0 end up in the first bin, but other bins should be
         # lower-open and upper-closed.
         ground_truth = [[1, 1, 0, 1]]
-        sd = ba.SpikeData([0, 0, 0], [0, 20, 40])
+        sd = ba.SpikeData([[0, 20, 40]])
         self.assertEqual(sd.length, 40)
         self.assertAll(sd.raster(10) == ground_truth)
 
@@ -210,7 +217,8 @@ class SpikeDataTest(unittest.TestCase):
         # matrix generated is correct.
         ground_truth = np.stack((cellA, cellB, cellC, cellD))
         times, idces = np.where(ground_truth.T)
-        raster = ba.SpikeData(idces, times + 0.5).sparse_raster(bin_size=1)
+        sd = ba.SpikeData.from_idces_times(idces, times + 0.5)
+        raster = sd.sparse_raster(bin_size=1)
         self.assertAll(raster == ground_truth)
 
         # Finally, check the calculated Pearson coefficients to ensure
@@ -250,13 +258,13 @@ class SpikeDataTest(unittest.TestCase):
         # a list of just the one array.
         N = 10000
         ar = np.arange(N)
-        ii = ba.SpikeData(np.zeros(N, int), ar).interspike_intervals()
+        ii = ba.SpikeData.from_idces_times(np.zeros(N, int), ar).interspike_intervals()
         self.assertTrue((ii[0] == 1).all())
         self.assertEqual(len(ii[0]), N - 1)
         self.assertEqual(len(ii), 1)
 
         # Also make sure multiple spike trains do the same thing.
-        ii = ba.SpikeData(ar % 10, ar).interspike_intervals()
+        ii = ba.SpikeData.from_idces_times(ar % 10, ar).interspike_intervals()
         self.assertEqual(len(ii), 10)
         for i in ii:
             self.assertTrue((i == 10).all())
@@ -264,7 +272,7 @@ class SpikeDataTest(unittest.TestCase):
 
         # Finally, check with random ISIs.
         truth = np.random.rand(N)
-        spikes = ba.SpikeData(np.zeros(N, int), truth.cumsum())
+        spikes = ba.SpikeData.from_idces_times(np.zeros(N, int), truth.cumsum())
         ii = spikes.interspike_intervals()
         self.assertClose(ii[0], truth[1:])
 
@@ -444,10 +452,8 @@ class SpikeDataTest(unittest.TestCase):
 
     def test_metadata(self):
         # Make sure there's an error if the metadata is gibberish.
-        self.assertRaises(
-            ValueError,
-            lambda: ba.SpikeData([], N=5, length=100, neuron_data=dict(trash=[47])),
-        )
+        with self.assertRaises(ValueError):
+            ba.SpikeData([], N=5, length=100, neuron_data=dict(trash=[47]))
 
         # Overall propagation testing...
         foo = ba.SpikeData(
@@ -546,19 +552,61 @@ class SpikeDataTest(unittest.TestCase):
         self.assertAll(r.sum(0) == rr.sum(0))
         self.assertAll(r.sum(1) == rr.sum(1))
 
+    def test_best_effort_sample(self):
+        # Make sure it crashes if the requested sample is impossible.
+        weights = np.arange(100) == 42
+        with self.assertRaises(ValueError):
+            ba.best_effort_sample(weights, 10)
 
-class SpikeAttributesTest(unittest.TestCase):
+        # Make sure the same thing works if there are enough entries.
+        weights = 10 * (np.arange(100) == 42)
+        sample = ba.best_effort_sample(weights, 10)
+        self.assertEqual(len(sample), 10)
+        self.assertAll(sample == 42)
+
+        # Make sure it doesn't use replacement if it doesn't have to.
+        weights = np.ones(100)
+        sample = ba.best_effort_sample(weights, 100)
+        self.assertEqual(len(sample), 100)
+        self.assertAll(np.sort(sample) == np.arange(100))
+
+    def test_randomization_issue_13(self):
+        # Having this rate too high is causing a ValueError.
+        rates = np.linspace(0.0, 0.5, 100)
+        r = np.random.rand(len(rates), 1000) < rates[:, np.newaxis]
+        rr = ba.randomize_raster(r)
+        self.assertAll(r.sum(0) == rr.sum(0))
+        self.assertAll(r.sum(1) == rr.sum(1))
+
+        # Also make sure it works on rasters with multiple spikes per bin.
+        r = np.random.randint(10, size=(100, 1000))
+        rr = ba.randomize_raster(r)
+        self.assertAll(r.sum(0) == rr.sum(0))
+        self.assertAll(r.sum(1) == rr.sum(1))
+
+    @skip_unittest_if_offline
     def testSpikeAttributes(self):
         uuid = "2023-04-17-e-causal_v1"
         sd = ba.load_spike_data(uuid)
         self.assertTrue(isinstance(sd, ba.SpikeData))
+        r = sd.raster(1)
+        rr = sd.randomized(1).raster(1)
+        self.assertAll(r.sum(1) == rr.sum(1))
+        self.assertAll(r.sum(0) == rr.sum(0))
 
-    # def testSpikeAttributesExperiment(self):
-    #     uuid = '2023-04-17-e-causal_v1'
-    #     exp = '20230419_160528_rec16169_phy.zip'
-    #     sd = ba.load_spike_data(uuid, exp)
-    #     self.assertTrue(isinstance(sd, ba.SpikeData))
+    @skip_unittest_if_offline
+    def testReadPhyFiles(self):
+        from braingeneers.utils.common_utils import get_basepath
+        from posixpath import join
 
+        uuid = "2023-04-17-e-connectoid16235_CCH"
+        sorter = "kilosort2"
+        file = "Trace_20230418_15_10_08_chip16235_curated_s1.zip"
+        path = join(get_basepath(), "ephys", uuid, "derived", sorter, file)
+        sd = ba.read_phy_files(path)
+        self.assertTrue(isinstance(sd, ba.SpikeData))
+
+    @skip_unittest_if_offline
     def testSpikeAttributesDiffSorter(self):
         uuid = "2023-04-17-e-causal_v1"
         exp = "data_phy.zip"
