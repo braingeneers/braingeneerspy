@@ -39,6 +39,9 @@ dependencies = [
 [tool.hatch.build.hooks.vcs]
 version-file = "src/braingeneers/_version.py"
 
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+
 [project.optional-dependencies]
 data = [
   'h5py',
