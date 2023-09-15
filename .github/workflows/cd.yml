@@ -84,7 +84,7 @@ jobs:
 
 
   publish:
-    needs: [dist]
+    needs: [dist, test-built-dist]
     name: Publish to PyPI
     environment: pypi
     permissions:
