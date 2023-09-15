@@ -43,6 +43,15 @@ version-file = "src/braingeneers/_version.py"
 local_scheme = "no-local-version"
 
 [project.optional-dependencies]
+all = [
+  'braingeneers[data]',
+  'braingeneers[analysis]',
+  'braingeneers[ml]',
+  'braingeneers[iot]',
+  'braingeneers[hengenlab]',
+  'braingeneers[test]',
+  'braingeneers[docs]',
+]
 data = [
   'h5py',
   'smart_open @ git+https://github.com/davidparks21/smart_open.git@develop',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
@@ -73,10 +82,6 @@ hengenlab = [
   'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git',  # channel mapping information
 ]
 test = [
-  "pytest >=6",
-  "pytest-cov >=3",
-]
-dev = [
   "pytest >=6",
   "pytest-cov >=3",
 ]
