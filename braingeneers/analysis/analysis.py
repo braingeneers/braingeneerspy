@@ -833,14 +833,20 @@ class SpikeData:
 
 
     def spike_time_tilings(self, delt=20):
-        '''
+        """
         Compute the full spike time tiling coefficient matrix.
-        '''
+        """
+        T = self.length
+        ts = [_sttc_ta(ts, delt, T) / T for ts in self.train]
+
         ret = np.diag(np.ones(self.N))
         for i in range(self.N):
             for j in range(i + 1, self.N):
-                ret[i, j] = ret[j, i] = self.spike_time_tiling(i, j, delt)
+                ret[i, j] = ret[j, i] = _spike_time_tiling(
+                    self.train[i], self.train[j], ts[i], ts[j], delt
+                )
         return ret
+
 
     def spike_time_tiling(self, i, j, delt=20):
         '''
@@ -1010,7 +1016,11 @@ def spike_time_tiling(tA, tB, delt=20, length=None):
 
     TA = _sttc_ta(tA, delt, length) / length
     TB = _sttc_ta(tB, delt, length) / length
+    return _spike_time_tiling(tA, tB, TA, TB, delt)
 
+
+def _spike_time_tiling(tA, tB, TA, TB, delt):
+    "Internal helper method for the second half of STTC calculation."
     PA = _sttc_na(tA, tB, delt) / len(tA)
     PB = _sttc_na(tB, tA, delt) / len(tB)
 
