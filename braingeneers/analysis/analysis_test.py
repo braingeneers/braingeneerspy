@@ -359,6 +359,7 @@ class SpikeDataTest(unittest.TestCase):
         self.assertEqual(sttc[0, 1], sttc[1, 0])
         self.assertEqual(sttc[0, 0], 1.0)
         self.assertEqual(sttc[1, 1], 1.0)
+        self.assertEqual(sttc[0, 1], foo.spike_time_tiling(0, 1, 1))
 
         # Default arguments, inferred value of tmax.
         tmax = max(foo.train[0].ptp(), foo.train[1].ptp())
