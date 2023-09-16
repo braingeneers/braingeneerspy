@@ -45,7 +45,7 @@ class TestMemoizeS3(unittest.TestCase):
         # We have to fail if memory mapping is requested because it's
         # impossible on S3.
         with self.assertRaises(ValueError):
-            @memoize(mmap_mode=True)
+            @memoize("s3://this-uri-doesnt-matter/", mmap_mode=True)
             def foo(x): return x
 
     @skip_unittest_if_offline
@@ -54,3 +54,19 @@ class TestMemoizeS3(unittest.TestCase):
         with self.assertRaises(ClientError):
             @memoize("s3://i-sure-hope-this-crazy-bucket-doesnt-exist/")
             def foo(x): return x
+
+    @skip_unittest_if_offline
+    def test_default_location_requires_s3_user_but_custom_doesnt(self):
+        # The default location should require S3_USER to be set, but a custom
+        # location shouldn't ever check the value of the variable.
+        with mock.patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(KeyError):
+                @memoize()
+                def foo(x): return x
+
+            @memoize("s3://braingeneersdev/unittest/cache")
+            def foo(x): return x
+
+            # Get rid of the directory which will have been created by the
+            # successful creation of that memoized function.
+            foo.store_backend.clear()
