@@ -844,29 +844,10 @@ class SpikeData:
 
     def spike_time_tiling(self, i, j, delt=20):
         '''
-        Given the indices of two units of interest, compute the spike
-        time tiling coefficient [1], a metric for causal relationships
-        between spike trains with some improved intuitive properties
-        compared to the Pearson correlation coefficient.
-        [1] Cutts & Eglen. Detecting pairwise correlations in spike
-            trains: An objective comparison of methods and application
-            to the study of retinal waves. J Neurosci 34:43,
-            14288–14303 (2014).
+        Calculate the spike time tiling coefficient between two units within
+        this SpikeData.
         '''
-        tA, tB = self.train[i], self.train[j]
-
-        if len(tA) == 0 or len(tB) == 0:
-            return 0.0
-
-        TA = _sttc_ta(tA, delt, self.length) / self.length
-        TB = _sttc_ta(tB, delt, self.length) / self.length
-
-        PA = _sttc_na(tA, tB, delt) / len(tA)
-        PB = _sttc_na(tB, tA, delt) / len(tB)
-
-        aa = (PA - TB) / (1 - PA * TB) if PA * TB != 1 else 0
-        bb = (PB - TA) / (1 - PB * TA) if PB * TA != 1 else 0
-        return (aa + bb) / 2
+        return spike_time_tiling(self.train[i], self.train[j], delt, self.length)
 
     def avalanches(self, thresh, bin_size=40):
         '''
@@ -983,7 +964,6 @@ class SpikeData:
         :param window_ms: window in ms
         :return: 2d list, each row is a list of latencies per neuron
         '''
-
         return self.latencies(self.train[i], window_ms)
 
     def randomized(self, bin_size=1.0, seed=None):
@@ -999,6 +979,9 @@ class SpikeData:
         if sm.max() > 1:
             logger.warning(f"Discretizing at {bin_size = }ms aliases some spikes.")
 
+        # Calculate a randomized raster and convert the times to continuous
+        # units. Note the offset of bin_size/2 to make it clear which bin
+        # each spike belongs to.
         idces, times = np.nonzero(randomize_raster(sm, seed))
         times_ms = times*bin_size + bin_size/2
         return SpikeData.from_idces_times(
@@ -1007,6 +990,33 @@ class SpikeData:
             neuron_attributes=self.neuron_attributes
         )
 
+
+def spike_time_tiling(tA, tB, delt=20, length=None):
+    """
+    Calculate the spike time tiling coefficient [1] between two spike trains.
+    STTC is a metric for correlation between spike trains with some improved
+    intuitive properties compared to the Pearson correlation coefficient.
+    Spike trains are lists of spike times sorted in ascending order.
+
+    [1] Cutts & Eglen. Detecting pairwise correlations in spike trains:
+        An objective comparison of methods and application to the study of
+        retinal waves. J Neurosci 34:43, 14288–14303 (2014).
+    """
+    if length is None:
+        length = max(tA[-1], tB[-1])
+
+    if len(tA) == 0 or len(tB) == 0:
+        return 0.0
+
+    TA = _sttc_ta(tA, delt, length) / length
+    TB = _sttc_ta(tB, delt, length) / length
+
+    PA = _sttc_na(tA, tB, delt) / len(tA)
+    PB = _sttc_na(tB, tA, delt) / len(tB)
+
+    aa = (PA - TB) / (1 - PA * TB) if PA * TB != 1 else 0
+    bb = (PB - TA) / (1 - PB * TA) if PB * TA != 1 else 0
+    return (aa + bb) / 2
 
 
 def best_effort_sample(counts, M, rng=np.random):
