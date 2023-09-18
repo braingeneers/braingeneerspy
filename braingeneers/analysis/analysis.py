@@ -200,7 +200,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
         amp = np.max(temp, axis=1) - np.min(temp, axis=1)
         sorted_idx = [ind for _, ind in sorted(zip(amp, np.arange(len(amp))))]
         nbgh_chan_idx = sorted_idx[::-1][:12]
-        nbgh_temps = temp[sorted_idx]
+        nbgh_temps = temp[nbgh_chan_idx]
         nbgh_channels = channels[nbgh_chan_idx]
         nbgh_postions = [tuple(positions[idx]) for idx in nbgh_chan_idx]
         neuron_attributes.append(
@@ -288,7 +288,7 @@ def read_phy_files(path: str, fs=20000.0):
         amp = np.max(temp, axis=0) - np.min(temp, axis=0)
         sorted_idx = [ind for _, ind in sorted(zip(amp, np.arange(len(amp))))]
         nbgh_chan_idx = sorted_idx[::-1][:12]
-        nbgh_temps = temp.transpose()[sorted_idx]
+        nbgh_temps = temp.transpose()[nbgh_chan_idx]
         best_chan_temp = nbgh_temps[0]
         nbgh_channels = channels[nbgh_chan_idx]
         nbgh_postions = [tuple(positions[idx]) for idx in nbgh_chan_idx]
@@ -382,6 +382,26 @@ class SpikeData:
                          N=N, **kwargs)
 
     @staticmethod
+    def from_raster(raster, bin_size_ms, **kwargs):
+        """
+        Create a SpikeData object based on a spike raster matrix with shape
+        (N, T), where T is a number of time bins. Note that spike aliasing
+        will occur if the raster has any entries greater than 1, rather than
+        allowing multiple spikes to occur at exactly the same time.
+
+        All metadata parameters of the regular constructor are accepted.
+        """
+        N, T = raster.shape
+        if raster.max() > 1:
+            logger.warning("raster has multiple spikes per bin; some will be lost")
+        idces, times = raster.nonzero()
+        # Put all spikes in the middle of the bin to make it clear which bin
+        # the spikes belong to.
+        times_ms = times * bin_size_ms + bin_size_ms / 2
+        kwargs.setdefault('length', T * bin_size_ms)
+        return SpikeData.from_idces_times(idces, times_ms, N, **kwargs)
+
+    @staticmethod
     def from_nest(spike_recorder, nodes, neuron_data={}, **kwargs):
         """
         Create a SpikeData object from a NEST spike recorder. The second
@@ -469,14 +489,8 @@ class SpikeData:
         if hysteresis:
             raster = np.diff(np.array(raster, dtype=int), axis=1) == 1
 
-        unit_idces, time_indices = np.nonzero(raster)
-        times_ms = time_indices / fs_Hz * 1e3
-        N = data.shape[0]
-        fs_kHz = fs_Hz / 1e3
-
-        return SpikeData(_train_from_i_t_list(unit_idces, times_ms, N),
-                         N=N, length=data.shape[1] / fs_kHz,
-                         raw_data=data, raw_time=fs_kHz)
+        return SpikeData.from_raster(raster, 1e3 / fs_Hz,
+                                     raw_data=data, raw_time=fs_Hz / 1e3)
 
 
     def __init__(self, train, *, N=None, length=None,
@@ -833,40 +847,27 @@ class SpikeData:
 
 
     def spike_time_tilings(self, delt=20):
-        '''
+        """
         Compute the full spike time tiling coefficient matrix.
-        '''
+        """
+        T = self.length
+        ts = [_sttc_ta(ts, delt, T) / T for ts in self.train]
+
         ret = np.diag(np.ones(self.N))
         for i in range(self.N):
             for j in range(i + 1, self.N):
-                ret[i, j] = ret[j, i] = self.spike_time_tiling(i, j, delt)
+                ret[i, j] = ret[j, i] = _spike_time_tiling(
+                    self.train[i], self.train[j], ts[i], ts[j], delt
+                )
         return ret
+
 
     def spike_time_tiling(self, i, j, delt=20):
         '''
-        Given the indices of two units of interest, compute the spike
-        time tiling coefficient [1], a metric for causal relationships
-        between spike trains with some improved intuitive properties
-        compared to the Pearson correlation coefficient.
-        [1] Cutts & Eglen. Detecting pairwise correlations in spike
-            trains: An objective comparison of methods and application
-            to the study of retinal waves. J Neurosci 34:43,
-            14288–14303 (2014).
+        Calculate the spike time tiling coefficient between two units within
+        this SpikeData.
         '''
-        tA, tB = self.train[i], self.train[j]
-
-        if len(tA) == 0 or len(tB) == 0:
-            return 0.0
-
-        TA = _sttc_ta(tA, delt, self.length) / self.length
-        TB = _sttc_ta(tB, delt, self.length) / self.length
-
-        PA = _sttc_na(tA, tB, delt) / len(tA)
-        PB = _sttc_na(tB, tA, delt) / len(tB)
-
-        aa = (PA - TB) / (1 - PA * TB) if PA * TB != 1 else 0
-        bb = (PB - TA) / (1 - PB * TA) if PB * TA != 1 else 0
-        return (aa + bb) / 2
+        return spike_time_tiling(self.train[i], self.train[j], delt, self.length)
 
     def avalanches(self, thresh, bin_size=40):
         '''
@@ -983,10 +984,9 @@ class SpikeData:
         :param window_ms: window in ms
         :return: 2d list, each row is a list of latencies per neuron
         '''
-
         return self.latencies(self.train[i], window_ms)
 
-    def randomized(self, bin_size=1.0, seed=None):
+    def randomized(self, bin_size_ms=1.0, seed=None):
         '''
         Create a new SpikeData object which preserves the population
         rate and mean firing rate of each neuron in an existing
@@ -995,18 +995,44 @@ class SpikeData:
         '''
         # Collect the spikes of the original Spikedata and define a new
         # "randomized spike matrix" to store them in.
-        sm = self.sparse_raster(bin_size)
-        if sm.max() > 1:
-            logger.warning(f"Discretizing at {bin_size = }ms aliases some spikes.")
-
-        idces, times = np.nonzero(randomize_raster(sm, seed))
-        times_ms = times*bin_size + bin_size/2
-        return SpikeData.from_idces_times(
-            idces, times_ms, length=self.length, N=self.N,
-            metadata=self.metadata, neuron_data=self._neuron_data,
+        return SpikeData.from_raster(
+            randomize_raster(self.sparse_raster(bin_size_ms), seed=seed),
+            bin_size_ms, length=self.length, metadata=self.metadata,
+            neuron_data=self._neuron_data,
             neuron_attributes=self.neuron_attributes
         )
 
+
+def spike_time_tiling(tA, tB, delt=20, length=None):
+    """
+    Calculate the spike time tiling coefficient [1] between two spike trains.
+    STTC is a metric for correlation between spike trains with some improved
+    intuitive properties compared to the Pearson correlation coefficient.
+    Spike trains are lists of spike times sorted in ascending order.
+
+    [1] Cutts & Eglen. Detecting pairwise correlations in spike trains:
+        An objective comparison of methods and application to the study of
+        retinal waves. J Neurosci 34:43, 14288–14303 (2014).
+    """
+    if length is None:
+        length = max(tA[-1], tB[-1])
+
+    if len(tA) == 0 or len(tB) == 0:
+        return 0.0
+
+    TA = _sttc_ta(tA, delt, length) / length
+    TB = _sttc_ta(tB, delt, length) / length
+    return _spike_time_tiling(tA, tB, TA, TB, delt)
+
+
+def _spike_time_tiling(tA, tB, TA, TB, delt):
+    "Internal helper method for the second half of STTC calculation."
+    PA = _sttc_na(tA, tB, delt) / len(tA)
+    PB = _sttc_na(tB, tA, delt) / len(tB)
+
+    aa = (PA - TB) / (1 - PA * TB) if PA * TB != 1 else 0
+    bb = (PB - TA) / (1 - PB * TA) if PB * TA != 1 else 0
+    return (aa + bb) / 2
 
 
 def best_effort_sample(counts, M, rng=np.random):
