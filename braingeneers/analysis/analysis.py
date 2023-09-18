@@ -385,12 +385,18 @@ class SpikeData:
     def from_raster(raster, bin_size_ms, **kwargs):
         """
         Create a SpikeData object based on a spike raster matrix with shape
-        (N, T), where T is a number of time bins.
+        (N, T), where T is a number of time bins. Note that spike aliasing
+        will occur if the raster has any entries greater than 1, rather than
+        allowing multiple spikes to occur at exactly the same time.
 
         All metadata parameters of the regular constructor are accepted.
         """
         N, T = raster.shape
+        if raster.max() > 1:
+            logger.warning("raster has multiple spikes per bin; some will be lost")
         idces, times = raster.nonzero()
+        # Put all spikes in the middle of the bin to make it clear which bin
+        # the spikes belong to.
         times_ms = times * bin_size_ms + bin_size_ms / 2
         kwargs.setdefault('length', T * bin_size_ms)
         return SpikeData.from_idces_times(idces, times_ms, N, **kwargs)
@@ -980,7 +986,7 @@ class SpikeData:
         '''
         return self.latencies(self.train[i], window_ms)
 
-    def randomized(self, bin_size=1.0, seed=None):
+    def randomized(self, bin_size_ms=1.0, seed=None):
         '''
         Create a new SpikeData object which preserves the population
         rate and mean firing rate of each neuron in an existing
@@ -989,16 +995,9 @@ class SpikeData:
         '''
         # Collect the spikes of the original Spikedata and define a new
         # "randomized spike matrix" to store them in.
-        sm = self.sparse_raster(bin_size)
-        if sm.max() > 1:
-            logger.warning(f"Discretizing at {bin_size = }ms aliases some spikes.")
-
-        # Calculate a randomized raster and convert the times to continuous
-        # units. Note the offset of bin_size/2 to make it clear which bin
-        # each spike belongs to.
         return SpikeData.from_raster(
-            randomize_raster(sm, seed=seed), bin_size,
-            length=self.length, metadata=self.metadata,
+            randomize_raster(self.sparse_raster(bin_size_ms), seed=seed),
+            bin_size_ms, length=self.length, metadata=self.metadata,
             neuron_data=self._neuron_data,
             neuron_attributes=self.neuron_attributes
         )
