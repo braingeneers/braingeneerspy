@@ -1352,7 +1352,7 @@ def generate_metadata_mearec(batch_uuid: str, experiment_prefix: str = '', n_thr
     Generates metadata.json from MEArec data files on S3 from a standard UUID.
 
     Assumes data files are stored in:
-        ${ENDPOINT}/ephys/YYYY-MM-DD-e-[descriptor]/original/experiments/*.raw
+        ${ENDPOINT}/ephys/YYYY-MM-DD-e-[descriptor]/original/experiments/*.h5
         (ENDPOINT defaults to s3://braingeneers)
 
     Limitations:
