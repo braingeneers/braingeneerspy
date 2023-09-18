@@ -382,6 +382,20 @@ class SpikeData:
                          N=N, **kwargs)
 
     @staticmethod
+    def from_raster(raster, bin_size_ms, **kwargs):
+        """
+        Create a SpikeData object based on a spike raster matrix with shape
+        (N, T), where T is a number of time bins.
+
+        All metadata parameters of the regular constructor are accepted.
+        """
+        N, T = raster.shape
+        idces, times = raster.nonzero()
+        times_ms = times * bin_size_ms + bin_size_ms / 2
+        kwargs.setdefault('length', T * bin_size_ms)
+        return SpikeData.from_idces_times(idces, times_ms, N, **kwargs)
+
+    @staticmethod
     def from_nest(spike_recorder, nodes, neuron_data={}, **kwargs):
         """
         Create a SpikeData object from a NEST spike recorder. The second
@@ -469,14 +483,8 @@ class SpikeData:
         if hysteresis:
             raster = np.diff(np.array(raster, dtype=int), axis=1) == 1
 
-        unit_idces, time_indices = np.nonzero(raster)
-        times_ms = time_indices / fs_Hz * 1e3
-        N = data.shape[0]
-        fs_kHz = fs_Hz / 1e3
-
-        return SpikeData(_train_from_i_t_list(unit_idces, times_ms, N),
-                         N=N, length=data.shape[1] / fs_kHz,
-                         raw_data=data, raw_time=fs_kHz)
+        return SpikeData.from_raster(raster, 1e3 / fs_Hz,
+                                     raw_data=data, raw_time=fs_Hz / 1e3)
 
 
     def __init__(self, train, *, N=None, length=None,
@@ -988,11 +996,10 @@ class SpikeData:
         # Calculate a randomized raster and convert the times to continuous
         # units. Note the offset of bin_size/2 to make it clear which bin
         # each spike belongs to.
-        idces, times = np.nonzero(randomize_raster(sm, seed))
-        times_ms = times*bin_size + bin_size/2
-        return SpikeData.from_idces_times(
-            idces, times_ms, length=self.length, N=self.N,
-            metadata=self.metadata, neuron_data=self._neuron_data,
+        return SpikeData.from_raster(
+            randomize_raster(sm, seed=seed), bin_size,
+            length=self.length, metadata=self.metadata,
+            neuron_data=self._neuron_data,
             neuron_attributes=self.neuron_attributes
         )
 
