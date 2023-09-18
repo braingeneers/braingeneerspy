@@ -15,7 +15,7 @@ from collections import namedtuple
 import time
 from braingeneers.utils import s3wrangler, errors
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Tuple, Union, Iterable, Iterator
+from typing import List, Tuple, Union, Iterable, Iterator, Optional, Any
 from nptyping import NDArray, Int16, Float16, Float32, Float64
 import io
 import braingeneers
@@ -177,8 +177,6 @@ def load_data(metadata: dict,
         data = load_data_axion(metadata, batch_uuid, experiment_str, channels, offset, length)
     elif hardware == 'Intan':
         data = load_data_intan(metadata, batch_uuid, experiment_str, channels, offset, length)
-    # elif hardware == 'MEArec':
-    #     data = load_data_mearec()
     elif hardware == 'Maxwell':
         # Check if all experiments in this UUID have been converted to row-major format already
         # Data has to be converted to row-major after recording in a batch process using `h5repack`
@@ -1328,12 +1326,16 @@ def _axion_get_data(file_name, file_data_start_position,
 #         self.keys_ordered.append(value)
 #         self.dict[value] = value
 
-def verify_previous_is_same(f1_value, f2_value, f1, f2, var_name):
+def verify_previous_is_same(f1_value: Any, f2_value: Optional[Any], f1: str, f2: str, var_name: str):
     """
-    Checks that verify_this_value is empty or equal to value.
+    Checks that f1_value == f2_value, if f2_value exists.  This function either returns f1_value or raises.
 
-    Used to sanity check that multiple files in an experiment folder have,
-    for example, the same gain, offset, etc.
+    f1 & f2 are the file names holding the variable values, and var_name is the name of the value.
+    f1, f2, and var_name are only used to write a clear error message if the check fails.
+
+    When reading files in s3 to write a fresh metadata file, this function can be used to sanity check
+    that all files in that folder have the same (assumed) metadata.  For example, all files in a folder
+    must have the same gain, offset, etc.
     """
     if not f2_value:
         return f1_value
