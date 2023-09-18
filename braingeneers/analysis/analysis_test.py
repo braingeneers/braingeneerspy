@@ -110,6 +110,14 @@ class SpikeDataTest(unittest.TestCase):
         sd6 = ba.SpikeData.from_nest(recorder, np.arange(5))
         self.assertSpikeDataEqual(sd, sd6)
 
+        # Test the raster constructor. We can't expect equality because of
+        # finite bin size, but we can check equality for the rasters.
+        bin_size = 1.0
+        r = sd.raster(bin_size) != 0
+        r2 = ba.SpikeData.from_raster(r, bin_size).raster(bin_size)
+        print(r - r2)
+        self.assertAll(r == r2)
+
         # Test subset() constructor.
         idces = [1, 2, 3]
         sdsub = sd.subset(idces)
@@ -529,9 +537,8 @@ class SpikeDataTest(unittest.TestCase):
     def test_isi_methods(self):
         # Try creating an ISI histogram to make sure it works. If all
         # spikes are accounted for, the 100 spikes turn into 99 ISIs.
-        # sd = ba.SpikeData([1e3*np.random.rand(1000)], length=1e3)
-        # self.assertAlmostEqual(sd.isi_skewness()[0], 2, 1)
-        pass
+        sd = ba.SpikeData([1e3*np.random.rand(1000)], length=1e3)
+        self.assertAlmostEqual(sd.isi_skewness()[0], 2, 1)
 
     def test_latencies(self):
         a = ba.SpikeData([[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]])
