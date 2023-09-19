@@ -1,11 +1,13 @@
-import os
 import glob
-import boto3
-import awswrangler as wr
+import os
 from functools import partial
+
+import awswrangler as wr
+import boto3
+from joblib import Memory, register_store_backend
+from joblib._store_backends import StoreBackendBase, StoreBackendMixin
 from smart_open.s3 import parse_uri
-from joblib import register_store_backend, Memory
-from joblib._store_backends import StoreBackendBase, StoreBackendMixin, CacheItemInfo
+
 from .smart_open_braingeneers import open
 
 
