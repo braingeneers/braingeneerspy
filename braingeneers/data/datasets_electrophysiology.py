@@ -1435,3 +1435,40 @@ def generate_metadata_mearec(batch_uuid: str, experiment_prefix: str = '', n_thr
             json.dump(metadata, f, indent=2)
 
     return metadata
+
+
+def load_data_mearec_single_file(h5_file: str, channels: Optional[Iterable[int]] = None, length: Optional[int] = None):
+    """
+    Returns an h5py.Dataset of "length" # of datapoints for the selection of "channels" provided.
+
+    If "channels" is None, return the entire h5py.Dataset.  If "length" is None, return each entire channel.
+    """
+    with smart_open.open(h5_file, 'rb') as fid:
+        with h5py.File(fid, "r") as f:
+            if channels and length:
+                return np.array(f['recordings'][channels, :length])  # overall channels concatenated or per file?
+            elif channels:
+                return np.array(f['recordings'][channels, :])
+            else:
+                return np.array(f['recordings'])
+
+
+def load_data_mearec(batch_uuid: str, experiment: Optional[str] = None, channels: Optional[Iterable[int]] = None, length: Optional[int] = None) -> NDArray[Int16]:
+    """
+    Reads the MEArec data format and returns data for an experiment for selected channels, at the selected length.
+
+    Note: MEArec data always has an offset of 0.
+
+    :param batch_uuid: uuid, example: 2023-08-29-e-mearec-6cells-tetrode
+    :param experiment: unused; only one experiment is currently assumed for MEArec data
+    :param channels: a list of channels
+    :param length: data read length in frames (e.g. data points, agnostic of channel count)
+    """
+    with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'r') as f:
+        metadata = json.load(f)
+    recordings = list()
+    for experiment in metadata['ephys_experiments']:
+        for block in experiment['blocks']:
+            recordings.append(load_data_mearec_single_file(block['path'], channels=channels, length=length))
+
+    return np.concatenate(recordings, axis=1)
