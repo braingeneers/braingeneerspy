@@ -2,6 +2,7 @@ import os
 import glob
 import boto3
 import awswrangler as wr
+from functools import partial
 from smart_open.s3 import parse_uri
 from joblib import register_store_backend, Memory
 from joblib._store_backends import StoreBackendBase, StoreBackendMixin, CacheItemInfo
@@ -18,7 +19,6 @@ def s3_isdir(path):
         return True
     except StopIteration:
         return False
-
 
 
 class S3StoreBackend(StoreBackendBase, StoreBackendMixin):
@@ -92,16 +92,17 @@ class S3StoreBackend(StoreBackendBase, StoreBackendMixin):
         )
 
 
-def memoize(location=None, backend="s3", **kwargs):
+def memoize(
+    location=None, backend="s3", ignore=None, cache_validation_callback=None, **kwargs
+):
     """
     Memoize a function to S3 using joblib.Memory. By default, saves to
     `s3://braingeneersdev/$S3_USER/cache`, but this can be configured by
     explicitly providing a cache directory.
 
-    Also accepts all the same keyword arguments as `joblib.Memory`, including
-    `backend` which can be set to "local" to recover default behavior. The
-    keyword arguments of `joblib.Memory.cache()` can also be used by doubly
-    invoking the decorator. Usage examples:
+    Accepts all the same keyword arguments as `joblib.Memory`, including `backend`,
+    which can be set to "local" to recover default behavior. Also accepts the
+    keyword arguments of `joblib.Memory.cache()` and passes them on. Usage:
 
     ```
     from braingeneers.utils.memoize_s3 import memoize
@@ -117,7 +118,7 @@ def memoize(location=None, backend="s3", **kwargs):
         return x
 
     # Ignore some parameters when deciding which cache entry to check.
-    @memoize()(ignore=["verbose"])
+    @memoize(ignore=["verbose"])
     def plover(x, verbose):
         if verbose: ...
         return x
@@ -135,7 +136,11 @@ def memoize(location=None, backend="s3", **kwargs):
     if location is None and backend == "s3":
         location = f"s3://braingeneersdev/{os.environ['S3_USER']}/cache"
 
-    return Memory(location, backend=backend, **kwargs).cache
+    return partial(
+        Memory(location, backend=backend, **kwargs).cache,
+        ignore=ignore,
+        cache_validation_callback=cache_validation_callback,
+    )
 
 
 register_store_backend("s3", S3StoreBackend)
