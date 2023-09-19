@@ -92,8 +92,8 @@ def memoize(
 ):
     """
     Memoize a function to S3 using joblib.Memory. By default, saves to
-    `s3://braingeneersdev/$S3_USER/cache`, but this can be configured by
-    explicitly providing a cache directory.
+    `s3://braingeneersdev/$S3_USER/cache`, where $S3_USER defaults to "common" if unset.
+    Alternately, the cache directory can be provided explicitly.
 
     Accepts all the same keyword arguments as `joblib.Memory`, including `backend`,
     which can be set to "local" to recover default behavior. Also accepts the
@@ -138,7 +138,8 @@ def memoize(
         )(location)
 
     if location is None and backend == "s3":
-        location = f"s3://braingeneersdev/{os.environ['S3_USER']}/cache"
+        user = os.environ.get("S3_USER", "common")
+        location = f"s3://braingeneersdev/{user}/cache"
 
     return partial(
         Memory(location, backend=backend, **kwargs).cache,

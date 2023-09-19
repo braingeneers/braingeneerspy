@@ -1,7 +1,8 @@
-import os
 import unittest
-from botocore.exceptions import ClientError
 from unittest import mock
+
+from botocore.exceptions import ClientError
+
 from .configure import skip_unittest_if_offline
 from .memoize_s3 import memoize
 
@@ -17,6 +18,10 @@ class TestMemoizeS3(unittest.TestCase):
                 nonlocal side_effect
                 side_effect += 1
                 return x
+
+            self.assertEqual(
+                foo.store_backend.location, "s3://braingeneersdev/unittest/cache/joblib"
+            )
 
             # Call it a few times and make sure it only runs once.
             foo.clear()
@@ -37,36 +42,50 @@ class TestMemoizeS3(unittest.TestCase):
     def test_uri_validation(self):
         # Our backend only supports S3 URIs.
         with self.assertRaises(ValueError):
+
             @memoize("this has to start with s3://")
-            def foo(x): return x
+            def foo(x):
+                return x
 
     @skip_unittest_if_offline
     def test_cant_mmap(self):
         # We have to fail if memory mapping is requested because it's
         # impossible on S3.
         with self.assertRaises(ValueError):
+
             @memoize("s3://this-uri-doesnt-matter/", mmap_mode=True)
-            def foo(x): return x
+            def foo(x):
+                return x
 
     @skip_unittest_if_offline
     def test_bucket_existence(self):
         # Bucket existence should be checked at creation.
         with self.assertRaises(ClientError):
+
             @memoize("s3://i-sure-hope-this-crazy-bucket-doesnt-exist/")
-            def foo(x): return x
+            def foo(x):
+                return x
 
     @skip_unittest_if_offline
-    def test_default_location_requires_s3_user_but_custom_doesnt(self):
-        # The default location should require S3_USER to be set, but a custom
-        # location shouldn't ever check the value of the variable.
+    def test_default_location(self):
+        # Make sure a default location is correctly set when S3_USER is not.
         with mock.patch.dict("os.environ", {}, clear=True):
-            with self.assertRaises(KeyError):
-                @memoize()
-                def foo(x): return x
 
-            @memoize("s3://braingeneersdev/unittest/cache")
-            def foo(x): return x
+            @memoize()
+            def foo(x):
+                return x
 
-            # Get rid of the directory which will have been created by the
-            # successful creation of that memoized function.
-            foo.store_backend.clear()
+            self.assertEqual(
+                foo.store_backend.location, "s3://braingeneersdev/common/cache/joblib"
+            )
+
+    @skip_unittest_if_offline
+    def test_custom_location(self):
+        # Make sure custom locations get set correctly.
+        @memoize("s3://braingeneersdev/unittest/cache")
+        def foo(x):
+            return x
+
+        self.assertEqual(
+            foo.store_backend.location, "s3://braingeneersdev/unittest/cache/joblib"
+        )
