@@ -45,7 +45,10 @@ class S3StoreBackend(StoreBackendBase, StoreBackendMixin):
         pass
 
     def clear_location(self, location):
-        # Recursive delete.
+        # This should only ever be used for prefixes contained within a joblib cache
+        # directory, so make sure that's actually happening before deleting.
+        if not location.startswith(self.location):
+            raise ValueError("can only clear locations within the cache directory")
         wr.s3.delete_objects(glob.escape(location))
 
     def get_items(self):
