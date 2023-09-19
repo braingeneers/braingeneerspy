@@ -1,11 +1,7 @@
 """ Global package functions and helpers for Braingeneers specific configuration and package management. """
+import distutils.util
 import functools
 import os
-from typing import List, Tuple, Union, Iterable, Iterator
-import re
-import itertools
-import importlib
-import distutils.util
 
 
 """
@@ -42,6 +38,7 @@ DEPENDENCIES = {
         'pandas',
         'nptyping',
         'paho-mqtt',
+        'joblib',
     ],
     # Specific dependency groups allow unnecessary (and often large) dependencies to be skipped
     # add dependency groups here, changes will be dynamically added to setup(...)
