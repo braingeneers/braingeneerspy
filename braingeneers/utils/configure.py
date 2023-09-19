@@ -38,7 +38,7 @@ DEPENDENCIES = {
         'pandas',
         'nptyping',
         'paho-mqtt',
-        'joblib',
+        'joblib>=1.3.0',
     ],
     # Specific dependency groups allow unnecessary (and often large) dependencies to be skipped
     # add dependency groups here, changes will be dynamically added to setup(...)

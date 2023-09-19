@@ -47,17 +47,7 @@ class S3StoreBackend(StoreBackendBase, StoreBackendMixin):
         wr.s3.delete_objects(glob.escape(location))
 
     def get_items(self):
-        return [
-            CacheItemInfo(
-                key,
-                item["ContentLength"],
-                # This is supposed to be an access date, but it only gets used
-                # this way for LRU caching, so it's not a big deal to use the
-                # modified time instead.
-                item["LastModified"],
-            )
-            for key, item in wr.s3.describe_objects(self.location).items()
-        ]
+        return []
 
     def configure(self, location, verbose, backend_options={}):
         # We don't do any logging yet, but `configure()` must accept this
@@ -125,13 +115,22 @@ def memoize(
     ```
 
     If the bucket doesn't exist, an error will be raised, but if the only
-    problem is permissions, silent failure to cache may be all that occurs
+    problem is permissions, silent failure to cache may be all that occurs,
     depending on the verbosity setting.
+
+    Another known issue is that size-based cache eviction is NOT supported,
+    and will also silently fail. This is because there is no easy way to get
+    access times out of S3, so we can't find LRU entries.
     """
     if callable(location):
         # This case probably means the @memoize decorator was used without
         # arguments, but pass the kwargs on anyway just in case.
-        return memoize(**kwargs)(location)
+        return memoize(
+            backend=backend,
+            ignore=ignore,
+            cache_validation_callback=cache_validation_callback,
+            **kwargs,
+        )(location)
 
     if location is None and backend == "s3":
         location = f"s3://braingeneersdev/{os.environ['S3_USER']}/cache"
