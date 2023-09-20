@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import json
 import warnings
-import copy
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,9 +12,9 @@ import braingeneers.utils.smart_open_braingeneers as smart_open
 from os import walk
 from collections import namedtuple
 import time
-from braingeneers.utils import s3wrangler, errors
+from braingeneers.utils import s3wrangler
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Tuple, Union, Iterable, Iterator, Optional, Any
+from typing import List, Union, Iterable
 from nptyping import NDArray, Int16, Float16, Float32, Float64
 import io
 import braingeneers
