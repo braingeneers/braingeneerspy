@@ -14,7 +14,7 @@ from collections import namedtuple
 import time
 from braingeneers.utils import s3wrangler
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Union, Iterable
+from typing import List, Union, Iterable, Optional
 from nptyping import NDArray, Int16, Float16, Float32, Float64
 import io
 import braingeneers
@@ -1420,38 +1420,27 @@ def generate_metadata_mearec(batch_uuid: str, n_threads: int = 16, save: bool = 
     return metadata
 
 
-def load_data_mearec_single_file(h5_file: str, channels: Optional[Iterable[int]] = None, length: Optional[int] = None):
+def load_data_mearec(batch_uuid: str, channels: Optional[Iterable[int]] = None, length: Optional[int] = None) -> NDArray[Int16]:
     """
-    Returns an h5py.Dataset of "length" # of datapoints for the selection of "channels" provided.
+    Reads the MEArec data format and returns data for the selected channels, at the selected length.
 
-    If "channels" is None, return the entire h5py.Dataset.  If "length" is None, return each entire channel.
+    Note: MEArec data always has an offset of 0.
+    Note: We currently assume (and enforce) that there is only one file (and this experiment) per MEArec UUID.
+
+    :param batch_uuid: uuid, example: 2023-08-29-e-mearec-6cells-tetrode
+    :param channels: a list of channels
+    :param length: data read length in frames (e.g. data points, agnostic of channel count)
     """
+    h5_file = load_metadata(batch_uuid=batch_uuid)['ephys_experiments']['experiment0']['blocks'][0]['path']
     with smart_open.open(h5_file, 'rb') as fid:
         with h5py.File(fid, "r") as f:
             if channels and length:
-                return np.array(f['recordings'][channels, :length])  # overall channels concatenated or per file?
+                return np.array(f['recordings'][channels, :length])
             elif channels:
                 return np.array(f['recordings'][channels, :])
             else:
                 return np.array(f['recordings'])
 
-
-def load_data_mearec(batch_uuid: str, experiment: Optional[str] = None, channels: Optional[Iterable[int]] = None, length: Optional[int] = None) -> NDArray[Int16]:
-    """
-    Reads the MEArec data format and returns data for an experiment for selected channels, at the selected length.
-
-    Note: MEArec data always has an offset of 0.
-
-    :param batch_uuid: uuid, example: 2023-08-29-e-mearec-6cells-tetrode
-    :param experiment: unused; only one experiment is currently assumed for MEArec data
-    :param channels: a list of channels
-    :param length: data read length in frames (e.g. data points, agnostic of channel count)
-    """
-    with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'r') as f:
-        metadata = json.load(f)
-    recordings = list()
-    for experiment in metadata['ephys_experiments']:
-        for block in experiment['blocks']:
-            recordings.append(load_data_mearec_single_file(block['path'], channels=channels, length=length))
-
-    return np.concatenate(recordings, axis=1)
+data = load_data_mearec("2023-08-29-e-mearec-6cells-tetrode", channels=[1, 2], length=4)
+print(data)
+# assert np.array()

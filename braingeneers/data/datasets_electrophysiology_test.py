@@ -156,6 +156,13 @@ class MEArecReaderTests(unittest.TestCase):
         # validate json serializability
         json.dumps(metadata)
 
+    @skip_unittest_if_offline
+    def test_online_mearec_generate_data(self):
+        """
+        Metadata json output should be this with different timestamps:
+        """
+        data = ephys.load_data_mearec(self.batch_uuid, channels=[1, 2], length=4)
+
 
 class AxionReaderTests(unittest.TestCase):
     """
