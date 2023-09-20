@@ -1361,8 +1361,7 @@ def generate_metadata_mearec(batch_uuid: str, n_threads: int = 16, save: bool = 
     :param batch_uuid: standard ephys UUID
     :param n_threads: Currently unused; number of concurrent file reads (useful for parsing many network based files)
     :param save: bool (default == False) saves the generated metadata file back to S3/ENDPOINT at batch_uuid
-    :return: (metadata_json: dict, ephys_experiments: dict) a tuple of two dictionaries which are
-        json serializable to metadata.json and experiment1.json.
+    :return: metadata_json: dict
     """
     h5_file = get_mearec_h5_recordings_file(batch_uuid)
     current_time = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%dT%H:%M:%S')
