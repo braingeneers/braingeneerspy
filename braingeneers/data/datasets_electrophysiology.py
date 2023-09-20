@@ -1433,7 +1433,7 @@ def load_data_mearec(batch_uuid: str, channels: Optional[Iterable[int]] = None, 
     :param channels: a list of channels
     :param length: data read length in frames (e.g. data points, agnostic of channel count)
     """
-    h5_file = load_metadata(batch_uuid=batch_uuid)['ephys_experiments']['experiment0']['blocks'][0]['path']
+    h5_file = get_mearec_h5_recordings_file(batch_uuid=batch_uuid)
     with smart_open.open(h5_file, 'rb') as fid:
         with h5py.File(fid, "r") as f:
             if channels and length:
@@ -1442,7 +1442,3 @@ def load_data_mearec(batch_uuid: str, channels: Optional[Iterable[int]] = None, 
                 return np.array(f['recordings'][channels, :])
             else:
                 return np.array(f['recordings'])
-
-data = load_data_mearec("2023-08-29-e-mearec-6cells-tetrode", channels=[1, 2], length=4)
-print(data)
-# assert np.array()

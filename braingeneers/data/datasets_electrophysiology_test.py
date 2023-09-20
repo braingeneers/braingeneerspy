@@ -163,6 +163,10 @@ class MEArecReaderTests(unittest.TestCase):
         Metadata json output should be this with different timestamps:
         """
         data = ephys.load_data_mearec(self.batch_uuid, channels=[1, 2], length=4)
+        assert data.tolist() == [[24.815574645996094, 9.68782901763916,   -5.6944580078125,   13.871763229370117],
+                                 [-7.700503349304199, 0.8792770504951477, -15.32259750366211, -6.081937789916992]]
+        data = ephys.load_data_mearec(self.batch_uuid, channels=[1], length=2)
+        assert data.tolist() == [[24.815574645996094, 9.68782901763916]]
 
 
 class AxionReaderTests(unittest.TestCase):
