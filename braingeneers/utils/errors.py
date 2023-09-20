@@ -1,2 +1,0 @@
-class ConflictingExperimentData(Exception):
-    pass
