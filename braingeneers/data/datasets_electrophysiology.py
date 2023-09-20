@@ -1435,9 +1435,9 @@ def load_data_mearec(batch_uuid: str, channels: Optional[Iterable[int]] = None, 
     h5_file = get_mearec_h5_recordings_file(batch_uuid=batch_uuid)
     with smart_open.open(h5_file, 'rb') as fid:
         with h5py.File(fid, "r") as f:
-            if channels and length:
+            if channels is not None and length is not None:
                 return np.array(f['recordings'][channels, :length])
-            elif channels:
+            elif channels is not None:
                 return np.array(f['recordings'][channels, :])
             else:
                 return np.array(f['recordings'])
