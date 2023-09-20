@@ -140,7 +140,7 @@ class MEArecReaderTests(unittest.TestCase):
         metadata = ephys.generate_metadata_mearec(self.batch_uuid)
         experiment0 = metadata['ephys_experiments']
 
-        self.assertTrue(isinstance(metadata.get('notes'), str))
+        self.assertTrue(isinstance(metadata.get('notes').get('comments'), str))
         self.assertTrue('timestamp' in metadata)
         self.assertEqual(metadata['uuid'], self.batch_uuid)
         self.assertEqual(experiment0['hardware'], 'MEArec Simulated Recording')
