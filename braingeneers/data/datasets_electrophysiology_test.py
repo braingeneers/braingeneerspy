@@ -160,10 +160,10 @@ class MEArecReaderTests(unittest.TestCase):
     @skip_unittest_if_offline
     def test_online_mearec_generate_data(self):
         """Ensure that MEArec data loads correctly."""
-        data = ephys.load_data_mearec(self.batch_uuid, channels=[1, 2], length=4)
+        data = ephys.load_data_mearec(ephys.load_metadata(self.batch_uuid), self.batch_uuid, channels=[1, 2], length=4)
         assert data.tolist() == [[24.815574645996094, 9.68782901763916,   -5.6944580078125,   13.871763229370117],
                                  [-7.700503349304199, 0.8792770504951477, -15.32259750366211, -6.081937789916992]]
-        data = ephys.load_data_mearec(self.batch_uuid, channels=[1], length=2)
+        data = ephys.load_data_mearec(ephys.load_metadata(self.batch_uuid), self.batch_uuid, channels=[1], length=2)
         assert data.tolist() == [[24.815574645996094, 9.68782901763916]]
 
 
