@@ -7,7 +7,9 @@
 
 Welcome to the **Braingeneers Python Utilities** repository! This package collects and provides various Python code and utilities developed as part of the Braingeneers project. The package adheres to the Python Package Authority (PyPA) standards for package structure and organization.
 
-# Development/Contribution
+## Contribution
+
+We welcome contributions from collaborators and researchers interested in our work. If you have improvements, suggestions, or new findings to share, please submit a pull request. Your contributions help advance our research and analysis efforts.
 
 To get started with your development (or fork), click the "Open with GitHub Codespaces" button below to launch a fully configured development environment with all the necessary tools and extensions.
 
@@ -152,3 +154,21 @@ Please note that this will only work on jobs run in the PRP environment. Setting
 ### Notes
 
 - `braingeneerspy` is compatible with `smart_open` version 5.1.0. If you encounter issues, make sure to use this version for compatibility.
+
+## Documentation
+
+The docs directory has been set up using `sphinx-build -M html docs/source/ docs/build/` to create a base project Documentation structure. You can add inline documentation (NumPy style) to further enrich our project's documentation. To render the documentation locally, navigate to the `docs/build/html` folder in the terminal and run `python3 -m http.server`.
+
+## Working in Codespaces
+
+### Project Structure
+
+- **src/:** This folder contains scripts and notebooks representing completed work by the team.
+
+- **pyproject.toml:** This file follows the guidelines from [PyPA](https://packaging.python.org/tutorials/packaging-projects/) for documenting project setup information.
+
+### Customizing the Devcontainer
+
+The `devcontainer.json` file allows you to customize your Codespace container and VS Code environment using extensions. You can add more extensions to tailor the environment to your specific needs. Explore the VS Code extensions marketplace for additional tools that may enhance your workflow.
+
+For more information about Braingeneers, visit our [website](https://braingeneers.ucsc.edu/).
