@@ -95,7 +95,7 @@ def list_sorted_files(uuid, basepath=None):
 
 
 def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=20000.0,
-                    groups_to_load=["good", "mua", "", "unsorted"], sorter='kilosort2'):
+                    groups_to_load=["good", "mua", "", np.nan, "unsorted"], sorter='kilosort2'):
     """
     Loads spike data from a dataset.
 
@@ -110,18 +110,18 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
     if experiment is None:
         experiment = ""
     prefix = f'ephys/{uuid}/derived/{sorter}/{experiment}'
-    logger.info('prefix:', prefix)
+    logger.info('prefix: %s', prefix)
     path = posixpath.join(basepath, prefix)
 
 
     if full_path is not None:
         experiment = full_path.split('/')[-1].split('.')[0]
-        logger.info('Using full path, experiment:', experiment)
+        logger.info('Using full path, experiment: %s', experiment)
         path = full_path
     else:
 
         if path.startswith('s3://'):
-            logger.info('Using s3 path for experiment:', experiment)
+            logger.info('Using s3 path for experiment: %s', experiment)
             # If path is an s3 path, use wrangler
             file_list = s3wrangler.list_objects(path)
 
@@ -135,7 +135,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
             path = zip_files[0]
 
         else:
-            logger.info('Using local path for experiment:', experiment)
+            logger.info('Using local path for experiment: %s', experiment)
             # If path is a local path, check locally
             file_list = glob.glob(path + '*.zip')
 
@@ -176,6 +176,7 @@ def load_spike_data(uuid, experiment=None, basepath=None, full_path=None, fs=200
                 cluster_id = np.array(cluster_info['cluster_id'])
                 labeled_clusters = cluster_id[cluster_info['group'].isin(groups_to_load)]
             else:
+                logger.info("No cluster_info.tsv file found. Generating blank labels.")
                 labeled_clusters = np.unique(clusters)
                 # Generate blank labels
                 cluster_info = pd.DataFrame({"cluster_id": labeled_clusters, "group": [""] * len(labeled_clusters)})
