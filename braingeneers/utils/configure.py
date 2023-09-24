@@ -9,7 +9,7 @@ Preconfigure remote filesystem access
 Default S3 endpoint/bucket_name, note this can be overridden with the environment variable ENDPOINT_URL
     or by calling set_default_endpoint(...). Either an S3 endpoint or local path can be used.
 """
-DEFAULT_ENDPOINT = "https://s3-west.nrp-nautilus.io"  # PRP/S3/CEPH default
+DEFAULT_ENDPOINT = "https://s3.braingeneers.gi.ucsc.edu"  # PRP/S3/CEPH default
 CURRENT_ENDPOINT = None
 _open = None  # a reference to the current smart_open function that is configured this should not be used directly
 
