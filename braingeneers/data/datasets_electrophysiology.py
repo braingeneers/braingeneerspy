@@ -14,7 +14,7 @@ from collections import namedtuple
 import time
 from braingeneers.utils import s3wrangler
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Union, Iterable
+from typing import List, Union, Iterable, Optional
 from nptyping import NDArray, Int16, Float16, Float32, Float64
 import io
 import braingeneers
@@ -116,9 +116,17 @@ def load_data(metadata: dict,
               dtype: Union[str, NDArray[Int16, Float16, Float32, Float64]] = 'float32',
               parallelism: (str, int) = 'auto'):
     """
-    This function loads arbitrarily specified amounts of data from an experiment for Axion, Intan, Raspi, and Maxwell.
+    This function loads arbitrarily specified amounts of data from an experiment for:
+     - Axion
+     - Intan
+     - Raspi
+     - Maxwell
+     - Hengenlab
+     - MEArec
+
     As a note, the user MUST provide the offset (offset) and the length of frames to take. This function reads
     across as many blocks as the length specifies.
+
     :param metadata: result of load_metadata, dict
     :param experiment: Which experiment in the batch to load, by name (string) or index location (int),
         examples: "experiment1" or 0
@@ -176,6 +184,9 @@ def load_data(metadata: dict,
         data = load_data_axion(metadata, batch_uuid, experiment_str, channels, offset, length)
     elif hardware == 'Intan':
         data = load_data_intan(metadata, batch_uuid, experiment_str, channels, offset, length)
+    elif hardware == 'MEArec':
+        # offset is always "0"; experiment is always "experiment0"
+        data = load_data_intan(metadata, batch_uuid, channels, length)
     elif hardware == 'Maxwell':
         # Check if all experiments in this UUID have been converted to row-major format already
         # Data has to be converted to row-major after recording in a batch process using `h5repack`
@@ -1419,3 +1430,30 @@ def generate_metadata_mearec(batch_uuid: str, n_threads: int = 16, save: bool = 
             json.dump(metadata, f, indent=2)
 
     return metadata
+
+
+def load_data_mearec(
+        metadata: dict,
+        batch_uuid: str,
+        channels: Optional[Iterable[int]] = None,
+        length: Optional[int] = None
+) -> NDArray[Int16]:
+    """
+    Reads the MEArec data format and returns data for the selected channels, at the selected length.
+
+    Note: MEArec data always has an offset of 0.
+    Note: We currently assume (and enforce) that there is only one file (and this experiment) per MEArec UUID.
+
+    :param batch_uuid: uuid, example: 2023-08-29-e-mearec-6cells-tetrode
+    :param channels: a list of channels
+    :param length: data read length in frames (e.g. data points, agnostic of channel count)
+    """
+    h5_file = metadata['ephys_experiments']['experiment0']['blocks'][0]['path']
+    with smart_open.open(h5_file, 'rb') as fid:
+        with h5py.File(fid, "r") as f:
+            if channels is not None and length is not None:
+                return np.array(f['recordings'][channels, :length])
+            elif channels is not None:
+                return np.array(f['recordings'][channels, :])
+            else:
+                return np.array(f['recordings'])
