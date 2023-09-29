@@ -243,7 +243,7 @@ def load_window(metadata, exp, window, dtype=np.float32, channels=None):
     sig_offset = 512
     
     # print("Loading window: ", window)
-    data = ephys.load_data(metadata, exp, offset=window[0],
+    data = load_data(metadata, exp, offset=window[0],
                             length=window[1]-window[0], dtype= dtype,
                             channels = channels)
     return (data -sig_offset) * lsb * gain*1000 # last is for V to mV
@@ -283,7 +283,11 @@ def load_windows(metadata, exp, window_centers, window_sz, dtype=np.float16,
         # Check if window is out of bounds
         if window[0] < 0 or window[1] > dataset_length:
             print("Window out of bounds, inserting zeros for window",window)
-            data_temp = np.zeros((data_temp.shape[0],window_sz),dtype=dtype)
+            try:
+                data_temp = np.zeros((data_temp.shape[0],window_sz),dtype=dtype)
+            except Exception as e:
+                print(e)
+                data_temp = load_window(metadata, exp, window, dtype=dtype, channels=channels)
         else:
             data_temp = load_window(metadata, exp, window, dtype=dtype, channels=channels)
         
