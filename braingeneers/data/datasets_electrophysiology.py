@@ -3,13 +3,13 @@ from __future__ import annotations
 import os
 import json
 import warnings
+import copy
 
 import matplotlib.pyplot as plt
 import numpy as np
 import shutil
 import h5py
 import braingeneers.utils.smart_open_braingeneers as smart_open
-from os import walk
 from collections import namedtuple
 import time
 from braingeneers.utils import s3wrangler
@@ -819,7 +819,7 @@ def paths_2_each_exp(data_dir):
     try:
         objs = s3wrangler.list_objects(data_dir)  # if on s3
     except:
-        objs = next(walk(data_dir), (None, None, []))[2]  # if on local dir
+        objs = next(os.walk(data_dir), (None, None, []))[2]  # if on local dir
     return objs
 
 
@@ -1461,3 +1461,64 @@ def load_data_mearec(
                 return np.array(f['recordings'][channels, :])
             else:
                 return np.array(f['recordings'])
+
+
+def generate_metadata_maxwell(batch_uuid: str, experiment_prefix: Optional[str] = None, n_threads: int = 16,
+                              save: bool = False):
+    """
+    Currently modifies metadata.json, if it already exists and is found for an associated Maxwell UUID.
+
+    TODO: Generates a new metadata.json if it doesn't already exist from raw Maxwell data files on S3 from a standard UUID.
+      Assume raw data files are stored in:
+        ${ENDPOINT}/ephys/YYYY-MM-DD-e-[descriptor]/original/experiments/*.raw.h5
+        (ENDPOINT defaults to s3://braingeneers)
+
+    Raise a NotImplemented exception if no metadata.json is found.
+
+    Limitations:
+     - timestamps are not taken from the original data files, the current time is used.
+
+    :param batch_uuid: standard ephys UUID
+    :param experiment_prefix: Experiments are named "A1", "A2", ..., "B1", "B2", etc. If multiple recordings are
+        included in a UUID the experiment name can be prefixed, for example "recording1_A1", "recording2_A1"
+        for separate recordings. It is suggested to end the prefix with "_" for readability.
+    :param n_threads: number of concurrent file reads (useful for parsing many network based files)
+    :param save: bool (default == False) saves the generated metadata file back to S3/ENDPOINT at batch_uuid
+
+    :return: (metadata_json: dict, ephys_experiments: dict) a tuple of two dictionaries which are
+        json serializable to metadata.json and experiment1.json.
+    """
+    try:
+        with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'r') as f:
+            metadata_json = json.load(f)
+    except OSError as e:
+        if 'error occurred (NoSuchKey)' in str(e) or '[Errno 2] No such file or directory' in str(e):
+            raise NotImplementedError(f'This function did not find a metadata.json for {batch_uuid}, and '
+                                      f'can only modify an existing metadata.json.')
+        raise
+
+    current_timestamp = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%dT%H:%M:%S')
+    new_metadata_json = copy.deepcopy(metadata_json)
+    new_metadata_json['timestamp'] = current_timestamp  # TODO: replace all timestamps?  i.e. experiments, blocks...
+
+    for experiment_name, experiment_data in metadata_json['ephys_experiments'].items():
+        if experiment_prefix is None or experiment_name.startswith(experiment_prefix):
+            if not new_metadata_json.get('hardware'):
+                new_metadata_json['hardware'] = experiment_data['hardware']
+
+            if experiment_data.get('hardware'):
+                assert new_metadata_json['hardware'] == experiment_data['hardware']
+                del new_metadata_json['ephys_experiments'][experiment_name]['hardware']
+
+            for i, block in enumerate(experiment_data['blocks']):
+                if block['path'].endswith('.raw.h5'):
+                    nwb_filepath = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'shared', block['path'][:len('.raw.h5')] + '.nwb')
+                    if s3wrangler.does_object_exist(nwb_filepath):
+                        new_metadata_json['ephys_experiments'][experiment_name]['blocks'][i]['path'] = nwb_filepath
+                        new_metadata_json['ephys_experiments'][experiment_name]['data_format'] = 'NeurodataWithoutBorders'
+
+    if save:
+        with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
+            json.dump(metadata_json, f, indent=2)
+
+    return metadata_json
