@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import collections
+import copy
 import functools
 import os
 import json
@@ -1360,20 +1361,39 @@ def generate_metadata_maxwell(batch_uuid: str, experiment_prefix: str = '', n_th
     :return: (metadata_json: dict, ephys_experiments: dict) a tuple of two dictionaries which are
         json serializable to metadata.json and experiment1.json.
     """
+    does_object_exist(location)
     try:
-        with smart_open.open(posixpath.join('s3://braingeneers', 'ephys', 'x', 'metadata.json'), 'r') as f:
+        with smart_open.open(posixpath.join('s3://braingeneers', 'ephys', batch_uuid, 'metadata.json'), 'r') as f:
             metadata_json = json.load(f)
     except OSError as e:
         if 'error occurred (NoSuchKey)' in str(e) or '[Errno 2] No such file or directory' in str(e):
             raise NotImplementedError(f'This function did not find a metadata.json for {batch_uuid}, and '
                                       f'can only modify an existing metadata.json.')
-        else:
-            raise
+        raise
 
     current_timestamp = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%dT%H:%M:%S')
+    new_metadata_json = copy.deepcopy(metadata_json)
+    new_metadata_json['timestamp'] = current_timestamp
 
-    # update metadata.json
-    metadata_json['timestamp'] = current_timestamp
+    for experiment_name, experiment_data in metadata_json['ephys_experiments'].items():
+        if not new_metadata_json.get('hardware'):
+            new_metadata_json['hardware'] = experiment_data['hardware']
+
+        if experiment_data.get('hardware'):
+            assert new_metadata_json['hardware'] == experiment_data['hardware']
+            del new_metadata_json['ephys_experiments'][experiment_name]['hardware']
+
+        for i, block in experiment_data['blocks']:
+            if experiment_data['blocks'][0]['path'].endswith('.raw.h5'):
+                nwb_filepath = posixpath.join('s3://braingeneers', 'ephys', batch_uuid, 'shared', experiment_data['blocks'][0]['path'][:len('.raw.h5')] + '.nwb')
+                try:
+                    with smart_open.open(nwb_filepath, 'r') as f:
+                        one_byte = f.read(1)
+                    new_metadata_json['ephys_experiments'][experiment_name]['blocks'][i]['path'] = nwb_filepath
+                except OSError as e:
+                    if 'error occurred (NoSuchKey)' in str(e) or '[Errno 2] No such file or directory' in str(e):
+                        pass  # don't update the file paths or file types, as there is no NWB file to replace it with
+                    raise
 
     if save:
         with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
