@@ -8,6 +8,7 @@ import smart_open
 import boto3
 import numpy as np
 
+from unittest.mock import patch
 
 class MaxwellReaderTests(unittest.TestCase):
 
@@ -104,6 +105,24 @@ class MaxwellReaderTests(unittest.TestCase):
             offset = 14.75 * fs
             length = int((time_to - time_from) * fs)
             ephys.load_data(metadata=metadata, experiment=0, offset=offset, length=length)
+
+    def test_modify_maxwell_metadata(self):
+        """Update an older Maxwell metadata json with new metadata and NWB file paths, if they exist."""
+        with open('test_data/maxwell-metadata.old.json', 'r') as f:
+            metadata = json.load(f)
+            # use mock to ensure that new NWB files ALWAYS exist
+            with patch('__main__.s3wrangler.does_object_exist') as mock_does_object_exist:
+                mock_does_object_exist.return_value = True
+                modified_metadata = ephys.modify_metadata_maxwell_raw_to_nwb(metadata)
+        assert isinstance(modified_metadata['timestamp'], str)
+        assert len(modified_metadata['timestamp']) == len('2023-10-05T18:10:02')
+        modified_metadata['timestamp'] = ''
+
+        with open('test_data/maxwell-metadata.expected.json', 'r') as f:
+            expected_metadata = json.load(f)
+            expected_metadata['timestamp'] = ''
+
+        assert modified_metadata == expected_metadata
 
 
 class MEArecReaderTests(unittest.TestCase):

@@ -1463,8 +1463,53 @@ def load_data_mearec(
                 return np.array(f['recordings'])
 
 
-def generate_metadata_maxwell(batch_uuid: str, experiment_prefix: Optional[str] = None, n_threads: int = 16,
-                              save: bool = False):
+def modify_metadata_maxwell_raw_to_nwb(metadata_json: dict):
+    """
+    Given a Maxwell-based metadata dictionary, update key values to the current metadata structure, and replace
+    raw Maxwell file paths (".raw.h5") with NWB file paths, if they exist.
+
+    For example, the input:
+      {"timestamp": "2023-08-12 T15:01:19",
+       "ephys_experiments": {"experiment name 1": {"hardware": "Maxwell",
+                                                   "blocks": [{"path": "original/data/data_GABA_BL_20325.raw.h5"}]}},
+                            {"experiment name 2": {"hardware": "Maxwell",
+                                                   "blocks": [{"path": "original/data/data_GABA_BL_20326.raw.h5"}]}}}
+
+      would return:
+
+      {"timestamp": "2023-08-12 T15:01:19",
+       "hardware": "Maxwell",
+       "ephys_experiments": {"experiment name 1": {"data_format": "NeurodataWithoutBorders",
+                                                   "blocks": [{"path": "shared/data_GABA_BL_20325.nwb"}]}},
+                            {"experiment name 2": {"data_format": "NeurodataWithoutBorders",
+                                                   "blocks": [{"path": "shared/data_GABA_BL_20326.nwb"}]}}}
+
+    Assuming that both "shared/data_GABA_BL_20325.nwb" and "shared/data_GABA_BL_20326.nwb" exist.
+    """
+    current_timestamp = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%dT%H:%M:%S')
+    new_metadata_json = copy.deepcopy(metadata_json)
+    new_metadata_json['timestamp'] = current_timestamp  # TODO: replace all timestamps?  i.e. experiments, blocks...
+
+    for experiment_name, experiment_data in metadata_json['ephys_experiments'].items():
+        if not new_metadata_json.get('hardware'):
+            new_metadata_json['hardware'] = experiment_data['hardware']
+
+        if experiment_data.get('hardware'):
+            assert new_metadata_json['hardware'] == experiment_data['hardware']
+            del new_metadata_json['ephys_experiments'][experiment_name]['hardware']
+
+        for i, block in enumerate(experiment_data['blocks']):
+            if block['path'].endswith('.raw.h5') and 'original/data/' in block['path']:
+                nwb_filepath = block['path'][:-len('.raw.h5')] + '.nwb'
+                nwb_filepath = 'shared/' + nwb_filepath.split('original/data/')[-1]
+                full_s3_nwb_filepath = posixpath.join(get_basepath(), 'ephys', metadata_json['uuid'], nwb_filepath)
+                if s3wrangler.does_object_exist(full_s3_nwb_filepath):
+                    new_metadata_json['ephys_experiments'][experiment_name]['blocks'][i]['path'] = nwb_filepath
+                    new_metadata_json['ephys_experiments'][experiment_name]['data_format'] = 'NeurodataWithoutBorders'
+    return new_metadata_json
+
+
+def generate_metadata_maxwell(batch_uuid: str, experiment_prefix: Optional[str] = None, n_threads: int = 16, save: bool = False):
     """
     Currently modifies metadata.json, if it already exists and is found for an associated Maxwell UUID.
 
@@ -1479,10 +1524,8 @@ def generate_metadata_maxwell(batch_uuid: str, experiment_prefix: Optional[str] 
      - timestamps are not taken from the original data files, the current time is used.
 
     :param batch_uuid: standard ephys UUID
-    :param experiment_prefix: Experiments are named "A1", "A2", ..., "B1", "B2", etc. If multiple recordings are
-        included in a UUID the experiment name can be prefixed, for example "recording1_A1", "recording2_A1"
-        for separate recordings. It is suggested to end the prefix with "_" for readability.
-    :param n_threads: number of concurrent file reads (useful for parsing many network based files)
+    :param experiment_prefix: Unused currently.
+    :param n_threads: Unused currently.  Number of concurrent file reads (useful for parsing many network based files).
     :param save: bool (default == False) saves the generated metadata file back to S3/ENDPOINT at batch_uuid
 
     :return: (metadata_json: dict, ephys_experiments: dict) a tuple of two dictionaries which are
@@ -1497,25 +1540,7 @@ def generate_metadata_maxwell(batch_uuid: str, experiment_prefix: Optional[str] 
                                       f'can only modify an existing metadata.json.')
         raise
 
-    current_timestamp = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%dT%H:%M:%S')
-    new_metadata_json = copy.deepcopy(metadata_json)
-    new_metadata_json['timestamp'] = current_timestamp  # TODO: replace all timestamps?  i.e. experiments, blocks...
-
-    for experiment_name, experiment_data in metadata_json['ephys_experiments'].items():
-        if experiment_prefix is None or experiment_name.startswith(experiment_prefix):
-            if not new_metadata_json.get('hardware'):
-                new_metadata_json['hardware'] = experiment_data['hardware']
-
-            if experiment_data.get('hardware'):
-                assert new_metadata_json['hardware'] == experiment_data['hardware']
-                del new_metadata_json['ephys_experiments'][experiment_name]['hardware']
-
-            for i, block in enumerate(experiment_data['blocks']):
-                if block['path'].endswith('.raw.h5'):
-                    nwb_filepath = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'shared', block['path'][:len('.raw.h5')] + '.nwb')
-                    if s3wrangler.does_object_exist(nwb_filepath):
-                        new_metadata_json['ephys_experiments'][experiment_name]['blocks'][i]['path'] = nwb_filepath
-                        new_metadata_json['ephys_experiments'][experiment_name]['data_format'] = 'NeurodataWithoutBorders'
+    metadata_json = modify_metadata_maxwell_raw_to_nwb(metadata_json)
 
     if save:
         with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
