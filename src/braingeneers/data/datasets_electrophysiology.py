@@ -1,30 +1,24 @@
 from __future__ import annotations
 
-import collections
-import functools
 import os
 import json
 import warnings
 
-import requests
 import matplotlib.pyplot as plt
 import numpy as np
 import shutil
 import h5py
 import braingeneers.utils.smart_open_braingeneers as smart_open
 from os import walk
-from deprecated import deprecated
 from collections import namedtuple
 import time
 from braingeneers.utils import s3wrangler
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Tuple, Union, Iterable, Iterator
+from typing import List, Union, Iterable, Optional
 from nptyping import NDArray, Int16, Float16, Float32, Float64
 import io
 import braingeneers
 from braingeneers.utils import common_utils
-from collections import OrderedDict
-# import sortedcontainers
 import itertools
 import posixpath
 import pandas as pd
@@ -122,9 +116,17 @@ def load_data(metadata: dict,
               dtype: Union[str, NDArray[Int16, Float16, Float32, Float64]] = 'float32',
               parallelism: (str, int) = 'auto'):
     """
-    This function loads arbitrarily specified amounts of data from an experiment for Axion, Intan, Raspi, and Maxwell.
+    This function loads arbitrarily specified amounts of data from an experiment for:
+     - Axion
+     - Intan
+     - Raspi
+     - Maxwell
+     - Hengenlab
+     - MEArec
+
     As a note, the user MUST provide the offset (offset) and the length of frames to take. This function reads
     across as many blocks as the length specifies.
+
     :param metadata: result of load_metadata, dict
     :param experiment: Which experiment in the batch to load, by name (string) or index location (int),
         examples: "experiment1" or 0
@@ -182,6 +184,9 @@ def load_data(metadata: dict,
         data = load_data_axion(metadata, batch_uuid, experiment_str, channels, offset, length)
     elif hardware == 'Intan':
         data = load_data_intan(metadata, batch_uuid, experiment_str, channels, offset, length)
+    elif hardware == 'MEArec':
+        # offset is always "0"; experiment is always "experiment0"
+        data = load_data_intan(metadata, batch_uuid, channels, length)
     elif hardware == 'Maxwell':
         # Check if all experiments in this UUID have been converted to row-major format already
         # Data has to be converted to row-major after recording in a batch process using `h5repack`
@@ -243,7 +248,7 @@ def load_window(metadata, exp, window, dtype=np.float32, channels=None):
     sig_offset = 512
     
     # print("Loading window: ", window)
-    data = ephys.load_data(metadata, exp, offset=window[0],
+    data = load_data(metadata, exp, offset=window[0],
                             length=window[1]-window[0], dtype= dtype,
                             channels = channels)
     return (data -sig_offset) * lsb * gain*1000 # last is for V to mV
@@ -283,7 +288,11 @@ def load_windows(metadata, exp, window_centers, window_sz, dtype=np.float16,
         # Check if window is out of bounds
         if window[0] < 0 or window[1] > dataset_length:
             print("Window out of bounds, inserting zeros for window",window)
-            data_temp = np.zeros((data_temp.shape[0],window_sz),dtype=dtype)
+            try:
+                data_temp = np.zeros((data_temp.shape[0],window_sz),dtype=dtype)
+            except Exception as e:
+                print(e)
+                data_temp = load_window(metadata, exp, window, dtype=dtype, channels=channels)
         else:
             data_temp = load_window(metadata, exp, window, dtype=dtype, channels=channels)
         
@@ -436,7 +445,7 @@ def load_data_maxwell(metadata, batch_uuid, experiment: str, channels, start, le
             table = 'sig' if 'sig' in h5file.keys() else '/data_store/data0000/groups/routed/raw'
             dataset = h5file[table]
             if channels is not None:
-                sorted_channels = np.sort(channels) 
+                sorted_channels = np.sort(channels)
                 undo_sort_channels = np.argsort(np.argsort(channels))
 
                 dataset = dataset[sorted_channels, start:frame_end]
@@ -826,7 +835,7 @@ def connect_kach_dir():
 # Usage. Supply the batch_name for the batch you would like to download.
 # If not downloaded into the local kach dir, it will be downloaded to improve loading time
 def sync_s3_to_kach(batch_name):
-    sync_command = f"aws --endpoint $ENDPOINT_URL s3 sync s3://braingeneers/ephys/" + batch_name + f" /home/jovyan/Projects/maxwell_analysis/ephys/" + batch_name
+    sync_command = f"aws --endpoint $ENDPOINT_URL s3 sync s3://braingeneers/ephys/{batch_name} /home/jovyan/Projects/maxwell_analysis/ephys/{batch_name}"
     os.system(sync_command)
 
 
@@ -1330,3 +1339,125 @@ def _axion_get_data(file_name, file_data_start_position,
 #     def __add__(self, value):
 #         self.keys_ordered.append(value)
 #         self.dict[value] = value
+
+
+def get_mearec_h5_recordings_file(batch_uuid: str):
+    """
+    Returns the filepath to the MEArec .h5/.hdf5 recordings file for the given UUID.
+
+    Assumes (and enforces) that exactly one data file is stored:
+        ${ENDPOINT}/ephys/YYYY-MM-DD-e-[descriptor]/original/experiments/recordings_*.h5 ( or "recordings_*.hdf5")
+        (ENDPOINT defaults to s3://braingeneers)
+    """
+    path = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original/data/')
+    data_files = s3wrangler.list_objects(path=path, suffix=['.h5', '.hdf5'])
+    # filter out the "templates_" prefix and any other unneeded provenance files
+    h5_files = [f for f in data_files if f[len(path):].startswith('recordings_')]
+
+    if len(h5_files) == 0:
+        raise FileNotFoundError(f'No recordings_*.h5 / recordings_*.hdf5 files '
+                                f'found in {get_basepath()}/ephys/{batch_uuid}/original/data/ !')
+
+    if len(h5_files) > 1:
+        raise FileNotFoundError(f'More than one recordings_*.h5 / recordings_*.hdf5 file was '
+                                f'found in {get_basepath()}/ephys/{batch_uuid}/original/data/ !  '
+                                f'Only one recordings_*.h5 / recordings_*.hdf5 file (and exactly one) '
+                                f'per UUID for MEArec is currently supported.')
+    return h5_files[0]
+
+
+def generate_metadata_mearec(batch_uuid: str, n_threads: int = 16, save: bool = False):
+    """
+    Generates metadata.json from MEArec data on S3 from a standard UUID.
+
+    Limitations:
+     - timestamps are not taken from the original data files, the current time is used.
+
+    :param batch_uuid: standard ephys UUID
+    :param n_threads: Currently unused; number of concurrent file reads (useful for parsing many network based files)
+    :param save: bool (default == False) saves the generated metadata file back to S3/ENDPOINT at batch_uuid
+    :return: metadata_json: dict
+    """
+    h5_file = get_mearec_h5_recordings_file(batch_uuid)
+    current_time = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%dT%H:%M:%S')
+
+    with smart_open.open(h5_file, 'rb') as fid:
+        with h5py.File(fid, "r") as f:
+            sampling_frequency = f["info"]["recordings"]["fs"][()]
+            if isinstance(sampling_frequency, bytes):
+                sampling_frequency = sampling_frequency.decode("utf-8")
+            elif isinstance(sampling_frequency, np.generic):
+                sampling_frequency = sampling_frequency.item()
+
+            num_channels = f['channel_positions'].shape[0]
+            num_input_channels = num_channels - f['recordings'].shape[0]
+            num_voltage_channels = num_channels - num_input_channels
+
+            metadata = {
+                'uuid': batch_uuid,
+                'timestamp': current_time,
+                'notes': {
+                    'comments': 'This data is a simulated recording generated by MEArec.'
+                },
+                'ephys_experiments': {
+                    "experiment0": {
+                        "name": "experiment0",
+                        "hardware": 'MEArec Simulated Recording',
+                        "notes": 'This data is a simulated recording generated by MEArec.',
+                        "timestamp": current_time,
+                        'sample_rate': int(sampling_frequency),
+                        'num_channels': num_channels,
+                        'num_current_input_channels': num_input_channels,
+                        'num_voltage_channels': num_voltage_channels,
+                        'channels': list(range(num_channels)),
+                        # the values "offset", "voltage_scaling_factor"/"gain, and "units" don't change in MEArec,
+                        # and are currently hard-coded in their rawIO reader (so we do the same):
+                        # units: https://github.com/NeuralEnsemble/python-neo/blob/354c8d9d5fbc4daad3547773d2f281f8c163d208/neo/rawio/mearecrawio.py#L97
+                        # gain: https://github.com/NeuralEnsemble/python-neo/blob/354c8d9d5fbc4daad3547773d2f281f8c163d208/neo/rawio/mearecrawio.py#L98
+                        # offset: https://github.com/NeuralEnsemble/python-neo/blob/354c8d9d5fbc4daad3547773d2f281f8c163d208/neo/rawio/mearecrawio.py#L99
+                        'offset': 0,
+                        'voltage_scaling_factor': 1,
+                        'units': '\u00b5V',
+                        'version': f.attrs.get("mearec_version", "0.0.0"),  # only included in MEArec since v1.5.0
+                        'blocks': [{
+                            "num_frames": f['recordings'].shape[1],
+                            "path": h5_file,
+                            "timestamp": current_time,
+                            "data_order": "rowmajor"
+                        }]
+                    }
+                }
+            }
+
+    if save:
+        with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+    return metadata
+
+
+def load_data_mearec(
+        metadata: dict,
+        batch_uuid: str,
+        channels: Optional[Iterable[int]] = None,
+        length: Optional[int] = None
+) -> NDArray[Int16]:
+    """
+    Reads the MEArec data format and returns data for the selected channels, at the selected length.
+
+    Note: MEArec data always has an offset of 0.
+    Note: We currently assume (and enforce) that there is only one file (and this experiment) per MEArec UUID.
+
+    :param batch_uuid: uuid, example: 2023-08-29-e-mearec-6cells-tetrode
+    :param channels: a list of channels
+    :param length: data read length in frames (e.g. data points, agnostic of channel count)
+    """
+    h5_file = metadata['ephys_experiments']['experiment0']['blocks'][0]['path']
+    with smart_open.open(h5_file, 'rb') as fid:
+        with h5py.File(fid, "r") as f:
+            if channels is not None and length is not None:
+                return np.array(f['recordings'][channels, :length])
+            elif channels is not None:
+                return np.array(f['recordings'][channels, :])
+            else:
+                return np.array(f['recordings'])

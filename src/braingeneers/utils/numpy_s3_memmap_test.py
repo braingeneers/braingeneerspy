@@ -1,9 +1,11 @@
 import unittest
-from braingeneers.utils import NumpyS3Memmap  # deprecated form
 import numpy as np
+from .configure import skip_unittest_if_offline
+from .numpy_s3_memmap import NumpyS3Memmap
 
 
 class TestNumpyS3Memmap(unittest.TestCase):
+    @skip_unittest_if_offline
     def test_numpy32memmap_online(self):
         """ Note: this is an online test requiring access to the PRP/S3 braingeneersdev bucket. """
         x = NumpyS3Memmap('s3://braingeneersdev/dfparks/test/test.npy')
@@ -18,6 +20,7 @@ class TestNumpyS3Memmap(unittest.TestCase):
         self.assertTrue(np.all(x[:, 0:2] == e[:, 0:2]))
         self.assertTrue(np.all(x[:, [0, 1]] == e[:, [0, 1]]))
 
+    @skip_unittest_if_offline
     def test_online_in_the_wild_file(self):
         """
         This test assumes online access.

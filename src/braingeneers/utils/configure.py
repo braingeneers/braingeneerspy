@@ -1,11 +1,7 @@
 """ Global package functions and helpers for Braingeneers specific configuration and package management. """
+import distutils.util
 import functools
 import os
-from typing import List, Tuple, Union, Iterable, Iterator
-import re
-import itertools
-import importlib
-import distutils.util
 
 
 """
@@ -13,7 +9,7 @@ Preconfigure remote filesystem access
 Default S3 endpoint/bucket_name, note this can be overridden with the environment variable ENDPOINT_URL
     or by calling set_default_endpoint(...). Either an S3 endpoint or local path can be used.
 """
-DEFAULT_ENDPOINT = "https://s3-west.nrp-nautilus.io"  # PRP/S3/CEPH default
+DEFAULT_ENDPOINT = "https://s3.braingeneers.gi.ucsc.edu"  # PRP/S3/CEPH default
 CURRENT_ENDPOINT = None
 _open = None  # a reference to the current smart_open function that is configured this should not be used directly
 
@@ -34,11 +30,12 @@ DEPENDENCIES = {
         'tenacity',
         # 'sortedcontainers',
         'boto3',
+        'joblib>=1.3.0,<2',
+        'smart_open @ git+https://github.com/davidparks21/smart_open.git@develop',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
+        'awswrangler==3.*',
     ],
     'data': [
         'h5py',
-        'smart_open @ git+https://github.com/davidparks21/smart_open.git@develop',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
-        'awswrangler==3.*',
         'pandas',
         'nptyping',
         'paho-mqtt',
@@ -56,9 +53,6 @@ DEPENDENCIES = {
         'pandas',
         'powerlaw',
         'matplotlib',
-        # Both of these dependencies are required for read_phy_files
-        'awswrangler==3.*',
-        'smart_open @ git+https://github.com/davidparks21/smart_open.git@develop',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
     ],
     'ml': [
         'torch',
