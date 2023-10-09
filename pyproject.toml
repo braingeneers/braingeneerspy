@@ -79,7 +79,7 @@ ml = [
   'scikit-learn',
 ]
 hengenlab = [
-  'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git',  # channel mapping information
+  'neuraltoolkit==0.3.1',  # channel mapping information
 ]
 test = [
   "pytest >=6",
