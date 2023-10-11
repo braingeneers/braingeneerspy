@@ -38,7 +38,7 @@ pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy
 If you prefer to install a pre-built wheel due to resource limitations, you can find the latest release on [PyPI](https://pypi.org/project/braingeneers/).
 
 ```bash
-pip install braingeneerspy.whl
+pip download --only-binary :all: --no-deps --dest . --no-cache braingeneers==<version>
 ```
 
 ### Install with Optional Dependencies
@@ -48,34 +48,20 @@ You can install `braingeneerspy` with specific optional dependencies based on yo
 - Install with IoT, analysis, and data access functions (skips machine learning and lab-specific dependencies):
 
 ```bash
-pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,analysis,data]
+pip install --force-reinstall "git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,analysis,data]"
 ```
 
 - Install with all optional dependencies:
 
 ```bash
-pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]
+pip install --force-reinstall "git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]"
 ```
 
 Please note that macOS users may need to wrap the GitHub URL in quotes if they encounter issues during installation, as shown in the examples above.
 
-## Optional Dependency Groups
-
-Dependencies in `braingeneerspy` are organized into optional groups of requirements. You can install all dependencies with `all`, or you can install a specific set of dependencies. Here are the optional dependency groups:
-
-- *Unspecified*: Minimal packages for data access will be installed.
-- `all`: All optional dependencies will be included.
-- `iot`: IoT dependencies such as AWS and Redis packages will be installed.
-- `analysis`: Dependencies for data analysis routines, plotting tools, math libraries, etc.
-- `ml`: Machine learning dependencies such as `torch` will be installed.
-- `hengenlab`: Hengenlab data loader-specific packages such as `neuraltoolkit` will be installed.
-
 ## Committing Changes to the Repo
 
-If you plan to make changes to the `braingeneerspy` package and publish them on GitHub, please follow these steps:
-
-1. Update the `version` variable in `setup.py`.
-2. To receive the updated `braingeneerspy` package on your local machine, run one of the pip install commands mentioned earlier.
+To make changes and publish them on GitHub, please refer to the [CONTRIBUTING.md](https://github.com/braingeneers/braingeneerspy/blob/development/.github/CONTRIBUTING.md) file for up-to-date guidelines.
 
 ## Modules and Subpackages
 
