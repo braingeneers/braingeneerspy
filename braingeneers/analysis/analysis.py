@@ -1350,3 +1350,41 @@ def burst_detection(spike_times, burst_threshold, spike_num_thr=3):
         for i in range(loc[1]):
             burst_set.append(spike_times[loc[0]+i])
     return spike_num_list, burst_set
+
+
+def butter_filter(data, lowcut=None, highcut=None, fs=20000.0, order=5):
+    """
+    A digital butterworth filter. Type is based on input value.
+    Inputs:
+        data: array_like data to be filtered
+        lowcut: low cutoff frequency. If None or 0, highcut must be a number.
+                Filter is lowpass.
+        highcut: high cutoff frequency. If None, lowpass must be a non-zero number.
+                 Filter is highpass.
+        If lowcut and highcut are both give, this filter is bandpass.
+        In this case, lowcut must be smaller than highcut.
+        fs: sample rate
+        order: order of the filter
+    Return:
+        The filtered output with the same shape as data
+    """
+
+    assert (lowcut not in [None, 0]) or (highcut != None), \
+        "Need at least a low cutoff (lowcut) or high cutoff (highcut) frequency!"
+    if (lowcut != None) and (highcut != None):
+        assert lowcut < highcut, "lowcut must be smaller than highcut"
+
+    if lowcut == None or lowcut == 0:
+        filter_type = 'lowpass'
+        Wn = highcut / fs * 2
+    elif highcut == None:
+        filter_type = 'highpass'
+        Wn = lowcut / fs * 2
+    else:
+        filter_type = "bandpass"
+        band = [lowcut, highcut]
+        Wn = [e / fs * 2 for e in band]
+
+    filter_coeff = signal.iirfilter(order, Wn, analog=False, btype=filter_type, output='sos')
+    filtered_traces = signal.sosfiltfilt(filter_coeff, data)
+    return filtered_traces
