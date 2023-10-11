@@ -40,13 +40,13 @@ You can install `braingeneerspy` with specific optional dependencies based on yo
 - Install with IoT, analysis, and data access functions (skips machine learning and lab-specific dependencies):
 
 ```bash
-pip install --force-reinstall "git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,analysis,data]"
+pip install "braingeneers[iot,analysis,data]"
 ```
 
 - Install with all optional dependencies:
 
 ```bash
-pip install --force-reinstall "git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]"
+pip install "braingeneers[all]"
 ```
 
 Please note that macOS users may need to wrap the GitHub URL in quotes if they encounter issues during installation, as shown in the examples above.
