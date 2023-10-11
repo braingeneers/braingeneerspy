@@ -49,8 +49,6 @@ pip install "braingeneers[iot,analysis,data]"
 pip install "braingeneers[all]"
 ```
 
-Please note that macOS users may need to wrap the GitHub URL in quotes if they encounter issues during installation, as shown in the examples above.
-
 ## Committing Changes to the Repo
 
 To make changes and publish them on GitHub, please refer to the [CONTRIBUTING.md](https://github.com/braingeneers/braingeneerspy/blob/development/.github/CONTRIBUTING.md) file for up-to-date guidelines.
