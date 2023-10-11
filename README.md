@@ -21,7 +21,13 @@ Instruction on how to contribute to this project can be found in the CONTRIBUTIO
 
 You can install `braingeneerspy` using `pip` with the following commands:
 
-### Install from GitHub (Recommended)
+### Install from PyPI (Recommended)
+
+```bash
+pip install braingeneerspy
+```
+
+### Install from GitHub
 
 ```bash
 pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git
@@ -29,10 +35,10 @@ pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy
 
 ### Install from a Wheel (PyPI)
 
-If you prefer to install a pre-built wheel, you can find the latest release on [PyPI](https://pypi.org/project/braingeneerspy/). Please replace `<version>` with the specific version you want to install.
+If you prefer to install a pre-built wheel due to resource limitations, you can find the latest release on [PyPI](https://pypi.org/project/braingeneers/).
 
 ```bash
-pip install braingeneerspy==<version>
+pip install braingeneerspy.whl
 ```
 
 ### Install with Optional Dependencies
@@ -153,7 +159,7 @@ Please note that this will only work on jobs run in the PRP environment. Setting
 
 ### Notes
 
-- `braingeneerspy` is compatible with `smart_open` version 5.1.0. If you encounter issues, make sure to use this version for compatibility.
+- `braingeneerspy` is compatible with `braingeneers-smart-open` version 2023.10.6. If you encounter issues, make sure to use this version for compatibility.
 
 ## Documentation
 
