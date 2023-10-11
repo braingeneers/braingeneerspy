@@ -33,14 +33,6 @@ pip install braingeneerspy
 pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git
 ```
 
-### Install from a Wheel (PyPI)
-
-If you prefer to install a pre-built wheel due to resource limitations, you can find the latest release on [PyPI](https://pypi.org/project/braingeneers/).
-
-```bash
-pip download --only-binary :all: --no-deps --dest . --no-cache braingeneers==<version>
-```
-
 ### Install with Optional Dependencies
 
 You can install `braingeneerspy` with specific optional dependencies based on your needs. Use the following command examples:
