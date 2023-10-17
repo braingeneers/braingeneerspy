@@ -18,7 +18,7 @@ from typing import List, Union, Iterable, Optional
 from nptyping import NDArray, Int16, Float16, Float32, Float64
 import io
 import braingeneers
-from braingeneers.utils import common_utils
+from braingeneers.utils.common_utils import get_basepath, map2, path_join, file_list
 import itertools
 import posixpath
 import pandas as pd
@@ -37,14 +37,6 @@ VALID_LOAD_DATA_DTYPES = [np.int16, np.float16, np.float32, np.float64]
 load_data_cache = dict()  # minimal cache for avoiding looping lookups of metadata in load_data
 
 
-# todo: david replace this with common utils
-def get_basepath():
-    """ For S3 or local file access, this returns either s3://braingeneers or the local path up to ephys/UUID/... """
-    basepath = 's3://braingeneers' if braingeneers.get_default_endpoint().startswith('http') \
-        else braingeneers.get_default_endpoint()
-    return basepath
-
-
 def list_uuids():
     """
     List all UUIDs in the archive
@@ -53,12 +45,15 @@ def list_uuids():
     uuids : list
         List of UUIDs
     """
-    # return common_utils.file_list('ephys/')
     if braingeneers.get_default_endpoint().startswith('http'):
         return [s.split('/')[-2] for s in s3wrangler.list_directories('s3://braingeneers' + '/ephys/')]
     else:
         # list file locally
         return os.listdir(braingeneers.get_default_endpoint() + '/ephys/')
+
+
+def metadata_path(batch_uuid: str):
+    return posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json')
 
 
 def save_metadata(metadata: dict):
@@ -75,14 +70,7 @@ def save_metadata(metadata: dict):
 
     :param metadata: the metadata dictionary as obtained from load_metadata(uuid)
     """
-    batch_uuid = metadata['uuid']
-    save_path = posixpath.join(
-        braingeneers.utils.common_utils.get_basepath(),
-        'ephys',
-        batch_uuid,
-        'metadata.json'
-    )
-    with smart_open.open(save_path, 'w') as f:
+    with smart_open.open(metadata_path(metadata['uuid']), 'w') as f:
         f.write(json.dumps(metadata, indent=2))
 
 
@@ -97,14 +85,8 @@ def load_metadata(batch_uuid: str) -> dict:
     :return: A single dict containing the contents of metadata.json. See wiki for further documentation:
         https://github.com/braingeneers/wiki/blob/main/shared/organizing-data.md
     """
-    base_path = 's3://braingeneers/' \
-        if braingeneers.get_default_endpoint().startswith('http') \
-        else braingeneers.get_default_endpoint()
-
-    metadata_full_path = posixpath.join(base_path, 'ephys', batch_uuid, 'metadata.json')
-    with smart_open.open(metadata_full_path, 'r') as f:
+    with smart_open.open(metadata_path(batch_uuid), 'r') as f:
         metadata = json.load(f)
-
     return metadata
 
 
@@ -186,7 +168,7 @@ def load_data(metadata: dict,
         data = load_data_intan(metadata, batch_uuid, experiment_str, channels, offset, length)
     elif hardware == 'MEArec':
         # offset is always "0"; experiment is always "experiment0"
-        data = load_data_intan(metadata, batch_uuid, channels, length)
+        data = load_data_mearec(metadata, batch_uuid, channels, length)
     elif hardware == 'Maxwell':
         # Check if all experiments in this UUID have been converted to row-major format already
         # Data has to be converted to row-major after recording in a batch process using `h5repack`
@@ -218,7 +200,6 @@ def load_data(metadata: dict,
         else data * np.array(voltage_scaling_factor, dtype=dtype)
 
     return data_scaled
-
 
 
 def load_window(metadata, exp, window, dtype=np.float32, channels=None):
@@ -479,14 +460,14 @@ def load_data_maxwell_parallel(metadata: dict, batch_uuid: str, experiment: str,
     if len(num_frames) >= 3:
         starts_readlengths_per_block.append((0, min(length - sum_readlengths, length - (num_frames[0] - first_block_offset + sum(num_frames[1:-1])))))  # last block
     filepaths_channels_starts_lengths = [
-        (common_utils.path_join('ephys', batch_uuid, b['path']), c, s, l)
+        (path_join('ephys', batch_uuid, b['path']), c, s, l)
         for (b, (s, l)), c in itertools.product(zip(blocks, starts_readlengths_per_block), channels)
     ]
 
     # Parallel read from each channel using separate processes (necessary so HDF5 doesn't
     # step on its own toes as it would do if threads were used). If multiple files exist
     # then the read will be per channel per each block (aka file).
-    data_per_block_per_channel = common_utils.map2(
+    data_per_block_per_channel = map2(
         func=_load_data_maxwell_per_channel,
         args=filepaths_channels_starts_lengths,
         parallelism=False,
@@ -567,7 +548,7 @@ def load_data_hengenlab(metadata: dict, batch_uuid: str, experiment: str,
     # read (length) bytes from one or more blocks
     pos = 0
     for block in blocks:
-        file_or_url = common_utils.path_join('ephys', batch_uuid, block['path'])
+        file_or_url = path_join('ephys', batch_uuid, block['path'])
         with smart_open.open(file_or_url, 'rb') as f:
             f.seek(8 + block_offset * n_channels * 2)  # 8 bytes ecube timestamp at front of file
             v = memoryview(b)
@@ -595,12 +576,8 @@ def load_mapping_maxwell(uuid: str, metadata_ephys_exp: dict, channels: list = N
     :param channels:
     :return: mapping of maxwell array as a dataframe
     """
-    exp_path = metadata_ephys_exp['blocks'][0]['path']
-    exp_filename = posixpath.basename(exp_path)
-    DATA_PATH = 'original/data/'
-
-    file_path = posixpath.join(common_utils.get_basepath(), 
-            'ephys',uuid, DATA_PATH, exp_filename)
+    exp_filename = posixpath.basename(metadata_ephys_exp['blocks'][0]['path'])
+    file_path = posixpath.join(get_basepath(), 'ephys', uuid, 'original/data/', exp_filename)
 
     print('Loading mapping from UUID: {}, experiment: {}'.format(uuid, exp_filename))
 
@@ -889,13 +866,13 @@ def generate_metadata_hengenlab(batch_uuid: str,
 
     # list neural data files on S3
     s3_path = f's3://braingeneers/ephys/{batch_uuid}/original/{experiment_name}/'
-    neural_data_files = common_utils.file_list(s3_path)
+    neural_data_files = file_list(s3_path)
     assert len(neural_data_files) > 0, f'No neural data files found at: {s3_path}'
 
     args = [s3_path + ndf[0] for ndf in neural_data_files]
 
     # get ecube times for each file
-    ecube_timestamps = common_utils.map2(
+    ecube_timestamps = map2(
         _read_hengenlab_ecube_timestamp,
         args=args,
         parallelism=n_threads,
@@ -1125,8 +1102,7 @@ def generate_metadata_axion(batch_uuid: str, experiment_prefix: str = '',
     metadata_json['ephys_experiments'] = ephys_experiments
 
     if save:
-        with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
-            json.dump(metadata_json, f, indent=2)
+        save_metadata(metadata_json)
 
     return metadata_json
 
@@ -1350,19 +1326,27 @@ def get_mearec_h5_recordings_file(batch_uuid: str):
         (ENDPOINT defaults to s3://braingeneers)
     """
     path = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original/data/')
-    data_files = s3wrangler.list_objects(path=path, suffix=['.h5', '.hdf5'])
+    if path.startswith('s3:'):
+        data_files = s3wrangler.list_objects(path=path, suffix=['.h5', '.hdf5'])
+    elif ':' not in path:
+        data_files = []
+        for root, dirs, files in os.walk(path):
+            for name in files:
+                if name.endswith('.h5') or name.endswith('.hdf5'):
+                    data_files.append(os.path.join(root, name))
+    else:
+        raise RuntimeError(f'URI is unsupported: {path}')
+
     # filter out the "templates_" prefix and any other unneeded provenance files
     h5_files = [f for f in data_files if f[len(path):].startswith('recordings_')]
 
     if len(h5_files) == 0:
-        raise FileNotFoundError(f'No recordings_*.h5 / recordings_*.hdf5 files '
-                                f'found in {get_basepath()}/ephys/{batch_uuid}/original/data/ !')
+        raise FileNotFoundError(f'No recordings_*.h5 / recordings_*.hdf5 files found in {path} !')
 
     if len(h5_files) > 1:
-        raise FileNotFoundError(f'More than one recordings_*.h5 / recordings_*.hdf5 file was '
-                                f'found in {get_basepath()}/ephys/{batch_uuid}/original/data/ !  '
-                                f'Only one recordings_*.h5 / recordings_*.hdf5 file (and exactly one) '
-                                f'per UUID for MEArec is currently supported.')
+        raise RuntimeError(f'More than one recordings_*.h5 / recordings_*.hdf5 file was '
+                           f'found in {path} !  Only one recordings_*.h5 / recordings_*.hdf5 '
+                           f'file (and exactly one) per UUID for MEArec is currently supported.')
     return h5_files[0]
 
 
@@ -1430,8 +1414,7 @@ def generate_metadata_mearec(batch_uuid: str, n_threads: int = 16, save: bool = 
             }
 
     if save:
-        with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
-            json.dump(metadata, f, indent=2)
+        save_metadata(metadata)
 
     return metadata
 

@@ -1,3 +1,5 @@
+import os
+import shutil
 import unittest
 import braingeneers
 import braingeneers.data.datasets_electrophysiology as ephys
@@ -7,6 +9,8 @@ from braingeneers import skip_unittest_if_offline
 import smart_open
 import boto3
 import numpy as np
+
+from mock import patch
 
 
 class MaxwellReaderTests(unittest.TestCase):
@@ -109,6 +113,19 @@ class MaxwellReaderTests(unittest.TestCase):
 class MEArecReaderTests(unittest.TestCase):
     """The fake reader test."""
     batch_uuid = '2023-08-29-e-mearec-6cells-tetrode'
+    local_uuid = 'created_and_deleted_for_the_test'
+    local_base_to_delete = '/tmp/ephys'
+    local_h5_full_path = '/tmp/ephys/created_and_deleted_for_the_test/original/data/recordings_mysterious.h5'
+
+    def setUp(self):
+        print(f'Creating {self.local_h5_full_path}')
+        os.makedirs(self.local_h5_full_path.rsplit('/', 1)[0], exist_ok=True)
+        with open(self.local_h5_full_path, 'w') as w:
+            w.write('Why are you looking in here?  o___0')
+
+    def tearDown(self):
+        print(f'Deleting {self.local_h5_full_path}')
+        shutil.rmtree(self.local_base_to_delete)
 
     @skip_unittest_if_offline
     def test_online_mearec_generate_metadata(self):
@@ -165,6 +182,12 @@ class MEArecReaderTests(unittest.TestCase):
                                  [-7.700503349304199, 0.8792770504951477, -15.32259750366211, -6.081937789916992]]
         data = ephys.load_data_mearec(ephys.load_metadata(self.batch_uuid), self.batch_uuid, channels=[1], length=2)
         assert data.tolist() == [[24.815574645996094, 9.68782901763916]]
+
+    def test_offline_mearec_h5_discovery(self):
+        """Ensure that MEArec discovers a single local h5 file corrently."""
+        with patch.dict('os.environ', {'ENDPOINT': '/tmp'}):
+            data_file = ephys.get_mearec_h5_recordings_file(self.local_uuid)
+            assert self.local_h5_full_path == data_file
 
 
 class AxionReaderTests(unittest.TestCase):
