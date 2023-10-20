@@ -461,17 +461,16 @@ class SpikeData:
     @staticmethod
     def from_thresholding(data, fs_Hz=20e3, threshold_sigma=5.0,
                           filter_order=3, filter_lo_Hz=300.0,
-                          filter_hi_Hz=6e3, time_step_sec=10.0,
-                          do_filter=True, hysteresis=True,
-                          direction='both'):
+                          filter_hi_Hz=6e3, do_filter=True,
+                          hysteresis=True, direction='both'):
         """
         Create a SpikeData object from raw data by filtering and
         thresholding raw electrophysiological data formatted as an array
         with shape (channels, time).
         """
         if do_filter:
-            data = filter(data, fs_Hz, filter_order, filter_lo_Hz,
-                          filter_hi_Hz, time_step_sec)
+            data = butter_filter(data, filter_lo_Hz, filter_hi_Hz,
+                                 fs_Hz, filter_order)
 
         threshold = threshold_sigma * np.std(data, axis=1, keepdims=True)
 
@@ -1107,6 +1106,7 @@ def randomize_raster(raster, seed=None):
     return rsm
 
 
+@deprecated('Prefer analysis.butter_filter()', version='0.1.14')
 def filter(raw_data, fs_Hz=20000, filter_order=3, filter_lo_Hz=300,
            filter_hi_Hz=6000, time_step_size_s=10, channel_step_size=100,
            verbose=0, zi=None, return_zi=False):
