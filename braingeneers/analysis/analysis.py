@@ -460,17 +460,18 @@ class SpikeData:
 
     @staticmethod
     def from_thresholding(data, fs_Hz=20e3, threshold_sigma=5.0,
-                          filter_order=3, filter_lo_Hz=300.0,
-                          filter_hi_Hz=6e3, do_filter=True,
+                          filter=dict(lowcut=300.0, highcut=6e3, order=3),
                           hysteresis=True, direction='both'):
         """
         Create a SpikeData object from raw data by filtering and
         thresholding raw electrophysiological data formatted as an array
         with shape (channels, time).
+
+        Filtering is done by butter_filter() with parameters given
+        by the `filter` argument. Set `filter` to None to disable.
         """
-        if do_filter:
-            data = butter_filter(data, filter_lo_Hz, filter_hi_Hz,
-                                 fs_Hz, filter_order)
+        if filter:
+            data = butter_filter(data, fs=fs_Hz, **filter)
 
         threshold = threshold_sigma * np.std(data, axis=1, keepdims=True)
 
