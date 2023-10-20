@@ -31,7 +31,7 @@ DEPENDENCIES = {
         # 'sortedcontainers',
         'boto3',
         'joblib>=1.3.0,<2',
-        'smart_open @ git+https://github.com/davidparks21/smart_open.git@develop',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
+        'braingeneers_smart_open',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
         'awswrangler==3.*',
     ],
     'data': [
