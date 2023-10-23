@@ -68,7 +68,7 @@ To make changes and publish them on GitHub, please refer to the [CONTRIBUTING.md
 
 ### `braingeneers.utils.s3wrangler`
 
-This module extends the `awswrangler.s3 package` for Braingeneers/PRP access. For API documentation and usage examples, please visit the [official documentation](https://aws-data-wrangler.readthedocs.io/en/2.4.0-docs/api.html#amazon-s3).
+This module extends the `awswrangler.s3 package` for Braingeneers/PRP access. For API documentation and usage examples, please visit the [official documentation](https://aws-sdk-pandas.readthedocs.io/en/stable/).
 
 Here's a basic usage example:
 
