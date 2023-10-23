@@ -16,7 +16,7 @@ To get started with your development (or fork), click the "Open with GitHub Code
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/braingeneers/braingeneerspy?quickstart=1)
 
-Instruction on how to contribute to this project can be found in the CONTRIBUTION.md
+Instruction on how to contribute to this project can be found in the [CONTRIBUTION.md](https://github.com/braingeneers/braingeneerspy/blob/development/.github/CONTRIBUTING.md).
 
 ## Installation
 
