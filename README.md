@@ -134,10 +134,6 @@ spec:
 
 Please note that this will only work on jobs run in the PRP environment. Setting the `ENDPOINT` environment variable can also be used to specify an endpoint other than the PRP/S3.
 
-### Notes
-
-- `braingeneerspy` is compatible with `braingeneers-smart-open` version 2023.10.6. If you encounter issues, make sure to use this version for compatibility.
-
 ## Documentation
 
 The docs directory has been set up using `sphinx-build -M html docs/source/ docs/build/` to create a base project Documentation structure. You can add inline documentation (NumPy style) to further enrich our project's documentation. To render the documentation locally, navigate to the `docs/build/html` folder in the terminal and run `python3 -m http.server`.
