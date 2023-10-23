@@ -32,7 +32,6 @@ dependencies = [
   'requests',
   'numpy',
   'tenacity',
-  # 'sortedcontainers',
   'boto3',
 ]
 
