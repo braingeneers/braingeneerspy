@@ -3,13 +3,13 @@ from __future__ import annotations
 import os
 import json
 import warnings
+import copy
 
 import matplotlib.pyplot as plt
 import numpy as np
 import shutil
 import h5py
 import braingeneers.utils.smart_open_braingeneers as smart_open
-from os import walk
 from collections import namedtuple
 import time
 from braingeneers.utils import s3wrangler
@@ -819,7 +819,7 @@ def paths_2_each_exp(data_dir):
     try:
         objs = s3wrangler.list_objects(data_dir)  # if on s3
     except:
-        objs = next(walk(data_dir), (None, None, []))[2]  # if on local dir
+        objs = next(os.walk(data_dir), (None, None, []))[2]  # if on local dir
     return objs
 
 
@@ -1461,3 +1461,89 @@ def load_data_mearec(
                 return np.array(f['recordings'][channels, :])
             else:
                 return np.array(f['recordings'])
+
+
+def modify_metadata_maxwell_raw_to_nwb(metadata_json: dict):
+    """
+    Given a Maxwell-based metadata dictionary, update key values to the current metadata structure, and replace
+    raw Maxwell file paths (".raw.h5") with NWB file paths, if they exist.
+
+    For example, the input:
+      {"timestamp": "2023-08-12 T15:01:19",
+       "ephys_experiments": {"experiment name 1": {"hardware": "Maxwell",
+                                                   "blocks": [{"path": "original/data/data_GABA_BL_20325.raw.h5"}]}},
+                            {"experiment name 2": {"hardware": "Maxwell",
+                                                   "blocks": [{"path": "original/data/data_GABA_BL_20326.raw.h5"}]}}}
+
+      would return:
+
+      {"timestamp": "2023-08-12 T15:01:19",
+       "hardware": "Maxwell",
+       "ephys_experiments": {"experiment name 1": {"data_format": "NeurodataWithoutBorders",
+                                                   "blocks": [{"path": "shared/data_GABA_BL_20325.nwb"}]}},
+                            {"experiment name 2": {"data_format": "NeurodataWithoutBorders",
+                                                   "blocks": [{"path": "shared/data_GABA_BL_20326.nwb"}]}}}
+
+    Assuming that both "shared/data_GABA_BL_20325.nwb" and "shared/data_GABA_BL_20326.nwb" exist.
+    """
+    current_timestamp = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%dT%H:%M:%S')
+    new_metadata_json = copy.deepcopy(metadata_json)
+    new_metadata_json['timestamp'] = current_timestamp  # TODO: replace all timestamps?  i.e. experiments, blocks...
+
+    for experiment_name, experiment_data in metadata_json['ephys_experiments'].items():
+        if not new_metadata_json.get('hardware'):
+            new_metadata_json['hardware'] = experiment_data['hardware']
+
+        if experiment_data.get('hardware'):
+            assert new_metadata_json['hardware'] == experiment_data['hardware']
+            del new_metadata_json['ephys_experiments'][experiment_name]['hardware']
+
+        for i, block in enumerate(experiment_data['blocks']):
+            if block['path'].endswith('.raw.h5') and 'original/data/' in block['path']:
+                nwb_filepath = block['path'][:-len('.raw.h5')] + '.nwb'
+                nwb_filepath = 'shared/' + nwb_filepath.split('original/data/')[-1]
+                full_s3_nwb_filepath = posixpath.join(get_basepath(), 'ephys', metadata_json['uuid'], nwb_filepath)
+                if s3wrangler.does_object_exist(full_s3_nwb_filepath):
+                    new_metadata_json['ephys_experiments'][experiment_name]['blocks'][i]['path'] = nwb_filepath
+                    new_metadata_json['ephys_experiments'][experiment_name]['data_format'] = 'NeurodataWithoutBorders'
+    return new_metadata_json
+
+
+def generate_metadata_maxwell(batch_uuid: str, experiment_prefix: Optional[str] = None, n_threads: int = 16, save: bool = False):
+    """
+    Currently modifies metadata.json, if it already exists and is found for an associated Maxwell UUID.
+
+    TODO: Generates a new metadata.json if it doesn't already exist from raw Maxwell data files on S3 from a standard UUID.
+      Assume raw data files are stored in:
+        ${ENDPOINT}/ephys/YYYY-MM-DD-e-[descriptor]/original/experiments/*.raw.h5
+        (ENDPOINT defaults to s3://braingeneers)
+
+    Raise a NotImplemented exception if no metadata.json is found.
+
+    Limitations:
+     - timestamps are not taken from the original data files, the current time is used.
+
+    :param batch_uuid: standard ephys UUID
+    :param experiment_prefix: Unused currently.
+    :param n_threads: Unused currently.  Number of concurrent file reads (useful for parsing many network based files).
+    :param save: bool (default == False) saves the generated metadata file back to S3/ENDPOINT at batch_uuid
+
+    :return: (metadata_json: dict, ephys_experiments: dict) a tuple of two dictionaries which are
+        json serializable to metadata.json and experiment1.json.
+    """
+    try:
+        with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'r') as f:
+            metadata_json = json.load(f)
+    except OSError as e:
+        if 'error occurred (NoSuchKey)' in str(e) or '[Errno 2] No such file or directory' in str(e):
+            raise NotImplementedError(f'This function did not find a metadata.json for {batch_uuid}, and '
+                                      f'can only modify an existing metadata.json.')
+        raise
+
+    metadata_json = modify_metadata_maxwell_raw_to_nwb(metadata_json)
+
+    if save:
+        with smart_open.open(posixpath.join(get_basepath(), 'ephys', batch_uuid, 'metadata.json'), 'w') as f:
+            json.dump(metadata_json, f, indent=2)
+
+    return metadata_json
