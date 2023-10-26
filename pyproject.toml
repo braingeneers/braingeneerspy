@@ -1,0 +1,206 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+
+[project]
+name = "braingeneers"
+authors = [
+  { name = "Braingeneers", email = "me@example.com" },
+]
+description = "Braingeneers Python utilities"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: BSD License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering",
+  "Typing :: Typed",
+]
+dynamic = ["version"]
+dependencies = [
+  "typing_extensions >=4.6; python_version<'3.11'",
+  'deprecated',
+  'requests',
+  'numpy',
+  'tenacity',
+  'boto3',
+]
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/braingeneers/_version.py"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+
+[project.optional-dependencies]
+all = [
+  'braingeneers[data]',
+  'braingeneers[analysis]',
+  'braingeneers[ml]',
+  'braingeneers[iot]',
+  'braingeneers[hengenlab]',
+  'braingeneers[test]',
+  'braingeneers[docs]',
+]
+data = [
+  'h5py',
+  'braingeneers-smart-open==2023.10.6',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
+  'awswrangler==3.*',
+  'pandas',
+  'nptyping',
+  'paho-mqtt'
+]
+iot = [
+  'redis',
+  'schedule',
+  'paho-mqtt'
+]
+analysis = [
+  'scipy>=1.10.0',
+  'pandas',
+  'powerlaw',
+  'matplotlib',
+  # Both of these dependencies are required for read_phy_files
+  'awswrangler==3.*',
+  'braingeneers-smart-open==2023.10.6',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
+]
+ml = [
+  'torch',
+  'scikit-learn',
+]
+hengenlab = [
+  'neuraltoolkit==0.3.1',  # channel mapping information
+]
+test = [
+  "pytest >=6",
+  "pytest-cov >=3",
+]
+docs = [
+  "sphinx>=4.0",
+  "myst_parser>=0.13",
+  "sphinx_book_theme>=0.1.0",
+  "sphinx_copybutton",
+  "sphinx_autodoc_typehints",
+  "furo",
+]
+
+[project.urls]
+Homepage = "https://github.com/braingeneers/braingeneerspy"
+"Bug Tracker" = "https://github.com/braingeneers/braingeneerspy/issues"
+Discussions = "https://github.com/braingeneers/braingeneerspy/discussions"
+Changelog = "https://github.com/braingeneers/braingeneerspy/releases"
+
+[tool.hatch]
+metadata.allow-direct-references = true
+version.source = "vcs"
+envs.default.dependencies = [
+  "pytest",
+  "pytest-cov",
+]
+
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
+xfail_strict = true
+filterwarnings = [
+  "error",
+  "ignore:(ast.Str|Attribute s|ast.NameConstant|ast.Num) is deprecated:DeprecationWarning:_pytest",
+]
+log_cli_level = "INFO"
+testpaths = [
+  "tests",
+]
+
+
+[tool.coverage]
+run.source = ["braingeneers"]
+port.exclude_lines = [
+  'pragma: no cover',
+  '\.\.\.',
+  'if typing.TYPE_CHECKING:',
+]
+
+[tool.mypy]
+files = ["src", "tests"]
+python_version = "3.10"
+warn_unused_configs = true
+strict = true
+show_error_codes = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+warn_unreachable = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = "braingeneers.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+
+[tool.ruff]
+select = [
+  "E", "F", "W", # flake8
+  "B",           # flake8-bugbear
+  "I",           # isort
+  "ARG",         # flake8-unused-arguments
+  "C4",          # flake8-comprehensions
+  "EM",          # flake8-errmsg
+  "ICN",         # flake8-import-conventions
+  "ISC",         # flake8-implicit-str-concat
+  "G",           # flake8-logging-format
+  "PGH",         # pygrep-hooks
+  "PIE",         # flake8-pie
+  "PL",          # pylint
+  "PT",          # flake8-pytest-style
+  "PTH",         # flake8-use-pathlib
+  "RET",         # flake8-return
+  "RUF",         # Ruff-specific
+  "SIM",         # flake8-simplify
+  "T20",         # flake8-print
+  "UP",          # pyupgrade
+  "YTT",         # flake8-2020
+  "EXE",         # flake8-executable
+  "NPY",         # NumPy specific rules
+  "PD",          # pandas-vet
+]
+extend-ignore = [
+  "PLR",    # Design related pylint codes
+  "E501",   # Line too long
+]
+typing-modules = ["braingeneers._compat.typing"]
+src = ["src"]
+unfixable = [
+  "T20",  # Removes print statements
+  "F841", # Removes unused variables
+]
+exclude = []
+flake8-unused-arguments.ignore-variadic-names = true
+isort.required-imports = ["from __future__ import annotations"]
+
+[tool.ruff.per-file-ignores]
+"tests/**" = ["T20"]
+"noxfile.py" = ["T20"]
+
+
+[tool.pylint]
+py-version = "3.10"
+ignore-paths= ["src/braingeneers/_version.py"]
+reports.output-format = "colorized"
+similarities.ignore-imports = "yes"
+messages_control.disable = [
+  "design",
+  "fixme",
+  "line-too-long",
+  "missing-module-docstring",
+  "wrong-import-position",
+]

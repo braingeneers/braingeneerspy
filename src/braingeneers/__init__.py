@@ -1,9 +1,20 @@
-import braingeneers
-import braingeneers.utils
-from braingeneers.utils.configure import \
-    set_default_endpoint, get_default_endpoint, skip_unittest_if_offline
+"""
+Copyright (c) 2023 Braingeneers. All rights reserved.
+
+braingeneers: braingeneerspy
+"""
+
+from __future__ import annotations
 import warnings
 
+from . import utils
+from .utils.configure import \
+    set_default_endpoint, get_default_endpoint, skip_unittest_if_offline
+from ._version import version as VERSION  # noqa
+
+__version__ = VERSION
+
+__all__ = ("set_default_endpoint", "get_default_endpoint", "skip_unittest_if_offline", "utils")
 
 # Deprecated imports are allowed for backwards compatibility.
 # This code should be removed in the future. This was added 27apr2022 by David Parks.

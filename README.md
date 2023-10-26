@@ -1,94 +1,90 @@
 # Braingeneers Python Utilities
 
-[This package][github] is supposed to collect, as well as make installable
-through Pip, all of the Python code and utilities that we develop as
-part of the Braingeneers project. There are five subpackages:
-  * `braingeneers.analysis` code for data analysis.
+[![ssec](https://img.shields.io/badge/SSEC-Project-purple?logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA0AAAAOCAQAAABedl5ZAAAACXBIWXMAAAHKAAABygHMtnUxAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAMNJREFUGBltwcEqwwEcAOAfc1F2sNsOTqSlNUopSv5jW1YzHHYY/6YtLa1Jy4mbl3Bz8QIeyKM4fMaUxr4vZnEpjWnmLMSYCysxTcddhF25+EvJia5hhCudULAePyRalvUteXIfBgYxJufRuaKuprKsbDjVUrUj40FNQ11PTzEmrCmrevPhRcVQai8m1PRVvOPZgX2JttWYsGhD3atbHWcyUqX4oqDtJkJiJHUYv+R1JbaNHJmP/+Q1HLu2GbNoSm3Ft0+Y1YMdPSTSwQAAAABJRU5ErkJggg==&style=plastic)](https://escience.washington.edu/wetai/)
+[![MIT License](https://badgen.net/badge/license/MIT/blue)](LICENSE)
+[![Documentation Status](https://readthedocs.org/projects/braingeneers/badge/?version=latest)](https://braingeneers.readthedocs.io/en/latest/?badge=latest)
 
-  * `braingeneers.data` all code for basic data access .
-    * `braingeneers.data.datasets_electrophysiology` contains methods which load and manipulate ephys data.
-    * `braingeneers.data.datasets_fluidics` contains methods which load and manipulate fluidics data.
-    * `braingeneers.data.datasets_imaging` contains methods which load and manipulate imaging data.
-    
-  * `braingeneers.iot` all code for IOT (internet of things) communication.
-    * `braingeneers.iot.messaging` a single interface for all messaging and inter-device data transfer functions (MQTT, redis, device state, etc.). A wetAI tutorial on this package exists.
-    
-  * `braingeneers.ml` all code related to ML (machine learning).
-    * `braingeneers.ml.ephys_dataloader` a high performance pytorch data loader for ephys data.
+## Getting Started
 
-  * `braigeneers.utils`  
-    * `braingeneers.utils.s3wrangler` a wrapper of `awswrangler.s3` for accessing PRP/S3. See section below for the documentation and examples.
-    * `braingeneers.utils.smart_open_braingeneers` a wrapper of `smart_open` for opening files on PRP/S3. See section below for the documentation and examples.
+Welcome to the **Braingeneers Python Utilities** repository! This package collects and provides various Python code and utilities developed as part of the Braingeneers project. The package adheres to the Python Package Authority (PyPA) standards for package structure and organization.
 
-[github]: https://www.github.com/braingeneers/braingeneerspy
+## Contribution
 
-## Installation / upgrade
+We welcome contributions from collaborators and researchers interested in our work. If you have improvements, suggestions, or new findings to share, please submit a pull request. Your contributions help advance our research and analysis efforts.
 
-Most dependencies are optional installations for this package. 
-Below are examples of various installation configurations.
+To get started with your development (or fork), click the "Open with GitHub Codespaces" button below to launch a fully configured development environment with all the necessary tools and extensions.
 
-```
-# Typical install (includes `iot`, `analysis`, and `data` access functions, skips `ml`, and lab-specific dependencies): 
-python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,analysis,data]
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/braingeneers/braingeneerspy?quickstart=1)
 
-# Full install (all optional dependencies included).
-python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]
+Instruction on how to contribute to this project can be found in the [CONTRIBUTION.md](https://github.com/braingeneers/braingeneerspy/blob/development/.github/CONTRIBUTING.md).
 
-# Minimum install (no optional dependencies, good for Raspberry PI builds).
-python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git
+## Installation
+
+You can install `braingeneerspy` using `pip` with the following commands:
+
+### Install from PyPI (Recommended)
+
+```bash
+pip install braingeneerspy
 ```
 
-### macOS installation note:
-if install fails with ```no matches found: git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]```
-wrap quotes around the github address like so 
+### Install from GitHub
 
-```
-# Typical install (includes `iot`, `analysis`, and `data` access functions, skips `ml`, and lab-specific dependencies): 
-python -m pip install --force-reinstall 'git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[iot,analysis]'
-
-# Full install (all optional dependencies included).
-python -m pip install --force-reinstall 'git+https://github.com/braingeneers/braingeneerspy.git#egg=braingeneerspy[all]'
+```bash
+pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git
 ```
 
-### Optional dependency organization
+### Install with Optional Dependencies
 
-Dependencies are organized into optional groups of requirements. You can install all dependencies with `all`, 
-or install the minimum dependencies (by not specifying optional groups), 
-or some combination of dependencies you will use. Optional dependency groups are:
+You can install `braingeneerspy` with specific optional dependencies based on your needs. Use the following command examples:
 
- - *Unspecified*: Minimal packages for data access will be installed.
- - `all`: All optional dependencies will be included.
- - `iot`: IOT dependencies such as AWS, Redis packages will be installed.
- - `analysis`: Dependencies for data analysis routines, plotting tools, math libraries, etc.
- - `ml`: Machine Learning dependencies such as `torch` will be installed.
- - `hengenlab`: Hengenlab data loader specific packages such as `neuraltoolkit` will be installed.
+- Install with IoT, analysis, and data access functions (skips machine learning and lab-specific dependencies):
 
-### Committing changes to the repo
+```bash
+pip install "braingeneers[iot,analysis,data]"
+```
 
-To publish changes made to the `braingeneerspy` package on github, please follow these steps. 
- 1. Update the `version` variable in `setup.py`. 
- 2. To then receive the updated `braingeneerspy` package on your personal computer 
- 3. Run one of the pip install commands listed above.
+- Install with all optional dependencies:
 
-## braingeneers.utils.s3wrangler
-Extends the `awswrangler.s3 package` for Braingeneers/PRP access.
-See API documentation: https://aws-data-wrangler.readthedocs.io/en/2.4.0-docs/api.html#amazon-s3
+```bash
+pip install "braingeneers[all]"
+```
 
-Usage examples:
+## Committing Changes to the Repo
+
+To make changes and publish them on GitHub, please refer to the [CONTRIBUTING.md](https://github.com/braingeneers/braingeneerspy/blob/development/.github/CONTRIBUTING.md) file for up-to-date guidelines.
+
+## Modules and Subpackages
+
+`braingeneerspy` includes several subpackages and modules, each serving a specific purpose within the Braingeneers project:
+
+- `braingeneers.analysis`: Contains code for data analysis.
+- `braingeneers.data`: Provides code for basic data access, including subpackages for handling electrophysiology, fluidics, and imaging data.
+- `braingeneers.iot`: Offers code for Internet of Things (IoT) communication, including a messaging interface.
+- `braingeneers.ml`: Contains code related to machine learning, such as a high-performance PyTorch data loader for electrophysiology data.
+- `braingeneers.utils`: Provides utility functions, including S3 access and smart file opening.
+
+## S3 Access and Configuration
+
+### `braingeneers.utils.s3wrangler`
+
+This module extends the `awswrangler.s3 package` for Braingeneers/PRP access. For API documentation and usage examples, please visit the [official documentation](https://aws-sdk-pandas.readthedocs.io/en/stable/).
+
+Here's a basic usage example:
+
 ```python
 import braingeneers.utils.s3wrangler as wr
 
-# get all UUIDs from s3://braingeneers/ephys/
+# Get all UUIDs from s3://braingeneers/ephys/
 uuids = wr.list_directories('s3://braingeneers/ephys/')
 print(uuids)
 ```
 
-## braingeneers.utils.smart_open_braingeneers
-Configures smart_open for braingeneers use on PRP/S3. When importing this version of `smart_open` 
-braingeneers defaults will be autoconfigured. Note that `smart_open` supports both local and S3 files, 
-so it can be used for all files, not just S3 file access.
+### `braingeneers.utils.smart_open_braingeneers`
 
-Basic usage example (copy/paste this to test your setup), if it works you will see a helpful bit of advice printed to the screen:
+This module configures `smart_open` for Braingeneers use on PRP/S3. When importing this version of `smart_open`, Braingeneers defaults will be autoconfigured. Note that `smart_open` supports both local and S3 files, so it can be used for all files, not just S3 file access.
+
+Here's a basic usage example:
 
 ```python
 import braingeneers.utils.smart_open_braingeneers as smart_open
@@ -97,32 +93,31 @@ with smart_open.open('s3://braingeneersdev/test_file.txt', 'r') as f:
     print(f.read())
 ```
 
-You may also safely replace Python's default `open` function with `smart_open.open`, 
-`smart_open` supports both local and remote files:
+You can also safely replace Python's default `open` function with `smart_open.open`:
 
 ```python
 import braingeneers.utils.smart_open_braingeneers as smart_open
 
 open = smart_open.open
 ```
-### Non-standard S3 endpoints:
 
-`smart_open` and `s3wrangler` are pre-configured by default to the standard braingeneers S3 endpoint,
-no configuration is necessary. If you would like to utilize a different S3 service you can specify a
-new custom `ENDPOINT`, this can be a local path or an endpoint URL for another S3 service (s3wrangler
-only supports S3 services, not local paths, `smart_open` supports local paths).
+## Customizing S3 Endpoints
 
-- Set an environment variable `ENDPOINT` with the new endpoint. Unix based example:`export ENDPOINT="https://s3-west.nrp-nautilus.io"`
-- Call `braingeneers.set_default_endpoint(endpoint: str)` and `braingeneers.get_default_endpoint()`. 
-  These functions will update both `smart_open` and `s3wrangler` (if it's an S3 endpoint, 
-  local path endpoints are ignored by s3wrangler)
+By default, `smart_open` and `s3wrangler` are pre-configured for the standard Braingeneers S3 endpoint. However, you can specify a custom `ENDPOINT` if you'd like to use a different S3 service. This can be a local path or an endpoint URL for another S3 service (note that `s3wrangler` only supports S3 services, not local paths, while `smart_open` supports local paths).
 
-When running a job on the PRP you can use the PRP internal S3 endpoint,
-which is faster than the default external endpoint (this will only work on jobs run in the PRP 
-environment). Add the following environment variable to your job YAML file.
-This will set the environment variable ENDPOINT_URL which overrides the
-default external PPR/S3 endpoint, which is used if you don't set this variable.
-Setting this environment variable can also be used to set an endpoint other than the PRP/S3.
+To set a custom endpoint, follow these steps:
+
+1. Set an environment variable `ENDPOINT` with the new endpoint. For example, on Unix-based systems:
+
+   ```bash
+   export ENDPOINT="https://s3-west.nrp-nautilus.io"
+   ```
+
+2. Call `braingeneers.set_default_endpoint(endpoint: str)` and `braingeneers.get_default_endpoint()`. These functions will update both `smart_open` and `s3wrangler` (if it's an S3 endpoint, local path endpoints are ignored by `s3wrangler`).
+
+### Using the PRP Internal S3 Endpoint
+
+When running a job on the PRP, you can use the PRP internal S3 endpoint, which is faster than the default external endpoint. To do this, add the following environment variable to your job YAML file:
 
 ```yaml
 spec:
@@ -137,5 +132,22 @@ spec:
             value: "http://rook-ceph-rgw-nautiluss3.rook"
 ```
 
-Notes:
-- There were version conflicts between 4.2.0 and 5.1.0 of smart_open. This configuration has been tested to work with 5.1.0.
+Please note that this will only work on jobs run in the PRP environment. Setting the `ENDPOINT` environment variable can also be used to specify an endpoint other than the PRP/S3.
+
+## Documentation
+
+The docs directory has been set up using `sphinx-build -M html docs/source/ docs/build/` to create a base project Documentation structure. You can add inline documentation (NumPy style) to further enrich our project's documentation. To render the documentation locally, navigate to the `docs/build/html` folder in the terminal and run `python3 -m http.server`.
+
+## Working in Codespaces
+
+### Project Structure
+
+- **src/:** This folder contains scripts and notebooks representing completed work by the team.
+
+- **pyproject.toml:** This file follows the guidelines from [PyPA](https://packaging.python.org/tutorials/packaging-projects/) for documenting project setup information.
+
+### Customizing the Devcontainer
+
+The `devcontainer.json` file allows you to customize your Codespace container and VS Code environment using extensions. You can add more extensions to tailor the environment to your specific needs. Explore the VS Code extensions marketplace for additional tools that may enhance your workflow.
+
+For more information about Braingeneers, visit our [website](https://braingeneers.ucsc.edu/).
