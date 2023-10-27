@@ -47,6 +47,9 @@ DEPENDENCIES = {
         'redis',
         'schedule',
         'paho-mqtt',
+        'diskcache',
+        'pytz',
+        'tzlocal',
     ],
     'analysis': [
         'scipy>=1.10.0',
