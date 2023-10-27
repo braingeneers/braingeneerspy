@@ -1,7 +1,7 @@
 from example_device import ExampleDevice
 import argparse
 
-if __name__ == "__main__":  
+if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Command line tool for the ExampleDevice utility")
     # Adding arguments with default values and making them optional
