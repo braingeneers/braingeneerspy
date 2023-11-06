@@ -105,6 +105,26 @@ class MaxwellReaderTests(unittest.TestCase):
             length = int((time_to - time_from) * fs)
             ephys.load_data(metadata=metadata, experiment=0, offset=offset, length=length)
 
+    @skip_unittest_if_offline
+    def test_load_gpio_maxwell(self):
+        """ Read gpio event for Maxwell V1 file"""
+        data_1 = "s3://braingeneers/ephys/" \
+                    "2023-04-02-hc328_rec/original/data/" \
+                    "2023_04_02_hc328_0.raw.h5"
+        data_2 = "s3://braingeneers/ephys/" \
+                 "2023-04-04-e-hc328_hckcr1-2_040423_recs/original/data/" \
+                 "hc3.28_hckcr1_chip8787_plated4.4_rec4.4.raw.h5"
+        data_3 = "s3://braingeneers/ephys/" \
+                 "2023-04-04-e-hc328_hckcr1-2_040423_recs/original/data/" \
+                 "2023_04_04_hc328_hckcr1-2_3.raw.h5"
+        gpio_1 = ephys.load_gpio_maxwell(data_1)
+        gpio_2 = ephys.load_gpio_maxwell(data_2)
+        gpio_3 = ephys.load_gpio_maxwell(data_3)
+        self.assertEqual(gpio_1.shape, (1, 2))
+        self.assertEqual(gpio_2.shape, (0,))
+        self.assertEqual(gpio_3.shape, (29,))
+
+
 
 class MEArecReaderTests(unittest.TestCase):
     """The fake reader test."""
