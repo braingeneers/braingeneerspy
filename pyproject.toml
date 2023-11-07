@@ -5,7 +5,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "braingeneers"
-authors = ["UCSC Braingeneers"]
+authors = [
+  { name = "UCSC Braingeneers", email = "ucscgi@ucsc.edu" },
+]
 maintainers = [
   { name = "David", email = "dfparks@ucsc.edu" },
   { name = "Alex", email = "atspaeth@ucsc.edu" },
@@ -46,7 +48,7 @@ dependencies = [
     'schedule',
     'scipy>=1.10.0',
     'tenacity',
-    "typing_extensions >=4.6; python_version<'3.11'"
+    "typing_extensions>=4.6; python_version<3.11"
 ]
 
 [tool.hatch.build.hooks.vcs]
