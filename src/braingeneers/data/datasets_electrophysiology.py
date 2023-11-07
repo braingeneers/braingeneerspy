@@ -5,7 +5,7 @@ import json
 import warnings
 import copy
 
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import numpy as np
 import shutil
 import h5py
@@ -666,7 +666,7 @@ def load_stims_maxwell(uuid: str, metadata_ephys_exp: dict = None, experiment_st
         return None
 
    
-def load_gpio_maxwell(dataset_path, fs=20000):
+def load_gpio_maxwell(dataset_path, fs=20000.0):
     """
     Loads the GPIO events for optogenetics stimulation.
     :param dataset_path: a local or a s3 path
@@ -675,10 +675,12 @@ def load_gpio_maxwell(dataset_path, fs=20000):
     """
     with smart_open.open(dataset_path, 'rb') as f:
         with h5py.File(f, 'r') as dataset:
-            assert 'bits' in dataset.keys(), 'No GPIO event in the dataset!'
+            if 'bits' not in dataset.keys():
+                print('No GPIO event in the dataset!')
+                return np.array([])
             bits_dataset = list(dataset['bits'])
-            bits_dataframe = [bits_dataset[i][0] for i in range(len(bits_dataset))]  
-            rec_startframe = dataset['raw'][-1, 0] << 16 | dataset['raw'][-2, 0]
+            bits_dataframe = [bits_dataset[i][0] for i in range(len(bits_dataset))]
+            rec_startframe = dataset['sig'][-1, 0] << 16 | dataset['sig'][-2, 0]
     if len(bits_dataframe) % 2 == 0:
         stim_pairs = (np.array(bits_dataframe) - rec_startframe).reshape(len(bits_dataframe) // 2, 2)
         return stim_pairs / fs
