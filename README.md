@@ -39,10 +39,22 @@ pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy
 
 You can install `braingeneerspy` with specific optional dependencies based on your needs. Use the following command examples:
 
-- Install with IoT, analysis, and data access functions (skips machine learning and lab-specific dependencies):
+- Install with machine-learning dependencies:
 
 ```bash
-pip install "braingeneers[iot,analysis,data]"
+pip install "braingeneers[ml]"
+```
+
+- Install with Hengen lab dependencies:
+
+```bash
+pip install "braingeneers[ml]"
+```
+
+- Install with developer dependencies (running tests and building sphinx docs):
+
+```bash
+pip install "braingeneers[dev]"
 ```
 
 - Install with all optional dependencies:
