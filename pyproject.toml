@@ -48,7 +48,7 @@ dependencies = [
     'schedule',
     'scipy>=1.10.0',
     'tenacity',
-    "typing_extensions>=4.6; python_version<3.11"
+    "typing_extensions>=4.6; python_version<'3.11'"
 ]
 
 [tool.hatch.build.hooks.vcs]
