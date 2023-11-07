@@ -48,7 +48,7 @@ pip install "braingeneers[ml]"
 - Install with Hengen lab dependencies:
 
 ```bash
-pip install "braingeneers[ml]"
+pip install "braingeneers[hengenlab]"
 ```
 
 - Install with developer dependencies (running tests and building sphinx docs):
