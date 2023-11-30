@@ -13,60 +13,6 @@ DEFAULT_ENDPOINT = "https://s3.braingeneers.gi.ucsc.edu"  # PRP/S3/CEPH default
 CURRENT_ENDPOINT = None
 _open = None  # a reference to the current smart_open function that is configured this should not be used directly
 
-"""
-Define all groups of dependencies here. `minimal` dependencies are always installed with
-the braingeneerspy package, all other groups of dependencies will be installed
-braingeneerspy[all] or braingeneerspy[specific_dependency_group]
-Maintainers are encouraged to move dependencies to specific dependency groups and keep
-`minimal` as small as possible. `minimal` would typically be used in a RaspberryPI
-environment for example, where large dependencies can be very slow to build.
-"""
-DEPENDENCIES = {
-    # Minimal dependencies are always installed with a pip install of the repo
-    'minimal': [
-        'deprecated',
-        'requests',
-        'numpy',
-        'tenacity',
-        # 'sortedcontainers',
-        'boto3',
-        'joblib>=1.3.0,<2',
-        'braingeneers_smart_open',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
-        'awswrangler==3.*',
-    ],
-    'data': [
-        'h5py',
-        'pandas',
-        'nptyping',
-        'paho-mqtt',
-    ],
-    # Specific dependency groups allow unnecessary (and often large) dependencies to be skipped
-    # add dependency groups here, changes will be dynamically added to setup(...)
-    'iot': [
-        # 'awsiotsdk==1.6.0',  # dependency issues occur when the current version is installed, that may be resolvable
-        'redis',
-        'schedule',
-        'paho-mqtt',
-        'diskcache',
-        'pytz',
-        'tzlocal',
-    ],
-    'analysis': [
-        'scipy>=1.10.0',
-        'pandas',
-        'powerlaw',
-        'matplotlib',
-    ],
-    'ml': [
-        'torch',
-        'scikit-learn',
-    ],
-    'hengenlab': [
-        'neuraltoolkit @ git+https://github.com/hengenlab/neuraltoolkit.git',  # channel mapping information
-    ],
-}
-
-
 def get_default_endpoint() -> str:
     """
     Returns the current default (S3) endpoint. By default this will point to the standard
