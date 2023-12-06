@@ -159,7 +159,7 @@ cython_debug/
 #.idea/
 
 # Version file
-#**/_version.py
+**/_version.py
 
 .ipynb_checkpoints
 .coverage
