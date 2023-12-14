@@ -115,10 +115,9 @@ def file_list(filepath: str) -> List[Tuple[str, str, int]]:
                 (f['Key'].split('/')[-1], str(f['LastModified']), int(f['Size']))
                 for f in sorted(response['Contents'], key=lambda x: x['LastModified'], reverse=True)
             ]
-    else:
-        if os.path.exists(filepath):
-            files = sorted(pathlib.Path(filepath).iterdir(), key=os.path.getmtime, reverse=True)
-            files_and_details = [(f.name, str(f.stat().st_mtime), f.stat().st_size) for f in files]
+    elif os.path.exists(filepath):
+        files = sorted(pathlib.Path(filepath).iterdir(), key=os.path.getmtime, reverse=True)
+        files_and_details = [(f.name, str(f.stat().st_mtime), f.stat().st_size) for f in files]
 
     return files_and_details
 
