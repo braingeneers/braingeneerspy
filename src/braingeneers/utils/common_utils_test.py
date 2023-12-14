@@ -3,7 +3,6 @@ from unittest.mock import patch, MagicMock
 import common_utils  # Updated import statement
 import os
 import tempfile
-from pathlib import Path
 
 
 class TestFileListFunction(unittest.TestCase):
@@ -32,9 +31,9 @@ class TestFileListFunction(unittest.TestCase):
 
     def test_local_files_exist(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Create temporary files
-            Path(temp_dir, 'tempfile1.txt').touch()
-            Path(temp_dir, 'tempfile2.txt').touch()
+            for f in ['tempfile1.txt', 'tempfile2.txt']:
+                with open(os.path.join(temp_dir, f), 'w') as w:
+                    w.write('nothing')
 
             result = common_utils.file_list(temp_dir)  # Updated to common_utils
             # The result should contain two files with their details
