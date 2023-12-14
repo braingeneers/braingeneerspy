@@ -10,6 +10,7 @@ import inspect
 import multiprocessing
 import posixpath
 import itertools
+import pathlib
 
 
 _s3_client = None  # S3 client for boto3, lazy initialization performed in _lazy_init_s3_client()
@@ -99,25 +100,22 @@ def file_list(filepath: str) -> List[Tuple[str, str, int]]:
     """
     Returns a list of files, last modified time, and size on local or S3 in descending order of last modified time
 
-    :param filepath: Local or S3 file path to list, example: "local/dir/" or "s3://braingeneers/ephys/
+    :param filepath: Local or S3 file path to list, example: "local/dir/" or "s3://bucket/prefix/"
     :return: A list of tuples of [('fileA', 'last_modified_A', size), ('fileB', 'last_modified_B', size), ...]
     """
+    files_and_details = []
+
     if filepath.startswith('s3://'):
         s3_client = _lazy_init_s3_client()
         o = urllib.parse.urlparse(filepath)
         response = s3_client.list_objects(Bucket=o.netloc, Prefix=o.path[1:])
 
-        if 'Contents' not in response:
-            if raise_on_missing:
-                raise FileNotFoundError(filepath)
-            else:
-                return [(o.path[1:].split('/')[-1], 'Missing')]
-
-        files_and_details = [
-            (f['Key'].split('/')[-1], str(f['LastModified']), int(f['Size']))
-            for f in sorted(response['Contents'], key=lambda x: x['LastModified'], reverse=True)
-        ]
-    else:
+        if 'Contents' in response:
+            files_and_details = [
+                (f['Key'].split('/')[-1], str(f['LastModified']), int(f['Size']))
+                for f in sorted(response['Contents'], key=lambda x: x['LastModified'], reverse=True)
+            ]
+    elif os.path.exists(filepath):
         files = sorted(pathlib.Path(filepath).iterdir(), key=os.path.getmtime, reverse=True)
         files_and_details = [(f.name, str(f.stat().st_mtime), f.stat().st_size) for f in files]
 
