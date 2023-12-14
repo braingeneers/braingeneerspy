@@ -1,0 +1,175 @@
+{
+    "uuid": "2023-08-12-e-GABA_v0",
+    "timestamp": "2023-10-05T18:10:02",
+    "hardware": "Maxwell",
+    "maxwell_chip_id": "20325, 20247, 20402",
+    "notes": {
+        "purpose": "GABA dose response sweep. Gaba added X:55-X+1:~15 for x=2,4,... Started at .5uM, doubled each time (last was 14 not 16)",
+        "biology": {
+            "sample_type": "organoid",
+            "aggregation_date": "23-06-22",
+            "plating_date": "23-07-17",
+            "species": "mouse",
+            "cell_line": "e14",
+            "genotype": "",
+            "culture_media": "gfcdm",
+            "organoid_tracker_sr_no": "",
+            "organoid modification": "",
+            "organoid modification date": ""
+        },
+        "stimulation": {
+            "optogenetic": false,
+            "electrical": false,
+            "pharmacological": "GABA"
+        },
+        "automated_feeding": false,
+        "automated_imaging": false,
+        "comments": ""
+    },
+    "ephys_experiments": {
+        "data_GABA_BL_20325": {
+            "name": "data_GABA_BL_20325",
+            "maxwell_chip_number": "N/A",
+            "maxwell_tracker_sr_no": "xxxxxx",
+            "channels": [],
+            "notes": "",
+            "num_channels": 819,
+            "num_current_input_channels": 0,
+            "num_voltage_channels": 32,
+            "offset": 0,
+            "sample_rate": 20000,
+            "voltage_scaling_factor": 1,
+            "timestamp": "2023-08-12 T15:01:19;",
+            "units": "\u00b5V",
+            "version": 20190530,
+            "blocks": [
+                {
+                    "num_frames": 6001200,
+                    "path": "shared/data_GABA_BL_20325.nwb",
+                    "timestamp": "2023-08-12 T15:01:19;"
+                }
+            ],
+            "data_format": "NeurodataWithoutBorders"
+        },
+        "Trace_20230812_17_00_14_GABA_BL_20247": {
+            "name": "Trace_20230812_17_00_14_GABA_BL_20247",
+            "maxwell_chip_number": "N/A",
+            "maxwell_tracker_sr_no": "xxxxxx",
+            "channels": [],
+            "notes": "",
+            "num_channels": 944,
+            "num_current_input_channels": 0,
+            "num_voltage_channels": 32,
+            "offset": 0,
+            "sample_rate": 20000,
+            "voltage_scaling_factor": 1,
+            "timestamp": "2023-08-12 T17:00:41;",
+            "units": "\u00b5V",
+            "version": 20190530,
+            "blocks": [
+                {
+                    "num_frames": 6242800,
+                    "path": "shared/Trace_20230812_17_00_14_GABA_BL_20247.nwb",
+                    "timestamp": "2023-08-12 T17:00:41;"
+                }
+            ],
+            "data_format": "NeurodataWithoutBorders"
+        },
+        "Trace_20230812_15_55_43_GABA_BL_20402": {
+            "name": "Trace_20230812_15_55_43_GABA_BL_20402",
+            "maxwell_chip_number": "N/A",
+            "maxwell_tracker_sr_no": "xxxxxx",
+            "channels": [],
+            "notes": "",
+            "num_channels": 971,
+            "num_current_input_channels": 0,
+            "num_voltage_channels": 32,
+            "offset": 0,
+            "sample_rate": 20000,
+            "voltage_scaling_factor": 1,
+            "timestamp": "2023-08-12 T15:58:02;",
+            "units": "\u00b5V",
+            "version": 20190530,
+            "blocks": [
+                {
+                    "num_frames": 6108800,
+                    "path": "shared/Trace_20230812_15_55_43_GABA_BL_20402.nwb",
+                    "timestamp": "2023-08-12 T15:58:02;"
+                }
+            ],
+            "data_format": "NeurodataWithoutBorders"
+        },
+        "Trace_20230812_16_03_20_GABA_DR2_20402": {
+            "name": "Trace_20230812_16_03_20_GABA_DR2_20402",
+            "maxwell_chip_number": "N/A",
+            "maxwell_tracker_sr_no": "xxxxxx",
+            "channels": [],
+            "notes": "",
+            "num_channels": 971,
+            "num_current_input_channels": 0,
+            "num_voltage_channels": 32,
+            "offset": 0,
+            "sample_rate": 20000,
+            "voltage_scaling_factor": 1,
+            "timestamp": "2023-08-12 T16:04:39;",
+            "units": "\u00b5V",
+            "version": 20190530,
+            "blocks": [
+                {
+                    "num_frames": 16962400,
+                    "path": "shared/Trace_20230812_16_03_20_GABA_DR2_20402.nwb",
+                    "timestamp": "2023-08-12 T16:04:39;"
+                }
+            ],
+            "data_format": "NeurodataWithoutBorders"
+        },
+        "Trace_20230812_15_18_49_GABA_DR_20325": {
+            "name": "Trace_20230812_15_18_49_GABA_DR_20325",
+            "maxwell_chip_number": "N/A",
+            "maxwell_tracker_sr_no": "xxxxxx",
+            "channels": [],
+            "notes": "",
+            "num_channels": 819,
+            "num_current_input_channels": 0,
+            "num_voltage_channels": 32,
+            "offset": 0,
+            "sample_rate": 20000,
+            "voltage_scaling_factor": 1,
+            "timestamp": "2023-08-12 T15:19:25;",
+            "units": "\u00b5V",
+            "version": 20190530,
+            "blocks": [
+                {
+                    "num_frames": 16888000,
+                    "path": "shared/Trace_20230812_15_18_49_GABA_DR_20325.nwb",
+                    "timestamp": "2023-08-12 T15:19:25;"
+                }
+            ],
+            "data_format": "NeurodataWithoutBorders"
+        },
+        "Trace_20230812_17_27_36_GABA_DR_20247": {
+            "name": "Trace_20230812_17_27_36_GABA_DR_20247",
+            "maxwell_chip_number": "N/A",
+            "maxwell_tracker_sr_no": "xxxxxx",
+            "channels": [],
+            "notes": "",
+            "num_channels": 944,
+            "num_current_input_channels": 0,
+            "num_voltage_channels": 32,
+            "offset": 0,
+            "sample_rate": 20000,
+            "voltage_scaling_factor": 1,
+            "timestamp": "2023-08-12 T17:27:59;",
+            "units": "\u00b5V",
+            "version": 20190530,
+            "blocks": [
+                {
+                    "num_frames": 16890400,
+                    "path": "shared/Trace_20230812_17_27_36_GABA_DR_20247.nwb",
+                    "timestamp": "2023-08-12 T17:27:59;"
+                }
+            ],
+            "data_format": "NeurodataWithoutBorders"
+        }
+    }
+}
