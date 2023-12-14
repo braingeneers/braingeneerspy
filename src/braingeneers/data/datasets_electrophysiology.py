@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import json
 import warnings
 import copy
@@ -287,11 +288,11 @@ def load_windows(metadata, exp, window_centers, window_sz, dtype=np.float16,
 
         # Check if window is out of bounds
         if window[0] < 0 or window[1] > dataset_length:
-            print("Window out of bounds, inserting zeros for window",window)
+            print("Window out of bounds, inserting zeros for window", window)
             try:
                 data_temp = np.zeros((data_temp.shape[0],window_sz),dtype=dtype)
             except Exception as e:
-                print(e)
+                print(e, file=sys.stderr)
                 data_temp = load_window(metadata, exp, window, dtype=dtype, channels=channels)
         else:
             data_temp = load_window(metadata, exp, window, dtype=dtype, channels=channels)
@@ -659,14 +660,14 @@ def load_stims_maxwell(uuid: str, metadata_ephys_exp: dict = None, experiment_st
         return df
         
     except FileNotFoundError:
-        print(f'\tThere seems to be no stim log file for this experiment! :(')
+        print(f'\tThere seems to be no stim log file for this experiment! :(', file=sys.stderr)
         return None
     except OSError:
-        print(f'\tThere seems to be no stim log file (on s3) for this experiment! :(')
+        print(f'\tThere seems to be no stim log file (on s3) for this experiment! :(', file=sys.stderr)
         return None
 
    
-def load_gpio_maxwell(dataset_path, fs=20000):
+def load_gpio_maxwell(dataset_path, fs=20000.0):
     """
     Loads the GPIO events for optogenetics stimulation.
     :param dataset_path: a local or a s3 path
@@ -675,10 +676,12 @@ def load_gpio_maxwell(dataset_path, fs=20000):
     """
     with smart_open.open(dataset_path, 'rb') as f:
         with h5py.File(f, 'r') as dataset:
-            assert 'bits' in dataset.keys(), 'No GPIO event in the dataset!'
+            if 'bits' not in dataset.keys():
+                print('No GPIO event in the dataset!', file=sys.stderr)
+                return np.array([])
             bits_dataset = list(dataset['bits'])
-            bits_dataframe = [bits_dataset[i][0] for i in range(len(bits_dataset))]  
-            rec_startframe = dataset['raw'][-1, 0] << 16 | dataset['raw'][-2, 0]
+            bits_dataframe = [bits_dataset[i][0] for i in range(len(bits_dataset))]
+            rec_startframe = dataset['sig'][-1, 0] << 16 | dataset['sig'][-2, 0]
     if len(bits_dataframe) % 2 == 0:
         stim_pairs = (np.array(bits_dataframe) - rec_startframe).reshape(len(bits_dataframe) // 2, 2)
         return stim_pairs / fs
@@ -1228,7 +1231,7 @@ def _axion_generate_per_block_metadata(filename: str):
 
                 fid.seek(start + int(obj.length.item()), 0)
                 if fid.tell() != start + obj.length:
-                    print('Unexpected Channel array length')
+                    print('Unexpected Channel array length', file=sys.stderr)
 
             elif obj.type == 3:
                 continue
