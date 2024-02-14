@@ -837,6 +837,12 @@ class AtomicGetSetEphysMetadata:
     Example usage:
         with AtomicGetSetEphysMetadata(uuid) as metadata:
             metadata['new_key'] = 'new_value'
+
+    Notes:
+    An exception within the `with` block will release the lock and not write the metadata back to the file.
+    The only time a dangling lock is possible is if code execution stops during the `with` block.
+    To manually clear a dangling lock call:
+        AtomicGetSetEphysMetadata(uuid).force_release()
     """
     def __init__(self, batch_uuid: str):
         self.batch_uuid = batch_uuid
