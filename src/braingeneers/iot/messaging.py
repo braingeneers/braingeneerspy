@@ -25,6 +25,7 @@ import pickle
 from tenacity import retry, wait_exponential, after_log
 import braingeneers.utils.smart_open_braingeneers as smart_open
 
+import braingeneers.utils.common_utils
 
 AWS_REGION = 'us-west-2'
 AWS_PROFILE = 'aws-braingeneers-iot'
@@ -823,62 +824,3 @@ class TemporaryEnvironment:
 def _mqtt_topic_regex(topic: str) -> str:
     """ Converts a topic string with wildcards to a regex string """
     return "^" + topic.replace("+", "[^/]+").replace("#", ".*").replace("$", "\\$") + "$"
-
-
-class AtomicGetSetEphysMetadata:
-    """
-    This class allows multiple devices/processes/threads to safely read and write to the ephys metadata file.
-
-    This is a context manager, used with the `with` statement.
-
-    It will acquire a lock on the metadata file, read the metadata, and return it. When the context manager
-    exits it will release the lock and write the metadata back to the file if it has changed.
-
-    Example usage:
-        with AtomicGetSetEphysMetadata(uuid) as metadata:
-            metadata['new_key'] = 'new_value'
-
-    Notes:
-    An exception within the `with` block will release the lock and not write the metadata back to the file.
-    The only time a dangling lock is possible is if code execution stops during the `with` block.
-    To manually clear a dangling lock call:
-        AtomicGetSetEphysMetadata(uuid).force_release()
-    """
-    def __init__(self, batch_uuid: str):
-        self.batch_uuid = batch_uuid
-        self.lock_str = f'atomic-metadata-lock-{batch_uuid}'
-        self.mb = MessageBroker()
-
-        self.named_lock = None
-        self.metadata = None
-        self.metadata_md5_hash = None
-
-    @staticmethod
-    def _md5_hash(data: dict) -> str:
-        return hashlib.md5(json.dumps(data, sort_keys=True).encode()).hexdigest()
-
-    def __enter__(self):
-        self.named_lock = self.mb.get_lock(self.lock_str)
-        self.named_lock.acquire()
-        self.metadata = json.loads(smart_open.open(f's3://braingeneers/ephys/{self.batch_uuid}/metadata.json', 'r').read())
-        self.metadata_md5_hash = self._md5_hash(self.metadata)
-        return self.metadata
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        try:
-            if self.metadata_md5_hash == self._md5_hash(self.metadata):
-                print('Warning: metadata was not changed, not saving.')
-            else:
-                smart_open.open(f's3://braingeneers/{uuid}/metadata.json', 'w').write(
-                    json.dumps(self.metadata, indent=2)
-                )
-        finally:
-            self.named_lock.release()
-
-    def force_release(self):
-        """
-        Force release the lock, use with caution.
-        If a lock is created but not released this function can be used to
-        force its release. This is not recommended for normal use.
-        """
-        self.mb.delete_lock(self.lock_str)

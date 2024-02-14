@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch, MagicMock
 import common_utils  # Updated import statement
+from common_utils import AtomicGetSetEphysMetadata
+from braingeneers.iot import messaging
 import os
 import tempfile
 
@@ -43,6 +45,21 @@ class TestFileListFunction(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             result = common_utils.file_list(temp_dir)  # Updated to common_utils
             self.assertEqual(result, [])
+
+
+class TestAtomicGetSetEphysMetadata(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mb = messaging.MessageBroker()
+        # Delete any previously held lock
+        AtomicGetSetEphysMetadata('2020-03-25-e-testit').force_release()
+
+    def test_noop(self):
+        """ Very trivial exercise of the code. """
+
+        with AtomicGetSetEphysMetadata('2020-03-25-e-testit') as metadata:
+            self.assertTrue(metadata is not None)
+            self.assertTrue(isinstance(metadata, dict))
+            self.assertTrue(len(metadata) > 0)
 
 
 if __name__ == '__main__':
