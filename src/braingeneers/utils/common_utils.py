@@ -314,9 +314,6 @@ def checkin(s3_file: str, file: Union[str, bytes, io.IOBase]):
     """
     assert isinstance(file, (str, bytes, io.IOBase)), 'file must be a string, bytes, or file object.'
 
-    # Avoid circular import
-    from braingeneers.iot.messaging import MessageBroker
-
     with smart_open.open(s3_file, 'wb') as f:
         if isinstance(file, str):
             f.write(file.encode())
@@ -327,12 +324,7 @@ def checkin(s3_file: str, file: Union[str, bytes, io.IOBase]):
             data = file.read()
             f.write(data if isinstance(data, bytes) else data.encode())
 
-    global _message_broker, _named_locks
-    if _message_broker is None:
-        print('creating message broker')
-        _message_broker = MessageBroker()
-    mb = _message_broker
-
+    global _named_locks
     named_lock = _named_locks[s3_file]
     named_lock.release()
 
