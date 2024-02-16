@@ -1,10 +1,10 @@
 import unittest
 from unittest.mock import patch, MagicMock
-import common_utils  # Updated import statement
-from common_utils import AtomicGetSetEphysMetadata
+from common_utils import checkout, checkin, force_release_checkout
 from braingeneers.iot import messaging
 import os
 import tempfile
+import braingeneers.utils.smart_open_braingeneers as smart_open
 
 
 class TestFileListFunction(unittest.TestCase):
@@ -47,19 +47,33 @@ class TestFileListFunction(unittest.TestCase):
             self.assertEqual(result, [])
 
 
-class TestAtomicGetSetEphysMetadata(unittest.TestCase):
+class TestCheckingCheckout(unittest.TestCase):
     def setUp(self) -> None:
-        self.mb = messaging.MessageBroker()
-        # Delete any previously held lock
-        AtomicGetSetEphysMetadata('2020-03-25-e-testit').force_release()
+        self.text_value = 'unittest1'
+        self.filepath = 's3://braingeneersdev/unittest/test.txt'
+        force_release_checkout(self.filepath)
 
-    def test_noop(self):
-        """ Very trivial exercise of the code. """
+        with smart_open.open(self.filepath, 'w') as f:
+            f.write(self.text_value)
 
-        with AtomicGetSetEphysMetadata('2020-03-25-e-testit') as metadata:
-            self.assertTrue(metadata is not None)
-            self.assertTrue(isinstance(metadata, dict))
-            self.assertTrue(len(metadata) > 0)
+    def test_checkout_checkin(self):
+        f = checkout(self.filepath)
+        self.assertEqual(f.read(), self.text_value)
+        checkin(self.filepath, f)
+
+# class TestAtomicGetSetEphysMetadata(unittest.TestCase):
+#     def setUp(self) -> None:
+#         self.mb = messaging.MessageBroker()
+#         # Delete any previously held lock
+#         AtomicGetSetEphysMetadata('2020-03-25-e-testit').force_release()
+#
+#     def test_noop(self):
+#         """ Very trivial exercise of the code. """
+#
+#         with AtomicGetSetEphysMetadata('2020-03-25-e-testit') as metadata:
+#             self.assertTrue(metadata is not None)
+#             self.assertTrue(isinstance(metadata, dict))
+#             self.assertTrue(len(metadata) > 0)
 
 
 if __name__ == '__main__':

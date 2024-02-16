@@ -1,4 +1,5 @@
 """ Common utility functions """
+import io
 import urllib
 import boto3
 from botocore.exceptions import ClientError
@@ -16,6 +17,8 @@ import json
 import hashlib
 
 _s3_client = None  # S3 client for boto3, lazy initialization performed in _lazy_init_s3_client()
+_message_broker = None  # Lazy initialization of the message broker
+_named_locks = {}  # Named locks for checkout and checkin
 
 
 def _lazy_init_s3_client():
@@ -195,71 +198,156 @@ def map2(func: Callable,
     return list(result_iterator)
 
 
-class AtomicGetSetEphysMetadata:
+# class AtomicGetSetEphysMetadata:
+#     """
+#     This class allows multiple devices/processes/threads to safely read and write to the ephys metadata file.
+#
+#     This is a context manager, used with the `with` statement.
+#
+#     It will acquire a lock on the metadata file, read the metadata, and return it. When the context manager
+#     exits it will release the lock and write the metadata back to the file if it has changed.
+#
+#     The with block below in example usage is a guaranteed critical section by UUID,
+#     any other code using AtomicGetSetEphysMetadata will wait to
+#     enter the with block, if any other code, on any hosts, is already in the critical section (`with` block).
+#     on any host. Upon exiting the block the `metadata` object is updated on S3 safely.
+#
+#     Example usage:
+#         from braingeneers.utils.common_utils import AtomicGetSetEphysMetadata
+#
+#         with AtomicGetSetEphysMetadata(uuid) as metadata:
+#             metadata['new_key'] = 'new_value'
+#
+#     Notes:
+#     An exception within the `with` block will release the lock and not write the metadata back to the file.
+#     The only time a dangling lock is possible is if code execution stops during the `with` block.
+#     To manually clear a dangling lock call:
+#
+#         from braingeneers.utils.common_utils import AtomicGetSetEphysMetadata
+#         AtomicGetSetEphysMetadata(uuid).force_release()
+#     """
+#     def __init__(self, batch_uuid: str):
+#         from braingeneers.iot.messaging import MessageBroker
+#         self.batch_uuid = batch_uuid
+#         self.lock_str = f'atomic-metadata-lock-{batch_uuid}'
+#         self.mb = MessageBroker()
+#
+#         self.named_lock = None
+#         self.metadata = None
+#         self.metadata_md5_hash = None
+#
+#     @staticmethod
+#     def _md5_hash(data: dict) -> str:
+#         return hashlib.md5(json.dumps(data, sort_keys=True).encode()).hexdigest()
+#
+#     def __enter__(self):
+#         self.named_lock = self.mb.get_lock(self.lock_str)
+#         self.named_lock.acquire()
+#         self.metadata_filepath = posixpath.join(get_basepath(), 'ephys', self.batch_uuid, 'metadata.json')
+#         self.metadata = json.loads(smart_open.open(self.metadata_filepath, 'r').read())
+#         self.metadata_md5_hash = self._md5_hash(self.metadata)
+#         return self.metadata
+#
+#     def __exit__(self, exc_type, exc_val, exc_tb):
+#         try:
+#             if self.metadata_md5_hash == self._md5_hash(self.metadata):
+#                 print('Warning: metadata was not changed, not saving.')
+#             else:
+#                 smart_open.open(self.metadata_filepath, 'w').write(
+#                     json.dumps(self.metadata, indent=2)
+#                 )
+#         finally:
+#             self.named_lock.release()
+#
+#     def force_release(self):
+#         """
+#         Force release the lock, use with caution.
+#         If a lock is created but not released this function can be used to
+#         force its release. This is not recommended for normal use.
+#         """
+#         self.mb.delete_lock(self.lock_str)
+
+
+def checkout(s3_file: str, mode: str = 'r') -> io.IOBase:
     """
-    This class allows multiple devices/processes/threads to safely read and write to the ephys metadata file.
-
-    This is a context manager, used with the `with` statement.
-
-    It will acquire a lock on the metadata file, read the metadata, and return it. When the context manager
-    exits it will release the lock and write the metadata back to the file if it has changed.
-
-    The with block below in example usage is a guaranteed critical section by UUID,
-    any other code using AtomicGetSetEphysMetadata will wait to
-    enter the with block, if any other code, on any hosts, is already in the critical section (`with` block).
-    on any host. Upon exiting the block the `metadata` object is updated on S3 safely.
+    Check out a file from S3 for reading or writing, use checkin to release the file.
+    Any subsequent calls to checkout will block until the file is returned with checkin(s3_file).
 
     Example usage:
-        from braingeneers.utils.common_utils import AtomicGetSetEphysMetadata
+        f = checkout('s3://braingeneersdev/test/test_file.bin', mode='rb')
+        new_bytes = do_something(f.read())
+        checkin('s3://braingeneersdev/test/test_file.bin', new_bytes)
 
-        with AtomicGetSetEphysMetadata(uuid) as metadata:
-            metadata['new_key'] = 'new_value'
+    Example usage to update metadata:
+        f = checkout('s3://braingeneersdev/test/metadata.json')
+        metadata_dict = json.loads(f.read())
+        metadata_dict['new_key'] = 'new_value'
+        metadata_updated_str = json.dumps(metadata_dict, indent=2)
+        checkin('s3://braingeneersdev/test/metadata.json', updated_metadata_str)
 
-    Notes:
-    An exception within the `with` block will release the lock and not write the metadata back to the file.
-    The only time a dangling lock is possible is if code execution stops during the `with` block.
-    To manually clear a dangling lock call:
-
-        from braingeneers.utils.common_utils import AtomicGetSetEphysMetadata
-        AtomicGetSetEphysMetadata(uuid).force_release()
+    :param s3_file: The S3 file path to check out.
+    :param mode: The mode to open the file in, 'r' or 'rb' for reading, 'w' or 'wb' for writing.
     """
-    def __init__(self, batch_uuid: str):
-        from braingeneers.iot.messaging import MessageBroker
-        self.batch_uuid = batch_uuid
-        self.lock_str = f'atomic-metadata-lock-{batch_uuid}'
-        self.mb = MessageBroker()
+    # Avoid circular import
+    from braingeneers.iot.messaging import MessageBroker
 
-        self.named_lock = None
-        self.metadata = None
-        self.metadata_md5_hash = None
+    global _message_broker, _named_locks
+    if _message_broker is None:
+        print('creating message broker')
+        _message_broker = MessageBroker()
+    mb = _message_broker
 
-    @staticmethod
-    def _md5_hash(data: dict) -> str:
-        return hashlib.md5(json.dumps(data, sort_keys=True).encode()).hexdigest()
+    lock_str = f'common-utils-checkout-{s3_file}'
+    named_lock = mb.get_lock(lock_str)
+    named_lock.acquire()
+    _named_locks[s3_file] = named_lock
+    f = smart_open.open(s3_file, mode)
+    return f
 
-    def __enter__(self):
-        self.named_lock = self.mb.get_lock(self.lock_str)
-        self.named_lock.acquire()
-        self.metadata_filepath = posixpath.join(get_basepath(), 'ephys', self.batch_uuid, 'metadata.json')
-        self.metadata = json.loads(smart_open.open(self.metadata_filepath, 'r').read())
-        self.metadata_md5_hash = self._md5_hash(self.metadata)
-        return self.metadata
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        try:
-            if self.metadata_md5_hash == self._md5_hash(self.metadata):
-                print('Warning: metadata was not changed, not saving.')
-            else:
-                smart_open.open(self.metadata_filepath, 'w').write(
-                    json.dumps(self.metadata, indent=2)
-                )
-        finally:
-            self.named_lock.release()
+def checkin(s3_file: str, file: Union[str, bytes, io.IOBase]):
+    """
+    Releases a file that was checked out with checkout.
 
-    def force_release(self):
-        """
-        Force release the lock, use with caution.
-        If a lock is created but not released this function can be used to
-        force its release. This is not recommended for normal use.
-        """
-        self.mb.delete_lock(self.lock_str)
+    :param s3_file: The S3 file path, must match checkout.
+    :param file: The string, bytes, or file object to write back to S3.
+    """
+    assert isinstance(file, (str, bytes, io.IOBase)), 'file must be a string, bytes, or file object.'
+
+    # Avoid circular import
+    from braingeneers.iot.messaging import MessageBroker
+
+    with smart_open.open(s3_file, 'wb') as f:
+        if isinstance(file, str):
+            f.write(file.encode())
+        elif isinstance(file, bytes):
+            f.write(file)
+        else:
+            file.seek(0)
+            data = file.read()
+            f.write(data if isinstance(data, bytes) else data.encode())
+
+    global _message_broker, _named_locks
+    if _message_broker is None:
+        print('creating message broker')
+        _message_broker = MessageBroker()
+    mb = _message_broker
+
+    named_lock = _named_locks[s3_file]
+    named_lock.release()
+
+
+def force_release_checkout(s3_file: str):
+    """
+    Force release the lock on a file that was checked out with checkout.
+    """
+    # Avoid circular import
+    from braingeneers.iot.messaging import MessageBroker
+
+    global _message_broker
+    if _message_broker is None:
+        _message_broker = MessageBroker()
+    mb = _message_broker
+
+    lock_str = f'common-utils-checkout-{s3_file}'
+    mb.delete_lock(lock_str)
