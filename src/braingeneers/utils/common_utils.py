@@ -191,3 +191,65 @@ def map2(func: Callable,
             result_iterator = pool.starmap(func_partial, args_tuples)
 
     return list(result_iterator)
+
+
+def pretty_print(data, n=10, indent=0):
+    """
+    Custom pretty print function that uniformly truncates any collection (list or dictionary)
+    longer than `n` values, showing the first `n` values and a summary of omitted items.
+    Ensures mapping sections and similar are displayed compactly.
+
+    Example usage (to display metadata.json):
+    
+      from braingeneers.utils.common_utils import pretty_print
+      from braingeneers.data import datasets_electrophysiology as de
+      
+      metadata = de.load_metadata('2023-04-17-e-connectoid16235_CCH')
+      pretty_print(metadata)
+      
+    Parameters:
+    - data: The data to pretty print, either a list or a dictionary.
+    - n: Maximum number of elements or items to display before truncation.
+    - indent: Don't use this. Current indentation level for formatting, used during recursion.
+    """
+    indent_space = ' ' * indent
+    if isinstance(data, dict):
+        keys = list(data.keys())
+        if len(keys) > n:
+            truncated_keys = keys[:n]
+            omitted_keys = len(keys) - n
+        else:
+            truncated_keys = keys
+            omitted_keys = None
+        
+        print('{')
+        for key in truncated_keys:
+            value = data[key]
+            print(f"{indent_space}    '{key}': ", end='')
+            if isinstance(value, dict):
+                pretty_print(value, n, indent + 4)
+                print()
+            elif isinstance(value, list) and all(isinstance(x, (list, tuple)) and len(x) == 4 for x in value):
+                # Compact display for lists of tuples/lists of length 4.
+                print('[', end='')
+                if len(value) > n:
+                    for item in value[:n]:
+                        print(f"{item}, ", end='')
+                    print(f"... (+{len(value) - n} more items)", end='')
+                else:
+                    print(', '.join(map(str, value)), end='')
+                print('],')
+            else:
+                print(f"{value},")
+        if omitted_keys:
+            print(f"{indent_space}    ... (+{omitted_keys} more items)")
+        print(f"{indent_space}}}", end='')
+    elif isinstance(data, list):
+        print('[')
+        for item in data[:n]:
+            pretty_print(item, n, indent + 4)
+            print(',')
+        if len(data) > n:
+            print(f"{indent_space}    ... (+{len(data) - n} more items)")
+        print(f"{indent_space}]", end='')
+
