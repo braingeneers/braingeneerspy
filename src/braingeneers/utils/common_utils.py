@@ -5,7 +5,7 @@ import boto3
 from botocore.exceptions import ClientError
 import os
 import braingeneers
-import smart_open_braingeneers as smart_open
+import braingeneers.utils.smart_open_braingeneers as smart_open
 from typing import List, Tuple, Union, Callable, Iterable
 import functools
 import inspect
