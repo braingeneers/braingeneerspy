@@ -198,76 +198,6 @@ def map2(func: Callable,
     return list(result_iterator)
 
 
-# class AtomicGetSetEphysMetadata:
-#     """
-#     This class allows multiple devices/processes/threads to safely read and write to the ephys metadata file.
-#
-#     This is a context manager, used with the `with` statement.
-#
-#     It will acquire a lock on the metadata file, read the metadata, and return it. When the context manager
-#     exits it will release the lock and write the metadata back to the file if it has changed.
-#
-#     The with block below in example usage is a guaranteed critical section by UUID,
-#     any other code using AtomicGetSetEphysMetadata will wait to
-#     enter the with block, if any other code, on any hosts, is already in the critical section (`with` block).
-#     on any host. Upon exiting the block the `metadata` object is updated on S3 safely.
-#
-#     Example usage:
-#         from braingeneers.utils.common_utils import AtomicGetSetEphysMetadata
-#
-#         with AtomicGetSetEphysMetadata(uuid) as metadata:
-#             metadata['new_key'] = 'new_value'
-#
-#     Notes:
-#     An exception within the `with` block will release the lock and not write the metadata back to the file.
-#     The only time a dangling lock is possible is if code execution stops during the `with` block.
-#     To manually clear a dangling lock call:
-#
-#         from braingeneers.utils.common_utils import AtomicGetSetEphysMetadata
-#         AtomicGetSetEphysMetadata(uuid).force_release()
-#     """
-#     def __init__(self, batch_uuid: str):
-#         from braingeneers.iot.messaging import MessageBroker
-#         self.batch_uuid = batch_uuid
-#         self.lock_str = f'atomic-metadata-lock-{batch_uuid}'
-#         self.mb = MessageBroker()
-#
-#         self.named_lock = None
-#         self.metadata = None
-#         self.metadata_md5_hash = None
-#
-#     @staticmethod
-#     def _md5_hash(data: dict) -> str:
-#         return hashlib.md5(json.dumps(data, sort_keys=True).encode()).hexdigest()
-#
-#     def __enter__(self):
-#         self.named_lock = self.mb.get_lock(self.lock_str)
-#         self.named_lock.acquire()
-#         self.metadata_filepath = posixpath.join(get_basepath(), 'ephys', self.batch_uuid, 'metadata.json')
-#         self.metadata = json.loads(smart_open.open(self.metadata_filepath, 'r').read())
-#         self.metadata_md5_hash = self._md5_hash(self.metadata)
-#         return self.metadata
-#
-#     def __exit__(self, exc_type, exc_val, exc_tb):
-#         try:
-#             if self.metadata_md5_hash == self._md5_hash(self.metadata):
-#                 print('Warning: metadata was not changed, not saving.')
-#             else:
-#                 smart_open.open(self.metadata_filepath, 'w').write(
-#                     json.dumps(self.metadata, indent=2)
-#                 )
-#         finally:
-#             self.named_lock.release()
-#
-#     def force_release(self):
-#         """
-#         Force release the lock, use with caution.
-#         If a lock is created but not released this function can be used to
-#         force its release. This is not recommended for normal use.
-#         """
-#         self.mb.delete_lock(self.lock_str)
-
-
 def checkout(s3_file: str, mode: str = 'r') -> io.IOBase:
     """
     Check out a file from S3 for reading or writing, use checkin to release the file.
@@ -286,10 +216,12 @@ def checkout(s3_file: str, mode: str = 'r') -> io.IOBase:
         checkin('s3://braingeneersdev/test/metadata.json', updated_metadata_str)
 
     :param s3_file: The S3 file path to check out.
-    :param mode: The mode to open the file in, 'r' or 'rb' for reading, 'w' or 'wb' for writing.
+    :param mode: The mode to open the file in, 'r' (text mode) or 'rb' (binary mode), analogous to system open(filename, mode)
     """
     # Avoid circular import
     from braingeneers.iot.messaging import MessageBroker
+
+    assert mode in ('r', 'rb'), 'Use "r" (text) or "rb" (binary) mode only. File changes are applied at checkout(...)'
 
     global _message_broker, _named_locks
     if _message_broker is None:
