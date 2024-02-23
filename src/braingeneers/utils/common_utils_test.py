@@ -61,20 +61,6 @@ class TestCheckingCheckout(unittest.TestCase):
         self.assertEqual(f.read(), self.text_value)
         checkin(self.filepath, f)
 
-# class TestAtomicGetSetEphysMetadata(unittest.TestCase):
-#     def setUp(self) -> None:
-#         self.mb = messaging.MessageBroker()
-#         # Delete any previously held lock
-#         AtomicGetSetEphysMetadata('2020-03-25-e-testit').force_release()
-#
-#     def test_noop(self):
-#         """ Very trivial exercise of the code. """
-#
-#         with AtomicGetSetEphysMetadata('2020-03-25-e-testit') as metadata:
-#             self.assertTrue(metadata is not None)
-#             self.assertTrue(isinstance(metadata, dict))
-#             self.assertTrue(len(metadata) > 0)
-
 
 if __name__ == '__main__':
     unittest.main()
