@@ -1,27 +1,22 @@
 """ A simplified MQTT client for Braingeneers specific connections """
-
 import redis
-import tempfile
-import functools
-import json
-import inspect
 import logging
 import os
 import re
-import time
 import io
 import configparser
 import threading
 import queue
 import uuid
-from typing import Callable, Tuple, List, Dict, Union
 import random
 import json
 import braingeneers.iot.shadows as sh
-from paho.mqtt import client as mqtt_client
-from deprecated import deprecated
 import pickle
-from tenacity import retry, wait_exponential, after_log
+
+from typing import Callable, Tuple, List, Dict, Union
+from deprecated import deprecated
+from paho.mqtt import client as mqtt_client
+from paho.mqtt.enums import CallbackAPIVersion
 
 
 AWS_REGION = 'us-west-2'
@@ -767,7 +762,7 @@ class MessageBroker:
                 self.logger.debug("MQTT log: %s", buf)
 
             client_id = f'braingeneerspy-{random.randint(0, 1000)}'
-            self._mqtt_connection = mqtt_client.Client(client_id)
+            self._mqtt_connection = mqtt_client.Client(CallbackAPIVersion.VERSION1, client_id)
             self._mqtt_connection.username_pw_set(self._mqtt_profile_id, self._mqtt_profile_key)
             self._mqtt_connection.on_connect = on_connect
             self._mqtt_connection.on_log = on_log
