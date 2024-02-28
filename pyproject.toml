@@ -62,7 +62,6 @@ local_scheme = "no-local-version"
 [project.optional-dependencies]
 all = [
   'braingeneers[ml]',
-  'braingeneers[hengenlab]',
   'braingeneers[dev]',
 ]
 ml = [
