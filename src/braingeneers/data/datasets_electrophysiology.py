@@ -1303,47 +1303,6 @@ def _axion_get_data(file_name, file_data_start_position,
         return final_raw_data_reshaped
 
 
-# class IndexedList(list):
-#     """
-#     A variant of OrderedDict indexable by index (int) or name (str).
-#     This class forces ints to represent index by location, else index by name/object.
-#     Example usages:
-#         metadata['ephys_experiments']['experiment0']    # index by name (must use str type)
-#         metadata['ephys_experiments'][0]                # index by location (must use int type)
-#     """
-#
-#     def __init__(self, original_list: list, key: callable):
-#         self.keys_ordered = [key(v) for v in original_list]
-#         self.dict = {key(v): v for v in original_list}
-#         super().__init__()
-#
-#     def __getitem__(self, key):
-#         print(key)
-#         if isinstance(key, int):
-#             return self.dict[self.keys_ordered[key]]
-#         elif isinstance(key, str):
-#             return self.dict[key]
-#         else:
-#             raise KeyError(f'Key must be type int (index by location) or str (index by name), got type: {type(key)}')
-#
-#     def __iter__(self) -> Iterator:
-#         def g():
-#             for k in self.keys_ordered:
-#                 yield self.dict[k]
-#
-#         return g()
-#
-#     def __hash__(self):
-#         return self.dict.__hash__()
-#
-#     def __eq__(self, other):
-#         return isinstance(other, IndexedList) and self.dict.__eq__(other.dict)
-#
-#     def __add__(self, value):
-#         self.keys_ordered.append(value)
-#         self.dict[value] = value
-
-
 def get_mearec_h5_recordings_file(batch_uuid: str):
     """
     Returns the filepath to the MEArec .h5/.hdf5 recordings file for the given UUID.
