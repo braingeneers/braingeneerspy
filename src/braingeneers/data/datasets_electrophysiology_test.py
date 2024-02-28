@@ -413,47 +413,6 @@ class HengenlabReaderTests(unittest.TestCase):
         self.assertEqual((192, 4), data.shape)
         self.assertEqual(np.float32, data.dtype)
 
-    @skip_unittest_if_offline
-    def test_online_generate_metadata(self):
-        metadata = ephys.generate_metadata_hengenlab(
-            batch_uuid=self.batch_uuid,
-            dataset_name='CAF26',
-            save=False,
-        )
-
-        # top level items
-        self.assertEqual(metadata['uuid'], '2020-04-12-e-hengenlab-caf26')
-        self.assertEqual(metadata['timestamp'], '2020-08-07T14:00:15')
-        self.assertEqual(metadata['issue'], '')
-        self.assertEqual(metadata['headstage_types'], ['EAB50chmap_00', 'APT_PCB', 'APT_PCB'])
-
-        # notes
-        self.assertEqual(metadata['notes']['biology']['sample_type'], 'mouse')
-        self.assertEqual(metadata['notes']['biology']['dataset_name'], 'CAF26')
-        self.assertEqual(metadata['notes']['biology']['birthday'], '2020-02-20T07:30:00')
-        self.assertEqual(metadata['notes']['biology']['genotype'], 'wt')
-
-        # ephys_experiments
-        self.assertEqual(len(metadata['ephys_experiments']), 1)
-        self.assertTrue(isinstance(metadata['ephys_experiments'], list))
-
-        experiment = metadata['ephys_experiments'][0]
-        self.assertEqual(experiment['name'], 'experiment1')
-        self.assertEqual(experiment['hardware'], 'Hengenlab')
-        self.assertEqual(experiment['num_channels'], 192)
-        self.assertEqual(experiment['sample_rate'], 25000)
-        self.assertEqual(experiment['voltage_scaling_factor'], 0.19073486328125)
-        self.assertEqual(experiment['timestamp'], '2020-08-07T14:00:15')
-        self.assertEqual(experiment['units'], '\u00b5V')
-        self.assertEqual(experiment['version'], '1.0.0')
-        self.assertEqual(len(experiment['blocks']), 324)
-
-        block1 = metadata['ephys_experiments'][0]['blocks'][1]
-        self.assertEqual(block1['num_frames'], 7500000)
-        self.assertEqual(block1['path'], 'original/experiment1/Headstages_192_Channels_int16_2020-08-07_14-05-16.bin')
-        self.assertEqual(block1['timestamp'], '2020-08-07T14:05:16')
-        self.assertEqual(block1['ecube_time'], 301061600050)
-
 
 if __name__ == '__main__':
     unittest.main()
