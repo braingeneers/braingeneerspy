@@ -69,9 +69,6 @@ ml = [
   'torch',
   'scikit-learn',
 ]
-hengenlab = [
-  'neuraltoolkit==0.3.1',  # channel mapping information
-]
 dev = [
   "pytest >=6",
   "pytest-cov >=3",
