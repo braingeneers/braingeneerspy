@@ -40,7 +40,7 @@ dependencies = [
     'matplotlib',
     'nptyping',
     'numpy',
-    'paho-mqtt',
+    'paho-mqtt>=2',
     'pandas',
     'powerlaw',
     'redis',
