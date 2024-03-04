@@ -1,8 +1,13 @@
 import unittest
 from unittest.mock import patch, MagicMock
-import common_utils  # Updated import statement
+import common_utils
+from common_utils import map2
 import os
 import tempfile
+
+
+def multiply(x, y):
+    return x * y
 
 
 class TestFileListFunction(unittest.TestCase):
@@ -43,6 +48,46 @@ class TestFileListFunction(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             result = common_utils.file_list(temp_dir)  # Updated to common_utils
             self.assertEqual(result, [])
+
+
+class TestMap2(unittest.TestCase):
+    def test_basic_functionality(self):
+        """Test map2 with a simple function, no fixed values, no parallelism."""
+
+        def simple_add(x, y):
+            return x + y
+
+        args = [(1, 2), (2, 3), (3, 4)]
+        expected = [3, 5, 7]
+        result = map2(simple_add, args=args, parallelism=False)
+        self.assertEqual(result, expected)
+
+    def test_with_fixed_values(self):
+        """Test map2 with fixed values."""
+
+        def f(a, b, c):
+            return f'{a} {b} {c}'
+
+        args = [2, 20, 200]
+        expected = ['1 2 3', '1 20 3', '1 200 3']
+        result = map2(func=f, args=args, fixed_values=dict(a=1, c=3), parallelism=False)
+        self.assertEqual(result, expected)
+
+    def test_with_parallelism(self):
+        """Test map2 with parallelism enabled (assuming the environment supports it)."""
+        args = [(1, 2), (2, 3), (3, 4)]
+        expected = [2, 6, 12]
+        result = map2(multiply, args=args, parallelism=True)
+        self.assertEqual(result, expected)
+
+    def test_with_invalid_args(self):
+        """Test map2 with invalid args to ensure it raises the correct exceptions."""
+
+        def simple_subtract(x, y):
+            return x - y
+
+        with self.assertRaises(AssertionError):
+            map2(simple_subtract, args=[1], parallelism="invalid")
 
 
 if __name__ == '__main__':
