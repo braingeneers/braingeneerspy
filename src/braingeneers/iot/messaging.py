@@ -816,4 +816,3 @@ class TemporaryEnvironment:
 def _mqtt_topic_regex(topic: str) -> str:
     """ Converts a topic string with wildcards to a regex string """
     return "^" + topic.replace("+", "[^/]+").replace("#", ".*").replace("$", "\\$") + "$"
-

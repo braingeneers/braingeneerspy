@@ -62,15 +62,11 @@ local_scheme = "no-local-version"
 [project.optional-dependencies]
 all = [
   'braingeneers[ml]',
-  'braingeneers[hengenlab]',
   'braingeneers[dev]',
 ]
 ml = [
   'torch',
   'scikit-learn',
-]
-hengenlab = [
-  'neuraltoolkit==0.3.1',  # channel mapping information
 ]
 dev = [
   "pytest >=6",

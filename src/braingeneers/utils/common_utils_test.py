@@ -1,9 +1,11 @@
 import unittest
 from unittest.mock import patch, MagicMock
+from common_utils import checkout, checkin, force_release_checkout, map2
+from braingeneers.iot import messaging
 import common_utils
-from common_utils import map2
 import os
 import tempfile
+import braingeneers.utils.smart_open_braingeneers as smart_open
 
 
 def multiply(x, y):
@@ -48,6 +50,21 @@ class TestFileListFunction(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             result = common_utils.file_list(temp_dir)  # Updated to common_utils
             self.assertEqual(result, [])
+
+
+class TestCheckingCheckout(unittest.TestCase):
+    def setUp(self) -> None:
+        self.text_value = 'unittest1'
+        self.filepath = 's3://braingeneersdev/unittest/test.txt'
+        force_release_checkout(self.filepath)
+
+        with smart_open.open(self.filepath, 'w') as f:
+            f.write(self.text_value)
+
+    def test_checkout_checkin(self):
+        f = checkout(self.filepath)
+        self.assertEqual(f.read(), self.text_value)
+        checkin(self.filepath, f)
 
 
 class TestMap2(unittest.TestCase):

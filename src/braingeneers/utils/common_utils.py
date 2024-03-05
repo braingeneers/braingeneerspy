@@ -1,9 +1,11 @@
 """ Common utility functions """
+import io
 import urllib
 import boto3
 from botocore.exceptions import ClientError
 import os
 import braingeneers
+import braingeneers.utils.smart_open_braingeneers as smart_open
 from typing import Callable, Iterable, Union, List, Tuple, Dict, Any
 import functools
 import inspect
@@ -11,9 +13,12 @@ import multiprocessing
 import posixpath
 import itertools
 import pathlib
-
+import json
+import hashlib
 
 _s3_client = None  # S3 client for boto3, lazy initialization performed in _lazy_init_s3_client()
+_message_broker = None  # Lazy initialization of the message broker
+_named_locks = {}  # Named locks for checkout and checkin
 
 
 def _lazy_init_s3_client():
@@ -199,6 +204,85 @@ def map2(func: Callable,
     return list(result_iterator)
 
 
+def checkout(s3_file: str, mode: str = 'r') -> io.IOBase:
+    """
+    Check out a file from S3 for reading or writing, use checkin to release the file.
+    Any subsequent calls to checkout will block until the file is returned with checkin(s3_file).
+
+    Example usage:
+        f = checkout('s3://braingeneersdev/test/test_file.bin', mode='rb')
+        new_bytes = do_something(f.read())
+        checkin('s3://braingeneersdev/test/test_file.bin', new_bytes)
+
+    Example usage to update metadata:
+        f = checkout('s3://braingeneersdev/test/metadata.json')
+        metadata_dict = json.loads(f.read())
+        metadata_dict['new_key'] = 'new_value'
+        metadata_updated_str = json.dumps(metadata_dict, indent=2)
+        checkin('s3://braingeneersdev/test/metadata.json', updated_metadata_str)
+
+    :param s3_file: The S3 file path to check out.
+    :param mode: The mode to open the file in, 'r' (text mode) or 'rb' (binary mode), analogous to system open(filename, mode)
+    """
+    # Avoid circular import
+    from braingeneers.iot.messaging import MessageBroker
+
+    assert mode in ('r', 'rb'), 'Use "r" (text) or "rb" (binary) mode only. File changes are applied at checkout(...)'
+
+    global _message_broker, _named_locks
+    if _message_broker is None:
+        print('creating message broker')
+        _message_broker = MessageBroker()
+    mb = _message_broker
+
+    lock_str = f'common-utils-checkout-{s3_file}'
+    named_lock = mb.get_lock(lock_str)
+    named_lock.acquire()
+    _named_locks[s3_file] = named_lock
+    f = smart_open.open(s3_file, mode)
+    return f
+
+
+def checkin(s3_file: str, file: Union[str, bytes, io.IOBase]):
+    """
+    Releases a file that was checked out with checkout.
+
+    :param s3_file: The S3 file path, must match checkout.
+    :param file: The string, bytes, or file object to write back to S3.
+    """
+    assert isinstance(file, (str, bytes, io.IOBase)), 'file must be a string, bytes, or file object.'
+
+    with smart_open.open(s3_file, 'wb') as f:
+        if isinstance(file, str):
+            f.write(file.encode())
+        elif isinstance(file, bytes):
+            f.write(file)
+        else:
+            file.seek(0)
+            data = file.read()
+            f.write(data if isinstance(data, bytes) else data.encode())
+
+    global _named_locks
+    named_lock = _named_locks[s3_file]
+    named_lock.release()
+
+
+def force_release_checkout(s3_file: str):
+    """
+    Force release the lock on a file that was checked out with checkout.
+    """
+    # Avoid circular import
+    from braingeneers.iot.messaging import MessageBroker
+
+    global _message_broker
+    if _message_broker is None:
+        _message_broker = MessageBroker()
+    mb = _message_broker
+
+    lock_str = f'common-utils-checkout-{s3_file}'
+    mb.delete_lock(lock_str)
+
+
 def pretty_print(data, n=10, indent=0):
     """
     Custom pretty print function that uniformly truncates any collection (list or dictionary)
@@ -206,13 +290,13 @@ def pretty_print(data, n=10, indent=0):
     Ensures mapping sections and similar are displayed compactly.
 
     Example usage (to display metadata.json):
-    
+
       from braingeneers.utils.common_utils import pretty_print
       from braingeneers.data import datasets_electrophysiology as de
-      
+
       metadata = de.load_metadata('2023-04-17-e-connectoid16235_CCH')
       pretty_print(metadata)
-      
+
     Parameters:
     - data: The data to pretty print, either a list or a dictionary.
     - n: Maximum number of elements or items to display before truncation.
@@ -227,7 +311,7 @@ def pretty_print(data, n=10, indent=0):
         else:
             truncated_keys = keys
             omitted_keys = None
-        
+
         print('{')
         for key in truncated_keys:
             value = data[key]
