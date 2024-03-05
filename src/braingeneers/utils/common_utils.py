@@ -6,7 +6,7 @@ from botocore.exceptions import ClientError
 import os
 import braingeneers
 import braingeneers.utils.smart_open_braingeneers as smart_open
-from typing import List, Tuple, Union, Callable, Iterable
+from typing import Callable, Iterable, Union, List, Tuple, Dict, Any
 import functools
 import inspect
 import multiprocessing
@@ -127,6 +127,14 @@ def file_list(filepath: str) -> List[Tuple[str, str, int]]:
     return files_and_details
 
 
+# Define the wrapper function as a top-level function
+def _map2_wrapper(fixed_values: Dict[str, Any], required_params: List[str], func: Callable, args: Tuple) -> Any:
+    """Internal wrapper function for map2 to handle fixed values and dynamic arguments."""
+    # Merge fixed_values with provided arguments, aligning provided args with required_params
+    call_args = {**fixed_values, **dict(zip(required_params, args))}
+    return func(**call_args)
+
+
 def map2(func: Callable,
          args: Iterable[Union[Tuple, object]] = None,
          fixed_values: dict = None,
@@ -173,27 +181,25 @@ def map2(func: Callable,
     :return: a list of the return values of func
     """
     assert isinstance(fixed_values, (dict, type(None)))
-    assert isinstance(parallelism, int)
+    assert parallelism is False or isinstance(parallelism, (bool, int)), "parallelism must be a boolean or an integer"
     parallelism = multiprocessing.cpu_count() if parallelism is True else 1 if parallelism is False else parallelism
-    assert isinstance(parallelism, int)
+    assert isinstance(parallelism, int), "parallelism must be resolved to an integer"
 
-    func_partial = functools.partial(func, **(fixed_values or {}))
-    n_required_params = sum([p.default == inspect.Parameter.empty for p in inspect.signature(func).parameters.values()])
-    n_fixed_values = len(fixed_values or {})
+    fixed_values = fixed_values or {}
+    func_signature = inspect.signature(func)
+    required_params = [p.name for p in func_signature.parameters.values() if
+                       p.default == inspect.Parameter.empty and p.name not in fixed_values]
+
     args_list = list(args or [])
-    args_tuples = args \
-        if len(args_list) > 0 \
-           and isinstance(args_list[0], tuple) \
-           and len(args_list[0]) >= n_required_params - n_fixed_values \
-        else [(a,) for a in args_list]
+    args_tuples = args_list if all(isinstance(a, tuple) for a in args_list) else [(a,) for a in args_list]
 
     if parallelism == 1:
-        result_iterator = itertools.starmap(func_partial, args_tuples)
+        result_iterator = map(lambda args: _map2_wrapper(fixed_values, required_params, func, args), args_tuples)
     else:
-        # noinspection PyPep8Naming
-        ProcessOrThreadPool = multiprocessing.pool.ThreadPool if use_multithreading is True else multiprocessing.Pool
+        ProcessOrThreadPool = multiprocessing.pool.ThreadPool if use_multithreading else multiprocessing.Pool
         with ProcessOrThreadPool(parallelism) as pool:
-            result_iterator = pool.starmap(func_partial, args_tuples)
+            result_iterator = pool.starmap(_map2_wrapper,
+                                           [(fixed_values, required_params, func, args) for args in args_tuples])
 
     return list(result_iterator)
 
