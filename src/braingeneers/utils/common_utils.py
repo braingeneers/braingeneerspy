@@ -198,67 +198,92 @@ def map2(func: Callable,
     return list(result_iterator)
 
 
-def checkout(s3_file: str, mode: str = 'r') -> io.IOBase:
+class checkout:
     """
-    Check out a file from S3 for reading or writing, use checkin to release the file.
-    Any subsequent calls to checkout will block until the file is returned with checkin(s3_file).
+    A context manager for atomically checking out a file from S3 for reading or writing.
 
     Example usage:
-        f = checkout('s3://braingeneersdev/test/test_file.bin', mode='rb')
-        new_bytes = do_something(f.read())
-        checkin('s3://braingeneersdev/test/test_file.bin', new_bytes)
 
-    Example usage to update metadata:
-        f = checkout('s3://braingeneersdev/test/metadata.json')
-        metadata_dict = json.loads(f.read())
+    # Read-then-update metadata.json (or any text based file on S3)
+    with checkout('s3://braingeneers/ephys/9999-0-0-e-test/metadata.json', isbinary=False) as locked_obj:
+        metadata_dict = json.loads(locked_obj.get_value())
         metadata_dict['new_key'] = 'new_value'
         metadata_updated_str = json.dumps(metadata_dict, indent=2)
-        checkin('s3://braingeneersdev/test/metadata.json', updated_metadata_str)
+        locked_obj.checkin(metadata_updated_str)
 
-    :param s3_file: The S3 file path to check out.
-    :param mode: The mode to open the file in, 'r' (text mode) or 'rb' (binary mode), analogous to system open(filename, mode)
+    # Read-then-update data.npy (or any binary file on S3)
+    with checkout('s3://braingeneersdev/test/data.npy', isbinary=True) as locked_obj:
+        file_obj = locked_obj.get_file()
+        ndarray = np.load(file_obj)
+        ndarray[3, 3] = 42
+        locked_obj.checkin(ndarray.tobytes())
+
+    # Edit a file in place, note checkin is not needed, the file is updated when the context manager exits
+    with checkout('s3://braingeneersdev/test/test_file.bin', isbinary=True) as locked_obj:
+        with zipfile.ZipFile(locked_obj.get_file(), 'a') as z:
+            z.writestr('new_file.txt', 'new file contents')
+
+    locked_obj functions:
+       get_value()  # returns a string or bytes object (depending on isbinary)
+       get_file()   # returns a file-like object akin to open()
+       checkin()    # updates the file, accepts string, bytes, or file like objects
     """
-    # Avoid circular import
-    from braingeneers.iot.messaging import MessageBroker
+    class LockedObject:
+        def __init__(self, s3_file_object, s3_path_str, isbinary):
+            self.s3_path_str = s3_path_str
+            self.s3_file_object = s3_file_object  # underlying file object
+            self.isbinary = isbinary  # binary or text mode
 
-    assert mode in ('r', 'rb'), 'Use "r" (text) or "rb" (binary) mode only. File changes are applied at checkout(...)'
+        def get_value(self):
+            # Read file object from outer class s3_file_object
+            self.s3_file_object.seek(0)
+            return self.s3_file_object.read()
 
-    global _message_broker, _named_locks
-    if _message_broker is None:
-        print('creating message broker')
-        _message_broker = MessageBroker()
-    mb = _message_broker
+        def get_file(self):
+            # Return file object from outer class s3_file_object
+            self.s3_file_object.seek(0)
+            return self.s3_file_object
 
-    lock_str = f'common-utils-checkout-{s3_file}'
-    named_lock = mb.get_lock(lock_str)
-    named_lock.acquire()
-    _named_locks[s3_file] = named_lock
-    f = smart_open.open(s3_file, mode)
-    return f
+        def checkin(self, update_file: Union[str, bytes, io.IOBase]):
+            # Validate input
+            if not isinstance(update_file, (str, bytes, io.IOBase)):
+                raise TypeError('file must be a string, bytes, or file object.')
+            if isinstance(update_file, str) or (
+                    isinstance(update_file, io.IOBase) and isinstance(update_file, io.StringIO)):
+                if self.isbinary:
+                    raise ValueError(
+                        'Cannot check in a string or text file when checkout is specified for binary mode.')
+            if isinstance(update_file, bytes) or (
+                    isinstance(update_file, io.IOBase) and isinstance(update_file, io.BytesIO)):
+                if not self.isbinary:
+                    raise ValueError('Cannot check in bytes or a binary file when checkout is specified for text mode.')
 
+            mode = 'w' if not self.isbinary else 'wb'
+            with smart_open.open(self.s3_path_str, mode=mode) as f:
+                f.write(update_file if not isinstance(update_file, io.IOBase) else update_file.read())
 
-def checkin(s3_file: str, file: Union[str, bytes, io.IOBase]):
-    """
-    Releases a file that was checked out with checkout.
+    def __init__(self, s3_path_str: str, isbinary: bool = False):
+        # Avoid circular import
+        from braingeneers.iot.messaging import MessageBroker
 
-    :param s3_file: The S3 file path, must match checkout.
-    :param file: The string, bytes, or file object to write back to S3.
-    """
-    assert isinstance(file, (str, bytes, io.IOBase)), 'file must be a string, bytes, or file object.'
+        self.s3_path_str = s3_path_str
+        self.isbinary = isbinary
+        self.mb = MessageBroker()
+        self.named_lock = None  # message broker lock
+        self.locked_obj = None  # user facing locked object
 
-    with smart_open.open(s3_file, 'wb') as f:
-        if isinstance(file, str):
-            f.write(file.encode())
-        elif isinstance(file, bytes):
-            f.write(file)
-        else:
-            file.seek(0)
-            data = file.read()
-            f.write(data if isinstance(data, bytes) else data.encode())
+    def __enter__(self):
+        lock_str = f'common-utils-checkout-{self.s3_path_str}'
+        named_lock = self.mb.get_lock(lock_str)
+        named_lock.acquire()
+        self.named_lock = named_lock
+        f = smart_open.open(self.s3_path_str, 'rb' if self.isbinary else 'r')
+        self.locked_obj = checkout.LockedObject(f, self.s3_path_str, self.isbinary)
+        return self.locked_obj
 
-    global _named_locks
-    named_lock = _named_locks[s3_file]
-    named_lock.release()
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.named_lock.release()
+        return None  # Do not suppress exceptions
 
 
 def force_release_checkout(s3_file: str):

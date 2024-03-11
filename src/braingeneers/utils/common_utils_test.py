@@ -1,10 +1,13 @@
+import io
 import unittest
 from unittest.mock import patch, MagicMock
-from common_utils import checkout, checkin, force_release_checkout
+import common_utils
+from common_utils import checkout, force_release_checkout
 from braingeneers.iot import messaging
 import os
 import tempfile
 import braingeneers.utils.smart_open_braingeneers as smart_open
+from typing import Union
 
 
 class TestFileListFunction(unittest.TestCase):
@@ -47,19 +50,53 @@ class TestFileListFunction(unittest.TestCase):
             self.assertEqual(result, [])
 
 
-class TestCheckingCheckout(unittest.TestCase):
-    def setUp(self) -> None:
-        self.text_value = 'unittest1'
-        self.filepath = 's3://braingeneersdev/unittest/test.txt'
-        force_release_checkout(self.filepath)
+class TestCheckout(unittest.TestCase):
 
-        with smart_open.open(self.filepath, 'w') as f:
-            f.write(self.text_value)
+    def setUp(self):
+        # Setup mock for smart_open and MessageBroker
+        self.message_broker_patch = patch('braingeneers.iot.messaging.MessageBroker')
 
-    def test_checkout_checkin(self):
-        f = checkout(self.filepath)
-        self.assertEqual(f.read(), self.text_value)
-        checkin(self.filepath, f)
+        # Start the patches
+        self.mock_message_broker = self.message_broker_patch.start()
+
+        # Mock the message broker's get_lock and delete_lock methods
+        self.mock_message_broker.return_value.get_lock.return_value = MagicMock()
+        self.mock_message_broker.return_value.delete_lock = MagicMock()
+
+        self.mock_file = MagicMock(spec=io.StringIO)
+        self.mock_file.read.return_value = 'Test data'  # Ensure this is correctly setting the return value for read
+        self.mock_file.__enter__.return_value = self.mock_file
+        self.mock_file.__exit__.return_value = None
+        self.smart_open_mock = MagicMock(spec=smart_open)
+        self.smart_open_mock.open.return_value = self.mock_file
+
+        common_utils.smart_open = self.smart_open_mock
+
+    def tearDown(self):
+        # Stop all patches
+        self.message_broker_patch.stop()
+
+    def test_checkout_context_manager_read(self):
+        # Test the reading functionality
+        with checkout('s3://test-bucket/test-file.txt', isbinary=False) as locked_obj:
+            data = locked_obj.get_value()
+            self.assertEqual(data, 'Test data')
+
+    def test_checkout_context_manager_write_text(self):
+        # Test the writing functionality for text mode
+        test_data = 'New test data'
+        self.mock_file.write.reset_mock()  # Reset mock to ensure clean state for the test
+        with checkout('s3://test-bucket/test-file.txt', isbinary=False) as locked_obj:
+            locked_obj.checkin(test_data)
+            self.mock_file.write.assert_called_once_with(test_data)
+
+    def test_checkout_context_manager_write_binary(self):
+        # Test the writing functionality for binary mode
+        test_data = b'New binary data'
+        self.mock_file.write.reset_mock()  # Reset mock to ensure clean state for the test
+        with checkout('s3://test-bucket/test-file.bin', isbinary=True) as locked_obj:
+            locked_obj.checkin(test_data)
+            self.mock_file.write.assert_called_once_with(test_data)
 
 
 if __name__ == '__main__':
