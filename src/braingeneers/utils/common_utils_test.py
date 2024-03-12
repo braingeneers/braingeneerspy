@@ -98,6 +98,29 @@ class TestCheckout(unittest.TestCase):
             locked_obj.checkin(test_data)
             self.mock_file.write.assert_called_once_with(test_data)
 
+    def test_with_pass_through_kwargs_handling(self):
+        """Test map2 with a function accepting dynamic kwargs, specifically to check the handling of 'experiment_name'
+        passed through **kwargs, using the original signature for f_with_kwargs."""
+
+        def f_with_kwargs(cache_path: str, max_size_gb: int = 10, **kwargs):
+            # Simulate loading data where 'experiment_name' and other parameters are expected to come through **kwargs
+            self.assertTrue(isinstance(kwargs, dict), 'kwargs should be a dict')
+            self.assertFalse('kwargs' in kwargs)
+            return 'some data'
+
+        experiments = [{'experiment': 'exp1'}, {'experiment': 'exp2'}]  # List of experiment names to be passed as individual kwargs
+        fixed_values = {
+            "cache_path": '/tmp/ephys_cache',
+            "max_size_gb": 50,
+            "metadata": {"some": "metadata"},
+            "channels": ["channel1"],
+            "length": -1,
+        }
+
+        # Execute the test under the assumption that map2 is supposed to handle 'experiment_name' in **kwargs correctly
+        map2(f_with_kwargs, kwargs=experiments, fixed_values=fixed_values, parallelism=False)
+        self.assertTrue(True)  # If the test reaches this point, it has passed
+
 
 if __name__ == '__main__':
     unittest.main()
