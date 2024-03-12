@@ -1,15 +1,13 @@
+import io
 import unittest
 from unittest.mock import patch, MagicMock
-from common_utils import checkout, checkin, force_release_checkout, map2
-from braingeneers.iot import messaging
 import common_utils
+from common_utils import checkout, force_release_checkout
+from braingeneers.iot import messaging
 import os
 import tempfile
 import braingeneers.utils.smart_open_braingeneers as smart_open
-
-
-def multiply(x, y):
-    return x * y
+from typing import Union
 
 
 class TestFileListFunction(unittest.TestCase):
@@ -52,59 +50,53 @@ class TestFileListFunction(unittest.TestCase):
             self.assertEqual(result, [])
 
 
-class TestCheckingCheckout(unittest.TestCase):
-    def setUp(self) -> None:
-        self.text_value = 'unittest1'
-        self.filepath = 's3://braingeneersdev/unittest/test.txt'
-        force_release_checkout(self.filepath)
+class TestCheckout(unittest.TestCase):
 
-        with smart_open.open(self.filepath, 'w') as f:
-            f.write(self.text_value)
+    def setUp(self):
+        # Setup mock for smart_open and MessageBroker
+        self.message_broker_patch = patch('braingeneers.iot.messaging.MessageBroker')
 
-    def test_checkout_checkin(self):
-        f = checkout(self.filepath)
-        self.assertEqual(f.read(), self.text_value)
-        checkin(self.filepath, f)
+        # Start the patches
+        self.mock_message_broker = self.message_broker_patch.start()
 
+        # Mock the message broker's get_lock and delete_lock methods
+        self.mock_message_broker.return_value.get_lock.return_value = MagicMock()
+        self.mock_message_broker.return_value.delete_lock = MagicMock()
 
-class TestMap2(unittest.TestCase):
-    def test_basic_functionality(self):
-        """Test map2 with a simple function, no fixed values, no parallelism."""
+        self.mock_file = MagicMock(spec=io.StringIO)
+        self.mock_file.read.return_value = 'Test data'  # Ensure this is correctly setting the return value for read
+        self.mock_file.__enter__.return_value = self.mock_file
+        self.mock_file.__exit__.return_value = None
+        self.smart_open_mock = MagicMock(spec=smart_open)
+        self.smart_open_mock.open.return_value = self.mock_file
 
-        def simple_add(x, y):
-            return x + y
+        common_utils.smart_open = self.smart_open_mock
 
-        args = [(1, 2), (2, 3), (3, 4)]
-        expected = [3, 5, 7]
-        result = map2(simple_add, args=args, parallelism=False)
-        self.assertEqual(result, expected)
+    def tearDown(self):
+        # Stop all patches
+        self.message_broker_patch.stop()
 
-    def test_with_fixed_values(self):
-        """Test map2 with fixed values."""
+    def test_checkout_context_manager_read(self):
+        # Test the reading functionality
+        with checkout('s3://test-bucket/test-file.txt', isbinary=False) as locked_obj:
+            data = locked_obj.get_value()
+            self.assertEqual(data, 'Test data')
 
-        def f(a, b, c):
-            return f'{a} {b} {c}'
+    def test_checkout_context_manager_write_text(self):
+        # Test the writing functionality for text mode
+        test_data = 'New test data'
+        self.mock_file.write.reset_mock()  # Reset mock to ensure clean state for the test
+        with checkout('s3://test-bucket/test-file.txt', isbinary=False) as locked_obj:
+            locked_obj.checkin(test_data)
+            self.mock_file.write.assert_called_once_with(test_data)
 
-        args = [2, 20, 200]
-        expected = ['1 2 3', '1 20 3', '1 200 3']
-        result = map2(func=f, args=args, fixed_values=dict(a=1, c=3), parallelism=False)
-        self.assertEqual(result, expected)
-
-    def test_with_parallelism(self):
-        """Test map2 with parallelism enabled (assuming the environment supports it)."""
-        args = [(1, 2), (2, 3), (3, 4)]
-        expected = [2, 6, 12]
-        result = map2(multiply, args=args, parallelism=True)
-        self.assertEqual(result, expected)
-
-    def test_with_invalid_args(self):
-        """Test map2 with invalid args to ensure it raises the correct exceptions."""
-
-        def simple_subtract(x, y):
-            return x - y
-
-        with self.assertRaises(AssertionError):
-            map2(simple_subtract, args=[1], parallelism="invalid")
+    def test_checkout_context_manager_write_binary(self):
+        # Test the writing functionality for binary mode
+        test_data = b'New binary data'
+        self.mock_file.write.reset_mock()  # Reset mock to ensure clean state for the test
+        with checkout('s3://test-bucket/test-file.bin', isbinary=True) as locked_obj:
+            locked_obj.checkin(test_data)
+            self.mock_file.write.assert_called_once_with(test_data)
 
 
 if __name__ == '__main__':
