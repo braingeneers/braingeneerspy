@@ -5,6 +5,7 @@ import sys
 import json
 import warnings
 import copy
+import diskcache
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -60,15 +61,10 @@ def list_uuids():
 
 def save_metadata(metadata: dict):
     """
-    Saves a metadata file back to S3. This is not multi-writer safe, you can use a lock as shown in the example:
-
-    from braingeneers.iot.messaging import MessageBroker()
-    import braingeneers.data.datasets_electrophysiology as de
-
-    with MessageBroker().get_lock('a-unique-lock-name-for-your-process'):
-        metadata = de.load_metadata(uuid)
-        metadata = do_something_to(metadata)
-        de.save_metadata(metadata)
+    Saves a metadata file back to S3. This is not multi-writer safe, you can use:
+        braingeneers.utils.common_utils.checkout
+        braingeneers.utils.common_utils.checkin
+    to lock the file while you are writing to it.
 
     :param metadata: the metadata dictionary as obtained from load_metadata(uuid)
     """
@@ -81,6 +77,38 @@ def save_metadata(metadata: dict):
     )
     with smart_open.open(save_path, 'w') as f:
         f.write(json.dumps(metadata, indent=2))
+
+
+def cached_load_data(cache_path: str, max_size_gb: int = 10, **kwargs):
+    """
+    Wraps a call to load_data with a diskcache at path `cache_path`.
+    This is multiprocessing/thread safe.
+    All arguments after the cache_path are passed to load_data (see load_data docs)
+    You must specify the load_data argument names to avoid ambiguity with the cached_load_data parameters.
+
+    When reading data from S3 (or even a compressed local file), this can provide a significant speedup by
+    storing the results of load_data in a local (uncompressed) cache.
+
+    Example usage:
+        from braingeneers.data.datasets_electrophysiology import load_metadata, cached_load_data
+
+        metadata = load_metadata('9999-00-00-e-test')
+        data = cached_load_data(cache_path='/tmp/cache-dir', metadata=metadata, experiment=0, offset=0, length=1000)
+
+    Note: this can safely be used with `map2` from `braingeneers.utils.common_utils` to parallelize calls to load_data.
+
+    :param cache_path: str, path to the cache directory.
+    :param max_size_gb: int, maximum size of the cache in GB (10 GB default). If the cache exceeds this size, the oldest items will be removed.
+    :param kwargs: keyword arguments to pass to load_data, see load_data documentation.
+    """
+    cache = diskcache.Cache(cache_path, size_limit=10 ** 9 * max_size_gb)
+    key = json.dumps(kwargs)
+    if key in cache:
+        return cache[key]
+    else:
+        data = load_data(**kwargs)
+        cache[key] = data
+        return data
 
 
 def load_metadata(batch_uuid: str) -> dict:

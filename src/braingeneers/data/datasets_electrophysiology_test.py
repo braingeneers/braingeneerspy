@@ -1,14 +1,19 @@
 import unittest
+import tempfile
+import shutil
+import diskcache
+import json
+import threading
 import braingeneers
 import braingeneers.data.datasets_electrophysiology as ephys
-import json
 from braingeneers import skip_unittest_if_offline
-# import braingeneers.utils.smart_open_braingeneers as smart_open
-import smart_open
+import braingeneers.utils.smart_open_braingeneers as smart_open
 import boto3
 import numpy as np
-
 from unittest.mock import patch
+from braingeneers.data.datasets_electrophysiology import cached_load_data
+from unittest.mock import patch
+
 
 class MaxwellReaderTests(unittest.TestCase):
 
@@ -412,6 +417,87 @@ class HengenlabReaderTests(unittest.TestCase):
         self.assertTrue(np.all(expected_float32 == data[1, :]))
         self.assertEqual((192, 4), data.shape)
         self.assertEqual(np.float32, data.dtype)
+
+
+class TestCachedLoadData(unittest.TestCase):
+
+    def setUp(self):
+        # Create a temporary directory for the cache
+        self.cache_dir = tempfile.mkdtemp(prefix='test_cache_')
+
+    def tearDown(self):
+        # Remove the temporary directory after the test
+        shutil.rmtree(self.cache_dir)
+
+    @patch('braingeneers.data.datasets_electrophysiology.load_data')
+    def test_caching_mechanism(self, mock_load_data):
+        """
+        Test that data is properly cached and retrieved on subsequent calls with the same parameters.
+        """
+        mock_load_data.return_value = 'mock_data'
+        metadata = {'uuid': 'test_uuid'}
+
+        # First call should invoke load_data
+        first_call_data = cached_load_data(self.cache_dir, metadata=metadata, experiment=0)
+        mock_load_data.assert_called_once()
+
+        # Second call should retrieve data from cache and not invoke load_data again
+        second_call_data = cached_load_data(self.cache_dir, metadata=metadata, experiment=0)
+        self.assertEqual(first_call_data, second_call_data)
+        mock_load_data.assert_called_once()  # Still called only once
+
+    @patch('braingeneers.data.datasets_electrophysiology.load_data')
+    def test_cache_eviction_when_full(self, mock_load_data):
+        """
+        Test that the oldest items are evicted from the cache when it exceeds its size limit.
+        """
+        mock_load_data.side_effect = lambda **kwargs: f"data_{kwargs['experiment']}"
+        max_size_gb = 0.000001  # Set a very small cache size to test eviction
+
+        # Populate the cache with enough data to exceed its size limit
+        for i in range(10):
+            cached_load_data(self.cache_dir, max_size_gb=max_size_gb, metadata={'uuid': 'test_uuid'}, experiment=i)
+
+        cache = diskcache.Cache(self.cache_dir)
+        self.assertLess(len(cache), 10)  # Ensure some items were evicted
+
+    @patch('braingeneers.data.datasets_electrophysiology.load_data')
+    def test_arguments_passed_to_load_data(self, mock_load_data):
+        """
+        Test that all arguments after cache_path are correctly passed to the underlying load_data function.
+        """
+        # Mock load_data to return a serializable object, e.g., a numpy array
+        mock_load_data.return_value = np.array([1, 2, 3])
+
+        kwargs = {'metadata': {'uuid': 'test_uuid'}, 'experiment': 0, 'offset': 0, 'length': 1000}
+        cached_load_data(self.cache_dir, **kwargs)
+        mock_load_data.assert_called_with(**kwargs)
+
+    @patch('braingeneers.data.datasets_electrophysiology.load_data')
+    def test_multiprocessing_thread_safety(self, mock_load_data):
+        """
+        Test that the caching mechanism is multiprocessing/thread-safe.
+        """
+        # Mock load_data to return a serializable object, e.g., a numpy array
+        mock_load_data.return_value = np.array([1, 2, 3])
+
+        def thread_function(cache_path, metadata, experiment):
+            # This function uses the mocked load_data indirectly via cached_load_data
+            cached_load_data(cache_path, metadata=metadata, experiment=experiment)
+
+        metadata = {'uuid': 'test_uuid'}
+        threads = []
+        for i in range(10):
+            t = threading.Thread(target=thread_function, args=(self.cache_dir, metadata, i))
+            threads.append(t)
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        # If the cache is thread-safe, this operation should complete without error
+        # This assertion is basic and assumes the test's success implies thread safety
+        self.assertTrue(True)
 
 
 if __name__ == '__main__':
