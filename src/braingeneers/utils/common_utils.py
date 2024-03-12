@@ -233,6 +233,7 @@ class checkout:
             self.s3_path_str = s3_path_str
             self.s3_file_object = s3_file_object  # underlying file object
             self.isbinary = isbinary  # binary or text mode
+            self.modified = False  # Track if the file has been modified
 
         def get_value(self):
             # Read file object from outer class s3_file_object
@@ -240,6 +241,8 @@ class checkout:
             return self.s3_file_object.read()
 
         def get_file(self):
+            # Mark file as potentially modified when accessed
+            self.modified = True
             # Return file object from outer class s3_file_object
             self.s3_file_object.seek(0)
             return self.s3_file_object
@@ -282,8 +285,11 @@ class checkout:
         return self.locked_obj
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.locked_obj.modified:
+            # If the file was modified, automatically check in the changes
+            self.locked_obj.checkin(self.locked_obj.get_file())
         self.named_lock.release()
-        return None  # Do not suppress exceptions
+
 
 
 def force_release_checkout(s3_file: str):
