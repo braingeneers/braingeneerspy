@@ -2,7 +2,7 @@ import io
 import unittest
 from unittest.mock import patch, MagicMock
 import common_utils
-from common_utils import checkout, force_release_checkout
+from common_utils import checkout, force_release_checkout, map2
 from braingeneers.iot import messaging
 import os
 import tempfile
@@ -120,6 +120,56 @@ class TestCheckout(unittest.TestCase):
         # Execute the test under the assumption that map2 is supposed to handle 'experiment_name' in **kwargs correctly
         map2(f_with_kwargs, kwargs=experiments, fixed_values=fixed_values, parallelism=False)
         self.assertTrue(True)  # If the test reaches this point, it has passed
+
+
+class TestMap2Function(unittest.TestCase):
+    def test_with_kwargs_function_parallelism_false(self):
+        # Define a test function that takes a positional argument and arbitrary kwargs
+        def test_func(a, **kwargs):
+            return a + kwargs.get('increment', 0)
+
+        # Define the arguments and kwargs to pass to map2
+        args = [(1,), (2,), (3,)]  # positional arguments
+        kwargs = [{'increment': 10}, {'increment': 20}, {'increment': 30}]  # kwargs for each call
+
+        # Call map2 with the test function, args, kwargs, and parallelism=False
+        result = map2(
+            func=test_func,
+            args=args,
+            kwargs=kwargs,
+            parallelism=False
+        )
+
+        # Expected results after applying the function with the given args and kwargs
+        expected_results = [11, 22, 33]
+
+        # Assert that the actual result matches the expected result
+        self.assertEqual(result, expected_results)
+
+    def test_with_fixed_values_and_variable_kwargs_parallelism_false(self):
+        # Define a test function that takes fixed positional argument and arbitrary kwargs
+        def test_func(a, **kwargs):
+            return a + kwargs.get('increment', 0)
+
+        # Since 'a' is now a fixed value, we no longer need to provide it in args
+        args = []  # No positional arguments are passed here
+
+        # Define the kwargs to pass to map2, each dict represents kwargs for one call
+        kwargs = [{'increment': 10}, {'increment': 20}, {'increment': 30}]
+
+        # Call map2 with the test function, no args, variable kwargs, fixed_values containing 'a', and parallelism=False
+        result = map2(
+            func=test_func,
+            kwargs=kwargs,
+            fixed_values={'a': 1},  # 'a' is fixed for all calls
+            parallelism=False
+        )
+
+        # Expected results after applying the function with the fixed 'a' and given kwargs
+        expected_results = [11, 21, 31]
+
+        # Assert that the actual result matches the expected result
+        self.assertEqual(result, expected_results)
 
 
 if __name__ == '__main__':

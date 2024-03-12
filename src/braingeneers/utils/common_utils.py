@@ -192,7 +192,7 @@ def map2(func: Callable,
     """
     if args is not None and kwargs is not None:
         assert len(args) == len(kwargs), \
-            "args and kwargs must have the same length, found lengths: len(args)={len(args)} and len(kwargs)={len(kwargs)}"
+            f"args and kwargs must have the same length, found lengths: len(args)={len(args)} and len(kwargs)={len(kwargs)}"
     assert isinstance(fixed_values, (dict, type(None)))
     assert parallelism is False or isinstance(parallelism, (bool, int)), "parallelism must be a boolean or an integer"
     parallelism = multiprocessing.cpu_count() if parallelism is True else 1 if parallelism is False else parallelism
@@ -203,18 +203,16 @@ def map2(func: Callable,
     required_params = [p.name for p in func_signature.parameters.values() if
                        p.default == inspect.Parameter.empty and p.name not in fixed_values]
 
-    # Ensure args and kwargs are iterable or set them as empty lists if None
     args_list = list(args or [])
     kwargs_list = list(kwargs or [])
-    # Convert args to tuples if they're not already
     args_tuples = args_list if all(isinstance(a, tuple) for a in args_list) else [(a,) for a in args_list]
 
-    # Prepare tuples of (fixed_values, required_params, func, args, kwargs) for each call
-    call_parameters = zip(args_tuples, kwargs_list) if kwargs_list else zip(args_tuples, [{}] * len(args_tuples))
+    # Adjusted to handle cases where args might not be provided
+    call_parameters = list(zip(args_tuples, kwargs_list)) if args_tuples else [((), kw) for kw in kwargs_list]
 
     if parallelism == 1:
-        result_iterator = (map(lambda params: _map2_wrapper(fixed_values, required_params, func, params[0], params[1]),
-                               call_parameters))
+        result_iterator = map(lambda params: _map2_wrapper(fixed_values, required_params, func, params[0], params[1]),
+                              call_parameters)
     else:
         ProcessOrThreadPool = multiprocessing.pool.ThreadPool if use_multithreading else multiprocessing.Pool
         with ProcessOrThreadPool(parallelism) as pool:
