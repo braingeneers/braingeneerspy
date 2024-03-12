@@ -7,14 +7,10 @@ import os
 import braingeneers
 import braingeneers.utils.smart_open_braingeneers as smart_open
 from typing import Callable, Iterable, Union, List, Tuple, Dict, Any
-import functools
 import inspect
 import multiprocessing
 import posixpath
-import itertools
 import pathlib
-import json
-import hashlib
 
 _s3_client = None  # S3 client for boto3, lazy initialization performed in _lazy_init_s3_client()
 _message_broker = None  # Lazy initialization of the message broker
@@ -235,7 +231,7 @@ class checkout:
        checkin()    # updates the file, accepts string, bytes, or file like objects
     """
     class LockedObject:
-        def __init__(self, s3_file_object, s3_path_str, isbinary):
+        def __init__(self, s3_file_object: io.IOBase, s3_path_str: str, isbinary: bool):
             self.s3_path_str = s3_path_str
             self.s3_file_object = s3_file_object  # underlying file object
             self.isbinary = isbinary  # binary or text mode
@@ -256,14 +252,12 @@ class checkout:
         def checkin(self, update_file: Union[str, bytes, io.IOBase]):
             # Validate input
             if not isinstance(update_file, (str, bytes, io.IOBase)):
-                raise TypeError('file must be a string, bytes, or file object.')
-            if isinstance(update_file, str) or (
-                    isinstance(update_file, io.IOBase) and isinstance(update_file, io.StringIO)):
+                raise TypeError('File must be a string, bytes, or file object.')
+            if isinstance(update_file, str) or isinstance(update_file, io.StringIO):
                 if self.isbinary:
                     raise ValueError(
                         'Cannot check in a string or text file when checkout is specified for binary mode.')
-            if isinstance(update_file, bytes) or (
-                    isinstance(update_file, io.IOBase) and isinstance(update_file, io.BytesIO)):
+            if isinstance(update_file, bytes) or isinstance(update_file, io.BytesIO):
                 if not self.isbinary:
                     raise ValueError('Cannot check in bytes or a binary file when checkout is specified for text mode.')
 
@@ -272,7 +266,7 @@ class checkout:
                 f.write(update_file if not isinstance(update_file, io.IOBase) else update_file.read())
 
     def __init__(self, s3_path_str: str, isbinary: bool = False):
-        # Avoid circular import
+        #  TODO: avoid circular import
         from braingeneers.iot.messaging import MessageBroker
 
         self.s3_path_str = s3_path_str
@@ -301,16 +295,14 @@ def force_release_checkout(s3_file: str):
     """
     Force release the lock on a file that was checked out with checkout.
     """
-    # Avoid circular import
+    #  TODO: avoid circular import
     from braingeneers.iot.messaging import MessageBroker
 
     global _message_broker
     if _message_broker is None:
         _message_broker = MessageBroker()
-    mb = _message_broker
 
-    lock_str = f'common-utils-checkout-{s3_file}'
-    mb.delete_lock(lock_str)
+    _message_broker.delete_lock(f'common-utils-checkout-{s3_file}')
 
 
 def pretty_print(data, n=10, indent=0):
@@ -372,4 +364,3 @@ def pretty_print(data, n=10, indent=0):
         if len(data) > n:
             print(f"{indent_space}    ... (+{len(data) - n} more items)")
         print(f"{indent_space}]", end='')
-

@@ -3,8 +3,6 @@ import redis
 import logging
 import os
 import re
-import hashlib
-import time
 import io
 import configparser
 import threading
@@ -19,10 +17,7 @@ from typing import Callable, Tuple, List, Dict, Union
 from deprecated import deprecated
 from paho.mqtt import client as mqtt_client
 from paho.mqtt.enums import CallbackAPIVersion
-from tenacity import retry, wait_exponential, after_log
-import braingeneers.utils.smart_open_braingeneers as smart_open
 
-import braingeneers.utils.common_utils
 
 AWS_REGION = 'us-west-2'
 AWS_PROFILE = 'aws-braingeneers-iot'
