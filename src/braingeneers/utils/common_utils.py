@@ -225,6 +225,7 @@ def map2(func: Callable,
 
     return list(result_iterator)
 
+
 class checkout:
     """
     A context manager for atomically checking out a file from S3 for reading or writing.
