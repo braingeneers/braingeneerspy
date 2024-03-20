@@ -21,12 +21,12 @@ Instruction on how to contribute to this project can be found in the [CONTRIBUTI
 
 ## Installation
 
-You can install `braingeneerspy` using `pip` with the following commands:
+You can install `braingeneers` using `pip` with the following commands:
 
 ### Install from PyPI (Recommended)
 
 ```bash
-pip install braingeneerspy
+pip install braingeneers
 ```
 
 ### Install from GitHub
@@ -37,7 +37,7 @@ pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy
 
 ### Install with Optional Dependencies
 
-You can install `braingeneerspy` with specific optional dependencies based on your needs. Use the following command examples:
+You can install `braingeneers` with specific optional dependencies based on your needs. Use the following command examples:
 
 - Install with machine-learning dependencies:
 
@@ -69,7 +69,7 @@ To make changes and publish them on GitHub, please refer to the [CONTRIBUTING.md
 
 ## Modules and Subpackages
 
-`braingeneerspy` includes several subpackages and modules, each serving a specific purpose within the Braingeneers project:
+`braingeneers` includes several subpackages and modules, each serving a specific purpose within the Braingeneers project:
 
 - `braingeneers.analysis`: Contains code for data analysis.
 - `braingeneers.data`: Provides code for basic data access, including subpackages for handling electrophysiology, fluidics, and imaging data.
