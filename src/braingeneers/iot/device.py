@@ -128,8 +128,6 @@ class Device:
     def mqtt_publish_topic(self):
         return f"{self.root_topic}/{self.experiment_uuid}/{self.logging_token}"
 
-    #if next job is less than now + (x minutes) - that means near futre jobs look-ahead = True
-
     @property
     def pretty_schedule(self):
         sched_display = []
