@@ -6,7 +6,12 @@ build-backend = "hatchling.build"
 [project]
 name = "braingeneers"
 authors = [
-  { name = "Braingeneers", email = "me@example.com" },
+  { name = "UCSC Braingeneers", email = "ucscgi@ucsc.edu" },
+]
+maintainers = [
+  { name = "David", email = "dfparks@ucsc.edu" },
+  { name = "Alex", email = "atspaeth@ucsc.edu" },
+  { name = "Lon", email = "lblauvel@ucsc.edu" },
 ]
 description = "Braingeneers Python utilities"
 readme = "README.md"
@@ -15,7 +20,7 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: BSD License",
+  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
@@ -27,12 +32,26 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-  "typing_extensions >=4.6; python_version<'3.11'",
-  'deprecated',
-  'requests',
-  'numpy',
-  'tenacity',
-  'boto3',
+    'awswrangler==3.*',
+    'boto3',
+    'braingeneers-smart-open==2023.10.6',
+    'deprecated',
+    'h5py',
+    'matplotlib',
+    'nptyping',
+    'numpy',
+    'paho-mqtt>=2',
+    'pandas',
+    'powerlaw',
+    'redis',
+    'requests',
+    'schedule',
+    'scipy>=1.10.0',
+    'tenacity',
+    "typing_extensions>=4.6; python_version<'3.11'",
+    'diskcache',
+    'pytz', 
+    'tzlocal'
 ]
 
 [tool.hatch.build.hooks.vcs]
@@ -43,48 +62,16 @@ local_scheme = "no-local-version"
 
 [project.optional-dependencies]
 all = [
-  'braingeneers[data]',
-  'braingeneers[analysis]',
   'braingeneers[ml]',
-  'braingeneers[iot]',
-  'braingeneers[hengenlab]',
-  'braingeneers[test]',
-  'braingeneers[docs]',
-]
-data = [
-  'h5py',
-  'braingeneers-smart-open==2023.10.6',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
-  'awswrangler==3.*',
-  'pandas',
-  'nptyping',
-  'paho-mqtt'
-]
-iot = [
-  'redis',
-  'schedule',
-  'paho-mqtt'
-]
-analysis = [
-  'scipy>=1.10.0',
-  'pandas',
-  'powerlaw',
-  'matplotlib',
-  # Both of these dependencies are required for read_phy_files
-  'awswrangler==3.*',
-  'braingeneers-smart-open==2023.10.6',  # 'smart_open>=5.1.0',  the hash version fixes the bytes from-to range header issue.
+  'braingeneers[dev]',
 ]
 ml = [
   'torch',
   'scikit-learn',
 ]
-hengenlab = [
-  'neuraltoolkit==0.3.1',  # channel mapping information
-]
-test = [
+dev = [
   "pytest >=6",
   "pytest-cov >=3",
-]
-docs = [
   "sphinx>=4.0",
   "myst_parser>=0.13",
   "sphinx_book_theme>=0.1.0",
