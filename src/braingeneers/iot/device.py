@@ -2,6 +2,7 @@ import base64
 import json
 import os
 import re
+import fnmatch
 import schedule
 import signal
 import sys
@@ -170,6 +171,9 @@ class Device:
 
     def generate_job_tag(self):
         return str(next(self.job_index))
+    
+    def peek_jobs(self, lookahead_seconds = 10):
+        return any(job.next_run <= datetime.now() + timedelta(seconds=lookahead_seconds) for job in self.scheduler.jobs)
 
     def is_my_topic(self, topic):
         return self.device_name in topic.split('/')
@@ -199,6 +203,123 @@ class Device:
 
     def get_curr_timestamp(self):
         return (datetime.now(tz=pytz.timezone('US/Pacific')).strftime('%Y-%m-%d-T%H%M%S-')) 
+
+    def _unpack_string(self, unpack_item, match_items):
+        """
+        Unpacks items from match_items based on a string or regex pattern.
+        Raises an error if the pattern is invalid or if no matches are found.
+
+        Args:
+            unpack_item (str): A string or regex pattern to match against match_items.
+            match_items (list): A list of items to match the unpack_item against.
+
+        Returns:
+            list: A sorted list of items from match_items that match the unpack_item.
+        """
+        if not isinstance(unpack_item, str): 
+            raise ValueError(f"Item {unpack_item} should be a string. Forfeiting entire command list.")
+
+        try:
+            if unpack_item.startswith("^") and unpack_item.endswith("$"):
+                regex = re.compile(unpack_item)
+                filtered = [item for item in match_items if regex.match(item)]
+            else:
+                filtered = fnmatch.filter(match_items, unpack_item)
+        except re.error:
+            raise ValueError(f"Invalid regex {unpack_item}")
+
+        if not filtered:
+            raise ValueError(f"Item {unpack_item} not found in match_items. Forfeiting entire command list.")
+
+        return sorted(filtered)
+
+    def _enqueue_messages_to_schedule(self, topic, message, unpack_field, unpack_items):
+        """
+        Updates the message dictionary's specified field with each item from unpack_items,
+        printing the updated message each time.
+
+        Args:
+            message (dict): The message to update.
+            unpack_field (str): The field within the message to update.
+            unpack_items (list): A list of new values to sequentially assign to unpack_field.
+        """
+        print("ENQUEUEING!")
+        for unpack_item in unpack_items:
+            new_message = message.copy()
+            new_message[unpack_field] = unpack_item
+            #self.add_to_scheduler(new_message, param, time_unit, at_time))
+            schedule_message = {
+                "COMMAND": "SCHEDULE-REQUEST",
+                "TYPE": "ADD",
+                "EVERY_X_SECONDS": "1",
+                "AT": ":01",
+                "FLAG": "ONCE",
+                "FROM": self.device_name,
+                "DO": json.dumps(new_message)
+                }
+            
+            print(schedule_message)
+            job_tag = self.generate_job_tag()
+            self.scheduler.every(1).second.do(self.run_once, topic, new_message, job_tag).tag=(job_tag)
+
+        self.update_state(self.state)
+        return
+
+
+    def unpack(self, topic, message, unpack_field, match_items, sort_all=False, enqueue_schedule=True):
+        """
+        Unpacks items based on patterns specified in a message field against a list of items.
+        Filters and optionally sorts matched items from match_items based on patterns found in message[unpack_field].
+        Uses _stuff_messages to display how each matched item updates the message.
+
+        Args:
+            message (dict): The dictionary containing the unpack_field.
+            unpack_field (str): Key in message whose value is a string or list of strings or regex patterns.
+            match_items (list): Items to match against the patterns.
+            sort_all (bool): If True, sorts the entire result list; otherwise, maintains order of first appearance.
+
+        Returns:
+            boolean: True if anything has been unpacked into individual messages; False otherwise.
+
+        Usage:
+        try:
+            unpackable, unpacked_list = self.unpack(message, "WELL_ID", self.wells, sort_all=True, enqueue_schedule=True)
+            if not unpackable: #It's a single literal value, execute command now
+        except ValueError as e:
+            print("Error:", e)
+        """
+        unpack_items = message.get(unpack_field)
+
+        #unpack items should not contain '?'
+        if isinstance(unpack_items, str) and unpack_items.find("?") == -1 and unpack_items in match_items:
+            return False, []
+
+        if not isinstance(unpack_items, (str, list)):
+            raise ValueError("unpack_items must be a string or a list of strings")
+
+        filtered = []
+        seen = set()
+
+        if isinstance(unpack_items, str):
+            unpack_items = [unpack_items]  # Treat single string as a list with one item
+
+        for item in unpack_items:
+            current_matches = self._unpack_string(item, match_items)
+            for match in current_matches:
+                if match not in seen:
+                    seen.add(match)
+                    filtered.append(match)
+
+        if sort_all:
+            filtered.sort()
+
+        print(filtered)
+
+        if enqueue_schedule: 
+            self._enqueue_messages_to_schedule(topic, message, unpack_field, filtered)
+
+        return True, filtered
+
 
     # def set_mqtt_publish_topic(self, topic = None):
     #         # only change class variable, don't need to do change internal message broker settings
