@@ -173,6 +173,9 @@ class Device:
 
     def generate_job_tag(self):
         return str(next(self.job_index))
+    
+    def peek_jobs(self, lookahead_seconds = 10):
+        return any(job.next_run <= datetime.now() + timedelta(seconds=lookahead_seconds) for job in self.scheduler.jobs)
 
     def is_my_topic(self, topic):
         return self.device_name in topic.split('/')
