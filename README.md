@@ -3,6 +3,7 @@
 [![ssec](https://img.shields.io/badge/SSEC-Project-purple?logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA0AAAAOCAQAAABedl5ZAAAACXBIWXMAAAHKAAABygHMtnUxAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAMNJREFUGBltwcEqwwEcAOAfc1F2sNsOTqSlNUopSv5jW1YzHHYY/6YtLa1Jy4mbl3Bz8QIeyKM4fMaUxr4vZnEpjWnmLMSYCysxTcddhF25+EvJia5hhCudULAePyRalvUteXIfBgYxJufRuaKuprKsbDjVUrUj40FNQ11PTzEmrCmrevPhRcVQai8m1PRVvOPZgX2JttWYsGhD3atbHWcyUqX4oqDtJkJiJHUYv+R1JbaNHJmP/+Q1HLu2GbNoSm3Ft0+Y1YMdPSTSwQAAAABJRU5ErkJggg==&style=plastic)](https://escience.washington.edu/wetai/)
 [![MIT License](https://badgen.net/badge/license/MIT/blue)](LICENSE)
 [![Documentation Status](https://readthedocs.org/projects/braingeneers/badge/?version=latest)](https://braingeneers.readthedocs.io/en/latest/?badge=latest)
+[![DOI](https://zenodo.org/badge/166130153.svg)](https://zenodo.org/badge/latestdoi/166130153)
 
 ## Getting Started
 
@@ -38,10 +39,22 @@ pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy
 
 You can install `braingeneerspy` with specific optional dependencies based on your needs. Use the following command examples:
 
-- Install with IoT, analysis, and data access functions (skips machine learning and lab-specific dependencies):
+- Install with machine-learning dependencies:
 
 ```bash
-pip install "braingeneers[iot,analysis,data]"
+pip install "braingeneers[ml]"
+```
+
+- Install with Hengen lab dependencies:
+
+```bash
+pip install "braingeneers[hengenlab]"
+```
+
+- Install with developer dependencies (running tests and building sphinx docs):
+
+```bash
+pip install "braingeneers[dev]"
 ```
 
 - Install with all optional dependencies:
@@ -52,7 +65,7 @@ pip install "braingeneers[all]"
 
 ## Committing Changes to the Repo
 
-To make changes and publish them on GitHub, please refer to the [CONTRIBUTING.md](https://github.com/braingeneers/braingeneerspy/blob/development/.github/CONTRIBUTING.md) file for up-to-date guidelines.
+To make changes and publish them on GitHub, please refer to the [CONTRIBUTING.md](https://github.com/braingeneers/braingeneerspy/blob/master/.github/CONTRIBUTING.md) file for up-to-date guidelines.
 
 ## Modules and Subpackages
 

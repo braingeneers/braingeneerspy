@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import sys
 import json
 import warnings
 import copy
+import diskcache
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,10 +29,6 @@ import requests
 import re
 from types import ModuleType
 import bisect
-try:
-    import neuraltoolkit as ntk  # optional import
-except ImportError:
-    pass
 
 
 VALID_LOAD_DATA_DTYPES = [np.int16, np.float16, np.float32, np.float64]
@@ -63,15 +61,10 @@ def list_uuids():
 
 def save_metadata(metadata: dict):
     """
-    Saves a metadata file back to S3. This is not multi-writer safe, you can use a lock as shown in the example:
-
-    from braingeneers.iot.messaging import MessageBroker()
-    import braingeneers.data.datasets_electrophysiology as de
-
-    with MessageBroker().get_lock('a-unique-lock-name-for-your-process'):
-        metadata = de.load_metadata(uuid)
-        metadata = do_something_to(metadata)
-        de.save_metadata(metadata)
+    Saves a metadata file back to S3. This is not multi-writer safe, you can use:
+        braingeneers.utils.common_utils.checkout
+        braingeneers.utils.common_utils.checkin
+    to lock the file while you are writing to it.
 
     :param metadata: the metadata dictionary as obtained from load_metadata(uuid)
     """
@@ -84,6 +77,38 @@ def save_metadata(metadata: dict):
     )
     with smart_open.open(save_path, 'w') as f:
         f.write(json.dumps(metadata, indent=2))
+
+
+def cached_load_data(cache_path: str, max_size_gb: int = 10, **kwargs):
+    """
+    Wraps a call to load_data with a diskcache at path `cache_path`.
+    This is multiprocessing/thread safe.
+    All arguments after the cache_path are passed to load_data (see load_data docs)
+    You must specify the load_data argument names to avoid ambiguity with the cached_load_data parameters.
+
+    When reading data from S3 (or even a compressed local file), this can provide a significant speedup by
+    storing the results of load_data in a local (uncompressed) cache.
+
+    Example usage:
+        from braingeneers.data.datasets_electrophysiology import load_metadata, cached_load_data
+
+        metadata = load_metadata('9999-00-00-e-test')
+        data = cached_load_data(cache_path='/tmp/cache-dir', metadata=metadata, experiment=0, offset=0, length=1000)
+
+    Note: this can safely be used with `map2` from `braingeneers.utils.common_utils` to parallelize calls to load_data.
+
+    :param cache_path: str, path to the cache directory.
+    :param max_size_gb: int, maximum size of the cache in GB (10 GB default). If the cache exceeds this size, the oldest items will be removed.
+    :param kwargs: keyword arguments to pass to load_data, see load_data documentation.
+    """
+    cache = diskcache.Cache(cache_path, size_limit=10 ** 9 * max_size_gb)
+    key = json.dumps(kwargs)
+    if key in cache:
+        return cache[key]
+    else:
+        data = load_data(**kwargs)
+        cache[key] = data
+        return data
 
 
 def load_metadata(batch_uuid: str) -> dict:
@@ -287,11 +312,11 @@ def load_windows(metadata, exp, window_centers, window_sz, dtype=np.float16,
 
         # Check if window is out of bounds
         if window[0] < 0 or window[1] > dataset_length:
-            print("Window out of bounds, inserting zeros for window",window)
+            print("Window out of bounds, inserting zeros for window", window)
             try:
                 data_temp = np.zeros((data_temp.shape[0],window_sz),dtype=dtype)
             except Exception as e:
-                print(e)
+                print(e, file=sys.stderr)
                 data_temp = load_window(metadata, exp, window, dtype=dtype, channels=channels)
         else:
             data_temp = load_window(metadata, exp, window, dtype=dtype, channels=channels)
@@ -659,14 +684,14 @@ def load_stims_maxwell(uuid: str, metadata_ephys_exp: dict = None, experiment_st
         return df
         
     except FileNotFoundError:
-        print(f'\tThere seems to be no stim log file for this experiment! :(')
+        print(f'\tThere seems to be no stim log file for this experiment! :(', file=sys.stderr)
         return None
     except OSError:
-        print(f'\tThere seems to be no stim log file (on s3) for this experiment! :(')
+        print(f'\tThere seems to be no stim log file (on s3) for this experiment! :(', file=sys.stderr)
         return None
 
    
-def load_gpio_maxwell(dataset_path, fs=20000):
+def load_gpio_maxwell(dataset_path, fs=20000.0):
     """
     Loads the GPIO events for optogenetics stimulation.
     :param dataset_path: a local or a s3 path
@@ -675,10 +700,12 @@ def load_gpio_maxwell(dataset_path, fs=20000):
     """
     with smart_open.open(dataset_path, 'rb') as f:
         with h5py.File(f, 'r') as dataset:
-            assert 'bits' in dataset.keys(), 'No GPIO event in the dataset!'
+            if 'bits' not in dataset.keys():
+                print('No GPIO event in the dataset!', file=sys.stderr)
+                return np.array([])
             bits_dataset = list(dataset['bits'])
-            bits_dataframe = [bits_dataset[i][0] for i in range(len(bits_dataset))]  
-            rec_startframe = dataset['raw'][-1, 0] << 16 | dataset['raw'][-2, 0]
+            bits_dataframe = [bits_dataset[i][0] for i in range(len(bits_dataset))]
+            rec_startframe = dataset['sig'][-1, 0] << 16 | dataset['sig'][-2, 0]
     if len(bits_dataframe) % 2 == 0:
         stim_pairs = (np.array(bits_dataframe) - rec_startframe).reshape(len(bits_dataframe) // 2, 2)
         return stim_pairs / fs
@@ -842,133 +869,6 @@ def sync_s3_to_kach(batch_name):
 def _read_hengenlab_ecube_timestamp(filepath: str) -> int:
     with smart_open.open(filepath, 'rb') as f:
         return int(np.frombuffer(f.read(8), dtype=np.uint64))
-
-
-def generate_metadata_hengenlab(batch_uuid: str,
-                                dataset_name: str,
-                                experiment_name: Union[List[str], str] = 'experiment1',
-                                fs: int = 25000,
-                                n_threads: int = 32,
-                                save: bool = False):
-    """
-    Generates a metadata json and experiment1...experimentN section for a hengenlab dataset upload.
-    File locations in S3 for hengenlab neural data files:
-        s3://braingeneers/ephys/YYYY-MM-DD-e-${DATASET_NAME}/original/data/*.bin
-    Contiguous recording periods
-    :param batch_uuid: location on braingeneers storage (S3)
-    :param dataset_name: the dataset_name as defined in `neuraltoolkit`. Metadata will be pulled from `neuraltoolkit`.
-    :param experiment_name: Dataset name as stored in `neuraltoolkit`. For example "CAF26"
-    :param fs: sampling rate, default to 25,000
-    :param n_threads: number of threads to use for reading ecube timestamps (default: 32)
-    :param save: (default False) option to save the metadata.json back to S3
-        (or the current braingeneers.default_endpoint)
-    :return: metadata.json
-    """
-    # hengenlab's (current) source of record for experiment metadata is stored in a repo which can't be imported
-    # due to unacceptable dependencies. Instead, the source code is being downloaded with the relevant static
-    # functions parsed out explicitly. This is a hacky approach, but this data shouldn't be stored
-    # in a repo and is expected to be replaced with a proper database in the future.
-    # All current solutions to this problem are bad, this is the least objectionable solution.
-    crit_utils_src = requests.get('https://raw.githubusercontent.com/hengenlab/sahara_work/master/crit_utils.py').text
-
-    src_get_birthday = re.search(r'(def get_birthday\(animal, returnall=False\):.+?)\ndef ', crit_utils_src, flags=re.S).group(1)
-    src_get_regions = re.search(r'(def get_regions\(animal\):.+?)\ndef ', crit_utils_src, flags=re.S).group(1)
-    src_get_sex = re.search(r'(def get_sex\(animal\):.+?)\ndef ', crit_utils_src, flags=re.S).group(1)
-    src_get_genotype = re.search(r'(def get_genotype\(animal\):.+?)\ndef ', crit_utils_src, flags=re.S).group(1)
-    src_get_hstype = re.search(r'(def get_hstype\(animal\):.+?)\ndef ', crit_utils_src, flags=re.S).group(1)
-
-    module = ModuleType('tempmodule')
-    module.dt = datetime  # the only import necessary to run these static functions
-    exec(compile(src_get_birthday, '', 'exec'), module.__dict__)
-    exec(compile(src_get_regions, '', 'exec'), module.__dict__)
-    exec(compile(src_get_sex, '', 'exec'), module.__dict__)
-    exec(compile(src_get_genotype, '', 'exec'), module.__dict__)
-    exec(compile(src_get_hstype, '', 'exec'), module.__dict__)
-
-    headstage_types = module.get_hstype(dataset_name.lower())
-
-    # list neural data files on S3
-    s3_path = f's3://braingeneers/ephys/{batch_uuid}/original/{experiment_name}/'
-    neural_data_files = common_utils.file_list(s3_path)
-    assert len(neural_data_files) > 0, f'No neural data files found at: {s3_path}'
-
-    args = [s3_path + ndf[0] for ndf in neural_data_files]
-
-    # get ecube times for each file
-    ecube_timestamps = common_utils.map2(
-        _read_hengenlab_ecube_timestamp,
-        args=args,
-        parallelism=n_threads,
-        use_multithreading=True,
-    )
-
-    # sort data files by ecube timestamps
-    neural_data_files = [(*ndf, et) for ndf, et in zip(neural_data_files, ecube_timestamps)]
-    neural_data_files.sort(key=lambda ndf: ndf[3])
-
-    # parse n_channels from file name
-    channels_match = re.search(r'.*Headstages_(\d+)_Channels.*', neural_data_files[0][0])
-    assert channels_match is not None, f'Unable to parse n_channels from filename: {neural_data_files[0][0]}'
-    n_channels = int(channels_match.group(1))
-
-    # parse timestamp from first file name
-    timestamp_match = re.search(r'.*_Channels_int16_(.+)\.bin', neural_data_files[0][0])
-    assert timestamp_match is not None, f'Unable to parse timestamp from filename: {neural_data_files[0][0]}'
-    timestamp = datetime.strptime(timestamp_match.group(1), '%Y-%m-%d_%H-%M-%S')
-
-    channels_per_probe = n_channels // len(headstage_types)
-    channel_map = list(itertools.chain(*[
-        (ntk.find_channel_map(hstype, number_of_channels=channels_per_probe) + i * channels_per_probe).tolist()
-        for i, hstype in enumerate(headstage_types)
-    ]))
-
-    metadata = dict(
-        uuid=batch_uuid,
-        timestamp=timestamp.isoformat(),
-        issue='',
-        channel_map=channel_map,
-        headstage_types=headstage_types,
-        notes=dict(
-            purpose_of_experiment='',
-            comments='',
-            biology=dict(
-                sample_type='mouse',
-                dataset_name=dataset_name,
-                birthday=module.get_birthday(dataset_name.lower()).isoformat(),
-                gender=module.get_sex(dataset_name.lower()),
-                genotype=module.get_genotype(dataset_name.lower()),
-            ),
-        ),
-        ephys_experiments=[dict(
-            name=experiment_name,
-            hardware='Hengenlab',
-            num_channels=n_channels,
-            sample_rate=fs,
-            voltage_scaling_factor=0.19073486328125,
-            timestamp=timestamp.isoformat(),
-            units='\u00b5V',
-            version='1.0.0',
-            blocks=[
-                {
-                    'num_frames': (size - 8) // 2 // n_channels,
-                    'path': f'original/{experiment_name}/{neural_data_file.split("/")[-1]}',
-                    'timestamp': datetime.strptime(
-                        re.search(r'.*_Channels_int16_(.+)\.bin', neural_data_file).group(1),
-                        '%Y-%m-%d_%H-%M-%S',
-                    ).isoformat(),
-                    'ecube_time': ecube_time,
-                }
-                for neural_data_file, last_modified_timestamp, size, ecube_time in neural_data_files
-            ],
-        )],
-    )
-
-    if save is True:
-        save_path = f's3://braingeneers/ephys/{batch_uuid}/metadata.json'
-        with smart_open.open(save_path, 'w') as f:
-            f.write(json.dumps(metadata, indent=2))
-
-    return metadata
 
 
 # --- AXION READER -----------------------------
@@ -1228,7 +1128,7 @@ def _axion_generate_per_block_metadata(filename: str):
 
                 fid.seek(start + int(obj.length.item()), 0)
                 if fid.tell() != start + obj.length:
-                    print('Unexpected Channel array length')
+                    print('Unexpected Channel array length', file=sys.stderr)
 
             elif obj.type == 3:
                 continue
@@ -1298,47 +1198,6 @@ def _axion_get_data(file_name, file_data_start_position,
         # B2 = (2,2) 256-319
         # B3 = (2,3) 320-383
         return final_raw_data_reshaped
-
-
-# class IndexedList(list):
-#     """
-#     A variant of OrderedDict indexable by index (int) or name (str).
-#     This class forces ints to represent index by location, else index by name/object.
-#     Example usages:
-#         metadata['ephys_experiments']['experiment0']    # index by name (must use str type)
-#         metadata['ephys_experiments'][0]                # index by location (must use int type)
-#     """
-#
-#     def __init__(self, original_list: list, key: callable):
-#         self.keys_ordered = [key(v) for v in original_list]
-#         self.dict = {key(v): v for v in original_list}
-#         super().__init__()
-#
-#     def __getitem__(self, key):
-#         print(key)
-#         if isinstance(key, int):
-#             return self.dict[self.keys_ordered[key]]
-#         elif isinstance(key, str):
-#             return self.dict[key]
-#         else:
-#             raise KeyError(f'Key must be type int (index by location) or str (index by name), got type: {type(key)}')
-#
-#     def __iter__(self) -> Iterator:
-#         def g():
-#             for k in self.keys_ordered:
-#                 yield self.dict[k]
-#
-#         return g()
-#
-#     def __hash__(self):
-#         return self.dict.__hash__()
-#
-#     def __eq__(self, other):
-#         return isinstance(other, IndexedList) and self.dict.__eq__(other.dict)
-#
-#     def __add__(self, value):
-#         self.keys_ordered.append(value)
-#         self.dict[value] = value
 
 
 def get_mearec_h5_recordings_file(batch_uuid: str):

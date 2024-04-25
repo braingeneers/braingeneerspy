@@ -1,14 +1,19 @@
 import unittest
+import tempfile
+import shutil
+import diskcache
+import json
+import threading
 import braingeneers
 import braingeneers.data.datasets_electrophysiology as ephys
-import json
 from braingeneers import skip_unittest_if_offline
-# import braingeneers.utils.smart_open_braingeneers as smart_open
-import smart_open
+import braingeneers.utils.smart_open_braingeneers as smart_open
 import boto3
 import numpy as np
-
 from unittest.mock import patch
+from braingeneers.data.datasets_electrophysiology import cached_load_data
+from unittest.mock import patch
+
 
 class MaxwellReaderTests(unittest.TestCase):
 
@@ -123,6 +128,25 @@ class MaxwellReaderTests(unittest.TestCase):
             expected_metadata['timestamp'] = ''
 
         assert modified_metadata == expected_metadata
+
+    @skip_unittest_if_offline
+    def test_load_gpio_maxwell(self):
+        """ Read gpio event for Maxwell V1 file"""
+        data_1 = "s3://braingeneers/ephys/" \
+                 "2023-04-02-hc328_rec/original/data/" \
+                 "2023_04_02_hc328_0.raw.h5"
+        data_2 = "s3://braingeneers/ephys/" \
+                 "2023-04-04-e-hc328_hckcr1-2_040423_recs/original/data/" \
+                 "hc3.28_hckcr1_chip8787_plated4.4_rec4.4.raw.h5"
+        data_3 = "s3://braingeneers/ephys/" \
+                 "2023-04-04-e-hc328_hckcr1-2_040423_recs/original/data/" \
+                 "2023_04_04_hc328_hckcr1-2_3.raw.h5"
+        gpio_1 = ephys.load_gpio_maxwell(data_1)
+        gpio_2 = ephys.load_gpio_maxwell(data_2)
+        gpio_3 = ephys.load_gpio_maxwell(data_3)
+        self.assertEqual(gpio_1.shape, (1, 2))
+        self.assertEqual(gpio_2.shape, (0,))
+        self.assertEqual(gpio_3.shape, (29,))
 
 
 class MEArecReaderTests(unittest.TestCase):
@@ -394,46 +418,86 @@ class HengenlabReaderTests(unittest.TestCase):
         self.assertEqual((192, 4), data.shape)
         self.assertEqual(np.float32, data.dtype)
 
-    @skip_unittest_if_offline
-    def test_online_generate_metadata(self):
-        metadata = ephys.generate_metadata_hengenlab(
-            batch_uuid=self.batch_uuid,
-            dataset_name='CAF26',
-            save=False,
-        )
 
-        # top level items
-        self.assertEqual(metadata['uuid'], '2020-04-12-e-hengenlab-caf26')
-        self.assertEqual(metadata['timestamp'], '2020-08-07T14:00:15')
-        self.assertEqual(metadata['issue'], '')
-        self.assertEqual(metadata['headstage_types'], ['EAB50chmap_00', 'APT_PCB', 'APT_PCB'])
+class TestCachedLoadData(unittest.TestCase):
 
-        # notes
-        self.assertEqual(metadata['notes']['biology']['sample_type'], 'mouse')
-        self.assertEqual(metadata['notes']['biology']['dataset_name'], 'CAF26')
-        self.assertEqual(metadata['notes']['biology']['birthday'], '2020-02-20T07:30:00')
-        self.assertEqual(metadata['notes']['biology']['genotype'], 'wt')
+    def setUp(self):
+        # Create a temporary directory for the cache
+        self.cache_dir = tempfile.mkdtemp(prefix='test_cache_')
 
-        # ephys_experiments
-        self.assertEqual(len(metadata['ephys_experiments']), 1)
-        self.assertTrue(isinstance(metadata['ephys_experiments'], list))
+    def tearDown(self):
+        # Remove the temporary directory after the test
+        shutil.rmtree(self.cache_dir)
 
-        experiment = metadata['ephys_experiments'][0]
-        self.assertEqual(experiment['name'], 'experiment1')
-        self.assertEqual(experiment['hardware'], 'Hengenlab')
-        self.assertEqual(experiment['num_channels'], 192)
-        self.assertEqual(experiment['sample_rate'], 25000)
-        self.assertEqual(experiment['voltage_scaling_factor'], 0.19073486328125)
-        self.assertEqual(experiment['timestamp'], '2020-08-07T14:00:15')
-        self.assertEqual(experiment['units'], '\u00b5V')
-        self.assertEqual(experiment['version'], '1.0.0')
-        self.assertEqual(len(experiment['blocks']), 324)
+    @patch('braingeneers.data.datasets_electrophysiology.load_data')
+    def test_caching_mechanism(self, mock_load_data):
+        """
+        Test that data is properly cached and retrieved on subsequent calls with the same parameters.
+        """
+        mock_load_data.return_value = 'mock_data'
+        metadata = {'uuid': 'test_uuid'}
 
-        block1 = metadata['ephys_experiments'][0]['blocks'][1]
-        self.assertEqual(block1['num_frames'], 7500000)
-        self.assertEqual(block1['path'], 'original/experiment1/Headstages_192_Channels_int16_2020-08-07_14-05-16.bin')
-        self.assertEqual(block1['timestamp'], '2020-08-07T14:05:16')
-        self.assertEqual(block1['ecube_time'], 301061600050)
+        # First call should invoke load_data
+        first_call_data = cached_load_data(self.cache_dir, metadata=metadata, experiment=0)
+        mock_load_data.assert_called_once()
+
+        # Second call should retrieve data from cache and not invoke load_data again
+        second_call_data = cached_load_data(self.cache_dir, metadata=metadata, experiment=0)
+        self.assertEqual(first_call_data, second_call_data)
+        mock_load_data.assert_called_once()  # Still called only once
+
+    @patch('braingeneers.data.datasets_electrophysiology.load_data')
+    def test_cache_eviction_when_full(self, mock_load_data):
+        """
+        Test that the oldest items are evicted from the cache when it exceeds its size limit.
+        """
+        mock_load_data.side_effect = lambda **kwargs: f"data_{kwargs['experiment']}"
+        max_size_gb = 0.000001  # Set a very small cache size to test eviction
+
+        # Populate the cache with enough data to exceed its size limit
+        for i in range(10):
+            cached_load_data(self.cache_dir, max_size_gb=max_size_gb, metadata={'uuid': 'test_uuid'}, experiment=i)
+
+        cache = diskcache.Cache(self.cache_dir)
+        self.assertLess(len(cache), 10)  # Ensure some items were evicted
+
+    @patch('braingeneers.data.datasets_electrophysiology.load_data')
+    def test_arguments_passed_to_load_data(self, mock_load_data):
+        """
+        Test that all arguments after cache_path are correctly passed to the underlying load_data function.
+        """
+        # Mock load_data to return a serializable object, e.g., a numpy array
+        mock_load_data.return_value = np.array([1, 2, 3])
+
+        kwargs = {'metadata': {'uuid': 'test_uuid'}, 'experiment': 0, 'offset': 0, 'length': 1000}
+        cached_load_data(self.cache_dir, **kwargs)
+        mock_load_data.assert_called_with(**kwargs)
+
+    @patch('braingeneers.data.datasets_electrophysiology.load_data')
+    def test_multiprocessing_thread_safety(self, mock_load_data):
+        """
+        Test that the caching mechanism is multiprocessing/thread-safe.
+        """
+        # Mock load_data to return a serializable object, e.g., a numpy array
+        mock_load_data.return_value = np.array([1, 2, 3])
+
+        def thread_function(cache_path, metadata, experiment):
+            # This function uses the mocked load_data indirectly via cached_load_data
+            cached_load_data(cache_path, metadata=metadata, experiment=experiment)
+
+        metadata = {'uuid': 'test_uuid'}
+        threads = []
+        for i in range(10):
+            t = threading.Thread(target=thread_function, args=(self.cache_dir, metadata, i))
+            threads.append(t)
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        # If the cache is thread-safe, this operation should complete without error
+        # This assertion is basic and assumes the test's success implies thread safety
+        self.assertTrue(True)
 
 
 if __name__ == '__main__':

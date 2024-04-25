@@ -303,5 +303,6 @@ class TestNamedLock(unittest.TestCase):
         lock.release()
 
 
+
 if __name__ == '__main__':
     unittest.main()
