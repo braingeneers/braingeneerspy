@@ -255,15 +255,17 @@ class checkout:
                 raise TypeError('File must be a string, bytes, or file object.')
             if isinstance(update_file, str) or isinstance(update_file, io.StringIO):
                 if self.isbinary:
-                    raise ValueError(
-                        'Cannot check in a string or text file when checkout is specified for binary mode.')
+                    raise ValueError('Cannot check in a string or text file when checkout is specified for binary mode.')
             if isinstance(update_file, bytes) or isinstance(update_file, io.BytesIO):
                 if not self.isbinary:
                     raise ValueError('Cannot check in bytes or a binary file when checkout is specified for text mode.')
 
+            if isinstance(update_file, io.IOBase):
+                update_file.seek(0)
+            update_str_or_bytes = update_file if not isinstance(update_file, io.IOBase) else update_file.read()
             mode = 'w' if not self.isbinary else 'wb'
             with smart_open.open(self.s3_path_str, mode=mode) as f:
-                f.write(update_file if not isinstance(update_file, io.IOBase) else update_file.read())
+                f.write(update_str_or_bytes)
 
     def __init__(self, s3_path_str: str, isbinary: bool = False):
         #  TODO: avoid circular import
