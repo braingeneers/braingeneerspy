@@ -6,13 +6,13 @@ import json
 import warnings
 import copy
 import diskcache
-
 import matplotlib.pyplot as plt
 import numpy as np
 import shutil
 import h5py
 import braingeneers.utils.smart_open_braingeneers as smart_open
 from collections import namedtuple
+import collections.abc
 import time
 from braingeneers.utils import s3wrangler
 from concurrent.futures import ThreadPoolExecutor
@@ -21,26 +21,22 @@ from nptyping import NDArray, Int16, Float16, Float32, Float64
 import io
 import braingeneers
 from braingeneers.utils import common_utils
+from braingeneers.utils.common_utils import get_basepath, map2
 import itertools
 import posixpath
 import pandas as pd
 from datetime import datetime
 import requests
 import re
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 import bisect
+from deprecated import deprecated
+import threading
+from pynwb import NWBHDF5IO
 
 
 VALID_LOAD_DATA_DTYPES = [np.int16, np.float16, np.float32, np.float64]
 load_data_cache = dict()  # minimal cache for avoiding looping lookups of metadata in load_data
-
-
-# todo: david replace this with common utils
-def get_basepath():
-    """ For S3 or local file access, this returns either s3://braingeneers or the local path up to ephys/UUID/... """
-    basepath = 's3://braingeneers' if braingeneers.get_default_endpoint().startswith('http') \
-        else braingeneers.get_default_endpoint()
-    return basepath
 
 
 def list_uuids():
@@ -79,6 +75,7 @@ def save_metadata(metadata: dict):
         f.write(json.dumps(metadata, indent=2))
 
 
+@deprecated("This function is deprecated since NWB format transition, load_data has a cache option built in.")
 def cached_load_data(cache_path: str, max_size_gb: int = 10, **kwargs):
     """
     Wraps a call to load_data with a diskcache at path `cache_path`.
@@ -134,20 +131,37 @@ def load_metadata(batch_uuid: str) -> dict:
 
 
 def load_data(metadata: dict,
-              experiment: Union[str, int],
+              experiment: Union[str, int, Iterable[str], Iterable[int], None],
               offset: int = 0,
               length: int = None,
-              channels: Union[List[int], int] = None,
+              channels: Union[Iterable[int], int] = None,
               dtype: Union[str, NDArray[Int16, Float16, Float32, Float64]] = 'float32',
-              parallelism: (str, int) = 'auto'):
+              cache_path: str = None,
+              max_size_gb: int = 30,
+              parallelism: (bool, int) = True) -> NDArray[Int16, Float16, Float32, Float64]:
     """
-    This function loads arbitrarily specified amounts of data from an experiment for:
-     - Axion
-     - Intan
-     - Raspi
-     - Maxwell
-     - Hengenlab
-     - MEArec
+    This is the primary way to read raw ephys data from the Braingeneers archive.
+    It assumes your data is in the standard HDF5 format and in row-major order
+    (this typically happens automatically when data is uploaded).
+
+    Example usage:
+        metadata = load_metadata('2020-03-10-e-128silicon-mouse-p35')
+        data = load_data(metadata, 'experiment1', offset=0, length=20000)  # 1s of data @ 20kHz
+        print(data.shape)
+        > (1024, 20000)
+
+    Special notes:
+     - The data is returned in the format [channels, time] where channels are the rows and time is the columns.
+     - The data is returned in float32 format by default, but you can specify int16 to get the raw unscaled data.
+     - The data is scaled by the voltage_scaling_factor if it is present in the metadata.
+     - Offset and length are in units of samples (which depend on the sampling rate, available in the metadata).
+     - Multiple channels can be read at once by specifying a list of channels.
+     - Multiple experiments can be spanned by specifying a list of experiments by name or index
+       (when specified by index, experiments are sorted by time). None can be used to read all experiments.
+     - Data can be local or on S3, if the data is local it must mirror the S3 directory structure, use
+       braingeneers.set_default_endpoint('path/to/ephys/folder') to read locally. Reads from S3 are default.
+     - If the cache_path is set, the results of load_data will be cached in a diskcache at that path. This is
+       helpful to reduce loading times when reading data from S3 or a compressed local file.
 
     As a note, the user MUST provide the offset (offset) and the length of frames to take. This function reads
     across as many blocks as the length specifies.
@@ -155,95 +169,325 @@ def load_data(metadata: dict,
     :param metadata: result of load_metadata, dict
     :param experiment: Which experiment in the batch to load, by name (string) or index location (int),
         examples: "experiment1" or 0
-    :param channels: Channels of interest to obtain data from (default None for all channels) list of ints or single int
-    :param offset: int Starting datapoint of interest, 0-indexed from start of
+    :param channels: Channel(s) to obtain data from (default None for all channels) list of ints or single int
+    :param offset: int, Starting datapoint of interest, 0-indexed from start of
         recording across all data files and channels-agnostic
     :param length: int, required, number of data points to return
         (-1 meaning all data points across the full experiment recording)
     :param dtype: default "float32", a numpy dtype or string equivalent, valid options:
         np.float16, 32, or 64 or np.int16 to return the raw unscaled values.
-    :param parallelism: (default == 'auto') to enable parallel read operations only if S3 is the endpoint and the length
-        is above a reasonable threshold, using the number of CPUs and length to determine number of threads to use.
-        1 or False will disable parallelism and read using only the Main thread/process. Note, if you are reading
+    :param cache_path: str, path to a local directory where data will be cache.
+    :param max_size_gb: int, maximum size of the cache in GB (30 GB default).
+        If the cache exceeds this size, the oldest items will be removed.
+    :param parallelism: (default == True) to enable parallel read operations using the number of CPUs
+        to determine number of threads to use.
+        False will disable parallelism and read using only the Main thread/process. Note, if you are reading
         data using a multiprocess data loader such as PyTorch then disabling parallelism is recommended.
-        2+ will initiate read operations using the specified number of processes (using Python multiprocessing)
+        Debugging issues is much easier when parallelism is disabled.
+        2+ will dictate the number of threads to use.
     :return: ndarray array of chosen data points in [channels, time] format.
     """
     assert 'uuid' in metadata, \
         'Metadata file is invalid, it does not contain required uuid field.'
     assert 'ephys_experiments' in metadata or 'experiments' in metadata, \
         'Metadata file is invalid, it does not contain required ephys_experiments field.'
-    assert isinstance(experiment, (str, int)), \
-        f'Parameter experiment must be an int index or experiment name string. Got: {experiment}'
-    assert length is not None, \
+    assert isinstance(experiment, (str, int, type(None))) or (isinstance(experiment, Iterable) and not isinstance(experiment, (str, bytes)) and all(isinstance(exp, (str, int)) for exp in experiment)), \
+        f'Parameter experiment must be an int index, experiment name string, or an iterable of these (excluding strings and bytes as iterables). Got: {experiment}'
+    assert length is not None and isinstance(length, int) and length >= -1, \
         f'Length parameter must be set explicitly, use -1 for the full experiment dataset ' \
         f'(across all files, warning, this can be a very large amount of data)'
-    assert parallelism == 'auto', \
-        'This feature has not yet been implemented, it is reserved for future use.'
+    assert isinstance(parallelism, (bool, int)) and parallelism >= 0, \
+        'Parallelism must be a boolean or an integer, got: {parallelism}'
     assert np.dtype(dtype) in VALID_LOAD_DATA_DTYPES, \
-        'dtype must be one of int16 (unscaled raw data), or float16, float32, or float 64 (scaled data)'
+        'dtype must be one of np.int16 (unscaled raw data), np.float16, np.float32, or np.float64 (floats are in originally recorded units)'
     assert isinstance(offset, int) and isinstance(length, int), \
         f'offset and length must be integers, got offset is {type(offset)}, length is {type(length)}'
 
-    # look up experiment by string name or index
-    experiment_str = experiment if isinstance(experiment, str) else list(metadata['ephys_experiments'])[experiment]
-    ephys_experiment = metadata['ephys_experiments'][experiment_str]
+    n_threads = os.cpu_count() if parallelism is True else 1 if parallelism is False else parallelism
+    channels = [channels] if isinstance(channels, int) else channels
 
-    dataset_size = sum([block['num_frames'] for block in metadata['ephys_experiments'][experiment_str]['blocks']])
+    # look up experiment(s) by experiment name, index, list of experiment names, or list of indexes
+    # make experiment iterable
+    experiments = [experiment] if isinstance(experiment, (str, int)) \
+        else list(experiment) if experiment is not None \
+        else sorted(metadata['ephys_experiments'].keys(), key=lambda x: metadata['ephys_experiments'][x]['timestamp'])
+    assert all([(type(e) in [str, int]) and isinstance(e, type(experiments[0])) for e in experiments]), \
+        'Invalid experiment type, must be a string, int, or list of all strings or all integers.'
+
+    # verify experiments and convert indexes to named experiments for consistent handling
+    # experiments is a list of experiment names or indexes
+    if isinstance(experiments[0], int):
+        # experiments are indexed by number, verify indexing and convert to named experiments
+        experiment_exists = [exp_ix < len(metadata['ephys_experiments']) for exp_ix in experiments]
+        if not all(experiment_exists):
+            missing_experiments = [experiments[i] for i in range(len(experiments)) if not experiment_exists[i]]
+            raise ValueError(f'Experiment(s) {missing_experiments} not found in metadata.json')
+        experiments_sorted = sorted(metadata['ephys_experiments'].keys(), key=lambda x: metadata['ephys_experiments'][x]['timestamp'])
+        experiments_selected = [experiments_sorted[exp_ix] for exp_ix in experiments]
+    else:
+        # experiments are indexed by name, verify that all experiments exist
+        experiment_exists = [exp_name in metadata['ephys_experiments'] for exp_name in experiments]
+        if not all(experiment_exists):
+            missing_experiments = [experiments[i] for i in range(len(experiments)) if not experiment_exists[i]]
+            raise ValueError(f'Experiment(s) {missing_experiments} not found in metadata.json')
+        experiments_selected = experiments
+
+    # get metadata for selected experiments
+    experiments_metadata = [metadata['ephys_experiments'][e] for e in experiments_selected]
+
+    # verify that ephys_experiments are in timestamp sorted order
+    is_sorted_order = all(
+        datetime.strptime(experiments_metadata[i]['timestamp'], '%Y-%m-%dT%H:%M:%S') <=
+        datetime.strptime(experiments_metadata[i + 1]['timestamp'], '%Y-%m-%dT%H:%M:%S')
+        for i in range(len(experiments_metadata) - 1)
+    )
+    if not is_sorted_order:
+        raise ValueError('When listing multiple experiments, the `experiment` parameter must be in '
+                         'order of timestamp. This exception is raised to avoid unexpected behavior and risk of bugs.')
+
+    dataset_size = sum([block['num_frames'] for exp in experiments_metadata for block in exp['blocks']])
 
     if offset + length > dataset_size:
         raise IndexError(
-            f'Dataset size is {dataset_size}, but parameters offset + length '
+            f'Dataset size is {dataset_size} (across all selected experiments), but parameters offset + length '
             f'is {offset + length} which exceeds dataset size. Use -1 to read to the end.'
         )
 
     batch_uuid = metadata['uuid']
-    hardware = ephys_experiment['hardware']
 
-    # hand off to appropriate load_data function
-    # all data loader functions should return data in raw int16 format, it will be
-    # converted to float and have the voltage_scaling_factor applied here (if appropriate)
-    if hardware == 'Raspi':
-        data = load_data_raspi(metadata, batch_uuid, experiment_str, channels, offset, length)
-    elif hardware == 'Axion BioSystems':
-        data = load_data_axion(metadata, batch_uuid, experiment_str, channels, offset, length)
-    elif hardware == 'Intan':
-        data = load_data_intan(metadata, batch_uuid, experiment_str, channels, offset, length)
-    elif hardware == 'MEArec':
-        # offset is always "0"; experiment is always "experiment0"
-        data = load_data_intan(metadata, batch_uuid, channels, length)
-    elif hardware == 'Maxwell':
-        # Check if all experiments in this UUID have been converted to row-major format already
-        # Data has to be converted to row-major after recording in a batch process using `h5repack`
-        is_rowmajor = all([
-            block.get('data_order', None) == 'rowmajor'
-            for exp in metadata['ephys_experiments'].values() for block in exp['blocks']
-        ])
-        if is_rowmajor:
-            # Use the high performance data reader that requires row-major data
-            data = load_data_maxwell_parallel(metadata, batch_uuid, experiment_str, channels, offset, length)
-        else:
-            # Use the old data loader and emmit a warning that this dataset has not been converted yet
-            warnings.warn(f'Dataset {batch_uuid} is not in row-major format, the parallel data reader '
-                          f'can\'t be used, read speeds may be slow over a network.')
-            data = load_data_maxwell(metadata, batch_uuid, experiment_str, channels, offset, length)
-    elif hardware == 'Hengenlab':
-        data = load_data_hengenlab(metadata, batch_uuid, experiment_str, channels, offset, length)
-    else:
-        raise AttributeError(f'Metadata file contains invalid hardware field: {metadata["hardware"]}')
+    # load data from cache if cache is specified and data is present
+    data = None
+    cache = None
+    key = None
+    if cache_path is not None:
+        cache = diskcache.Cache(cache_path, size_limit=10 ** 9 * max_size_gb)
+        key = json.dumps([batch_uuid, experiments_selected, offset, length, channels])
+        if key in cache:
+            data = cache[key]
 
-    # convert to requested dtype
-    if 'voltage_scaling_factor' in ephys_experiment:
-        voltage_scaling_factor = ephys_experiment['voltage_scaling_factor']
-    else:
-        warnings.warn('Metadata is missing the required voltage_scaling_factor attribute. Using default value of 1.0.')
-        voltage_scaling_factor = 1.0
+    # load data if it was not found in cache
+    if data is None:
+        ephys_experiments = [metadata['ephys_experiments'][e] for e in experiments_selected]
+        data = _NWBParallelReader(
+            batch_uuid=batch_uuid,
+            n_threads=n_threads,
+            ephys_experiments=ephys_experiments,
+            channels=channels,
+            offset=offset,
+            length=length,
+            dtype=dtype,
+            voltage_scaling_factor=metadata.get('voltage_scaling_factor')
+        ).read_data()
+        if cache_path is not None:
+            cache[key] = data
 
-    data_scaled = data if np.dtype(dtype) == np.int16 \
-        else data * np.array(voltage_scaling_factor, dtype=dtype)
+    return data
 
-    return data_scaled
 
+class _NWBParallelReader:
+    """
+    Not a public class, this is used internally by load_data.
+
+    This class provides a greedy generator that implements a work-stealing queue to keep all threads fully utilized.
+    The use of a generator allows the read patterns to adjust dynamically based on the progress of threads.
+    This class contains all logic governing the order data is read in.
+    A simple greedy algorithm enforced here keeps all threads fully utilized with a simple executor.
+
+    Notes about h5py:
+     - When reading contiguous data (as defined by the user defined chunks size)
+       from an open h5py file, multiple requests for sequential data will be
+       efficiently read without extra indexing lookups. Therefore, this method is
+       efficient over the network.
+    """
+    def __init__(self,
+                 batch_uuid,
+                 n_threads,
+                 ephys_experiments : List[dict],
+                 channels: List[int],
+                 offset,
+                 length,
+                 dtype,
+                 voltage_scaling_factor: float = None):
+        """
+        :param batch_uuid: UUID of the batch
+        :param n_threads: number of threads to use
+        :param ephys_experiments: list of experiments, experiments is a full experiment metadata dictionary
+        :param channels: list of channels to read
+        :param offset: offset in frames
+        :param length: length in frames
+        :param dtype: data type to return
+        :param voltage_scaling_factor: voltage scaling factor
+        """
+
+        self.batch_uuid = batch_uuid
+        self.n_threads = n_threads
+        self.voltage_scaling_factor = np.array(voltage_scaling_factor, dtype=dtype) if voltage_scaling_factor is not None else None
+        self.lock = threading.Lock()
+        self.nwb_files = {}  # {worker_ix: {filepath: h5py.File, ...}, ...}
+
+        # a list (contiguous blocks) of lists (individual blocks) [[block0, block1, ...], [block0, block1, ...], ...]
+        self.contiguous_blocks, length_computed = self.compute_contiguous_blocks(
+            ephys_experiments,
+            channels,
+            offset,
+            length,
+        )
+        # pad self.contiguous_blocks with empty lists to match n_threads
+        self.contiguous_blocks.extend([[] for _ in range(n_threads - len(self.contiguous_blocks))])
+        self.balance_blocks()
+
+        num_channels = ephys_experiments[0]['num_channels'] if channels is None else len(channels)
+        self.data = np.empty((num_channels, length_computed), dtype=dtype)
+
+    def read_data(self):
+        """ Starts the worker threads """
+        map2(func=self.worker, args=list(range(self.n_threads)), parallelism=self.n_threads, use_multithreading=True)
+        return self.data
+
+    def worker(self, worker_ix: int):
+        """ Picks the next block to read and reads it """
+        while True:
+            with self.lock:
+                if len(self.contiguous_blocks[worker_ix]) == 0:
+                    self.balance_blocks()
+                    if len(self.contiguous_blocks[worker_ix]) == 0:
+                        return
+                block_params = self.contiguous_blocks[worker_ix].pop(0)
+
+            self.read_block(worker_ix, *block_params)
+
+    def read_block(self,
+                   worker_ix: int,
+                   metadata_block: dict,
+                   channel: int,
+                   offset: int,
+                   length: int,
+                   data_channel: int,
+                   data_offset: int) -> NDArray[Int16]:
+        """
+        Reads a single block directly into the appropriate place in self.data,
+        handles voltage scaling if specified.
+        """
+        filepath = posixpath.join(get_basepath(), 'ephys', self.batch_uuid, metadata_block['path'])
+        data_path = 'acquisition/ElectricalSeries/data'
+
+        if filepath not in self.nwb_files.get(worker_ix, {}):
+            worker_files = self.nwb_files.setdefault(worker_ix, {})
+            worker_files[filepath] = h5py.File(filepath, 'r')
+            assert data_path in worker_files[filepath], \
+                f'Expected data path {data_path} not found in {filepath}'
+
+        # Read data from NWB file
+        nwb_file = self.nwb_files[worker_ix][filepath]
+        data_slice = nwb_file[data_path][channel, offset:offset+length]
+
+        # apply voltage scaling factor
+        data_slice = data_slice * self.voltage_scaling_factor if self.voltage_scaling_factor is not None else data_slice
+
+        # update self.data
+        self.data[data_channel, data_offset:data_offset+length] = data_slice
+
+    def balance_blocks(self):
+        """
+        Rebalances the blocks so there are at least n_threads blocks to read.
+        This is performed when a thread finishes a contiguous segment.
+        This function is responsible for deleting completed segments (inner list in self.contiguous_blocks).
+        worker threads will continue to pull the next block from their index in self.contiguous_blocks[worker_ix].
+
+        This is not thread safe, so a lock must be held when calling this function.
+        """
+        # While there are idle threads...
+        while any(len(b) == 0 for b in self.contiguous_blocks[:self.n_threads]):
+            # Get the index of the first idle worker with a 0 length segment
+            first_idle_worker = next(i for i, b in enumerate(self.contiguous_blocks[:self.n_threads]) if len(b) == 0)
+
+            # Get the index of the longest segment in self.contiguous_blocks
+            longest_segment_ix, _ = max(enumerate(self.contiguous_blocks), key=lambda x: len(x[1]))
+
+            # Move the second half of the longest segment to the first_idle_worker and
+            # remove the second half of the longest segment
+            mid_point = len(self.contiguous_blocks[longest_segment_ix]) // 2
+            self.contiguous_blocks[first_idle_worker], self.contiguous_blocks[longest_segment_ix] = (
+                self.contiguous_blocks[longest_segment_ix][mid_point:],  # Assign second half
+                self.contiguous_blocks[longest_segment_ix][:mid_point]  # Retain first half
+            )
+
+            # Early exit if the moved segment was already the smallest possible
+            if not self.contiguous_blocks[longest_segment_ix]:
+                break
+
+    @staticmethod
+    def compute_contiguous_blocks(experiments: List[dict], channels: List[int], offset: int, length: int) -> List[List]:
+        """
+        Returns a list of lists where the outer list is contiguous blocks,
+        and the inner list is each chunk of a block.
+        Results are sorted by length of segments with longest segments first.
+
+        offset and length are stitched across experiments
+
+        Example return:
+            [
+                [(metadata_block, channel, offset, length, data_channel, data_array_ix), ...],  # contiguous segment of multiple blocks
+                [(metadata_block, channel, offset, length, data_channel, data_array_ix), ...],  # contiguous segment of multiple blocks
+                ...  # more contiguous segments
+            ],
+            data_length  # total length of data in frames
+
+        :param experiments: list of experiments, experiments is a full experiment metadata dictionary
+        :param channels: list of channels to read
+        :param offset: offset in frames
+        :param length: length in frames
+        """
+        # Input parameter validation
+        assert len(experiments) > 0, 'No experiments found in metadata.'
+        assert all([e['num_channels'] == experiments[0]['num_channels'] for e in experiments]), \
+            'All experiments must have the same number of channels.'
+        assert all([(('data_chunk_size' in b) and (b['data_chunk_size'][0] == 1)) for e in experiments for b in e['blocks']]), \
+            (f'Only channel-major order is supported. data_chunk_size must be [1, n], '
+             f'got: {experiments[0]["blocks"][0]["data_chunk_size"]} from metadata.json.')
+
+        num_channels = experiments[0]['num_channels']
+        length = length if length != -1 else np.inf
+
+        # Determine the contiguous blocks to read.
+        segments = []
+        # offset is used to keep location within the current block (it's reset to 0 every block)
+        # data_array_ix is used to keep location within the data array, self.data (it's not reset)
+        data_array_ix = 0
+        for exp in experiments:
+            for block in exp['blocks']:
+                num_frames = min(block['num_frames'] - offset, length)
+                data_chunk_size = block['data_chunk_size'][1]
+
+                # Skip blocks that are before the offset
+                if offset >= block['num_frames']:
+                    offset -= block['num_frames']
+                    continue
+
+                # Record the contiguous segments
+                channel_segments = []
+                for data_channel, channel in enumerate(channels if channels is not None else range(num_channels)):
+                    for i in range(0, num_frames, data_chunk_size):
+                        segment = (
+                            block,  # block metadata
+                            channel,  # channel number, int
+                            i + offset,  # offset within the block
+                            min(data_chunk_size, num_frames - i),  # length of the segment
+                            data_channel,  # channel index in self.data[ch_ix]
+                            data_array_ix + i,  # index in self.data[ch_ix, data_array_ix:data_array_ix+length]
+                        )
+                        channel_segments.append(segment)
+                    segments.append(channel_segments)
+
+                # Update offset and length to reflect the remaining data to read
+                data_array_ix += num_frames
+                offset = 0  # reset offset to 0 after the first block, offset is used to keep location within the current block
+                length -= num_frames
+
+        # Sort by length of contiguous segments with longest segments first
+        segments.sort(key=lambda channel_segment: len(channel_segment), reverse=True)
+
+        return segments, data_array_ix
 
 
 def load_window(metadata, exp, window, dtype=np.float32, channels=None):
@@ -277,7 +521,6 @@ def load_window(metadata, exp, window, dtype=np.float32, channels=None):
                             length=window[1]-window[0], dtype= dtype,
                             channels = channels)
     return (data -sig_offset) * lsb * gain*1000 # last is for V to mV
-
 
 
 def load_windows(metadata, exp, window_centers, window_sz, dtype=np.float16,
@@ -328,7 +571,6 @@ def load_windows(metadata, exp, window_centers, window_sz, dtype=np.float16,
         
         data.append(data_temp)
     return np.stack(data, axis=0)
-
 
 
 def load_data_raspi(metadata, batch_uuid, experiment: str, offset, length) -> NDArray[Int16]:
