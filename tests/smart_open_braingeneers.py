@@ -15,7 +15,7 @@ class SmartOpenTestCase(unittest.TestCase):
         with smart_open.open(s3_url, 'r') as f:
             txt = f.read()
 
-        self.assertEquals(txt, "Don't panic\n")
+        self.assertEqual(txt, "Don't panic\n")
 
     def test_local_path_endpoint(self):
         with tempfile.TemporaryDirectory(prefix='smart_open_unittest_') as tmp_dirname:
@@ -26,4 +26,4 @@ class SmartOpenTestCase(unittest.TestCase):
 
                 braingeneers.set_default_endpoint(f'{tmp_dirname}/')
                 with smart_open.open(tmp_file_name, mode='rb') as tmp_file_smart_open:
-                    self.assertEquals(tmp_file_smart_open.read(), b'unittest')
+                    self.assertEqual(tmp_file_smart_open.read(), b'unittest')
