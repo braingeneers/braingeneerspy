@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
-from .configure import skip_unittest_if_offline
-from .numpy_s3_memmap import NumpyS3Memmap
+from braingeneers.utils.configure import skip_unittest_if_offline
+from braingeneers.utils.numpy_s3_memmap import NumpyS3Memmap
 
 
 class TestNumpyS3Memmap(unittest.TestCase):

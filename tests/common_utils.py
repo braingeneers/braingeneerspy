@@ -1,18 +1,17 @@
 import io
-import unittest
-from unittest.mock import patch, MagicMock
-import common_utils
-from common_utils import checkout, force_release_checkout, map2
-from braingeneers.iot import messaging
 import os
 import tempfile
+import unittest
+from unittest.mock import patch, MagicMock
+
 import braingeneers.utils.smart_open_braingeneers as smart_open
-from typing import Union
+from braingeneers.utils import common_utils
+from braingeneers.utils.common_utils import checkout, map2
 
 
 class TestFileListFunction(unittest.TestCase):
 
-    @patch('common_utils._lazy_init_s3_client')  # Updated to common_utils
+    @patch('braingeneers.utils.common_utils._lazy_init_s3_client')  # Updated to common_utils
     def test_s3_files_exist(self, mock_s3_client):
         # Mock S3 client response
         mock_response = {
@@ -27,7 +26,7 @@ class TestFileListFunction(unittest.TestCase):
         expected = [('file2.txt', '2023-01-02', 456), ('file1.txt', '2023-01-01', 123)]
         self.assertEqual(result, expected)
 
-    @patch('common_utils._lazy_init_s3_client')  # Updated to common_utils
+    @patch('braingeneers.utils.common_utils._lazy_init_s3_client')  # Updated to common_utils
     def test_s3_no_files(self, mock_s3_client):
         # Mock S3 client response for no files
         mock_s3_client.return_value.list_objects.return_value = {}

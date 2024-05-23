@@ -1,12 +1,14 @@
+import pytest
 import unittest
 from unittest import mock
 
 from botocore.exceptions import ClientError
 
-from .configure import skip_unittest_if_offline
-from .memoize_s3 import memoize
+from braingeneers.utils.configure import skip_unittest_if_offline
+from braingeneers.utils.memoize_s3 import memoize
 
 
+@pytest.mark.filterwarnings('ignore::UserWarning')
 class TestMemoizeS3(unittest.TestCase):
     @skip_unittest_if_offline
     def test(self):
