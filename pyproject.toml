@@ -78,6 +78,7 @@ dev = [
   "sphinx_copybutton",
   "sphinx_autodoc_typehints",
   "furo",
+  "joblib",
 ]
 
 [project.urls]

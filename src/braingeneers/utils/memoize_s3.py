@@ -4,11 +4,16 @@ from functools import partial
 
 import awswrangler as wr
 import boto3
-from joblib import Memory, register_store_backend
-from joblib._store_backends import StoreBackendBase, StoreBackendMixin
 from smart_open.s3 import parse_uri
 
 from .smart_open_braingeneers import open
+
+
+try:
+    from joblib import Memory, register_store_backend
+    from joblib._store_backends import StoreBackendBase, StoreBackendMixin
+except ImportError:
+    raise ImportError("joblib is required to use memoize_s3")
 
 
 def s3_isdir(path):
