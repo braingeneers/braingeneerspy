@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import diskcache
 import numpy as np
+import pytest
 
 import braingeneers.data.datasets_electrophysiology as ephys
 import braingeneers.utils.smart_open_braingeneers as smart_open
@@ -14,6 +15,10 @@ from braingeneers import skip_unittest_if_offline
 from braingeneers.data.datasets_electrophysiology import cached_load_data
 
 
+# TODO some of the tests are loading old datasets that now raise a warning because
+# they are not in the new format. We should update the tests to use the new datasets
+# instead of  suppressing the warning in the tests.
+@pytest.mark.filterwarnings('ignore::UserWarning')
 class MaxwellReaderTests(unittest.TestCase):
 
     @skip_unittest_if_offline
