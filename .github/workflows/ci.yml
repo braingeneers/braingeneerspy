@@ -31,9 +31,11 @@ jobs:
       - env:
           AWS_CREDENTIALS: |
             ${{ secrets.AWS_CREDENTIALS }}
+        shell: bash
         run: |
           mkdir ~/.aws
           echo "$AWS_CREDENTIALS" > ~/.aws/credentials
+          wc ~/.aws/credentials
 
       - uses: actions/checkout@v4
         with:
