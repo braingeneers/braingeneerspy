@@ -28,6 +28,13 @@ jobs:
         runs-on: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
+      - env:
+          AWS_CREDENTIALS: |
+            ${{ secrets.AWS_CREDENTIALS }}
+        run: |
+          mkdir ~/.aws
+          echo "$AWS_CREDENTIALS" > ~/.aws/credentials
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
