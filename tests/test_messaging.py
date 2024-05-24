@@ -1,13 +1,10 @@
 """ Unit test for BraingeneersMqttClient, assumes Braingeneers ~/.aws/credentials file exists """
-import datetime
 import time
 import unittest.mock
 import braingeneers.iot.messaging as messaging
 import threading
 import uuid
 import warnings
-import functools
-import braingeneers.iot.shadows as sh
 import queue
 from unittest.mock import MagicMock
 
