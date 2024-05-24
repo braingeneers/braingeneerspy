@@ -1,14 +1,14 @@
-import pytest
 import unittest
 from unittest import mock
 
+import pytest
 from botocore.exceptions import ClientError
 
 from braingeneers.utils.configure import skip_unittest_if_offline
 from braingeneers.utils.memoize_s3 import memoize
 
 
-@pytest.mark.filterwarnings('ignore::UserWarning')
+@pytest.mark.filterwarnings("ignore::UserWarning")
 class TestMemoizeS3(unittest.TestCase):
     @skip_unittest_if_offline
     def test(self):
@@ -91,3 +91,7 @@ class TestMemoizeS3(unittest.TestCase):
         self.assertEqual(
             foo.store_backend.location, "s3://braingeneersdev/unittest/cache/joblib"
         )
+
+
+if __name__ == "__main__":
+    unittest.main()
