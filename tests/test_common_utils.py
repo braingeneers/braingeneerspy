@@ -101,6 +101,8 @@ class TestCheckout(unittest.TestCase):
             locked_obj.checkin(test_data)
             self.mock_file.write.assert_called_once_with(test_data)
 
+
+class TestMap2Function(unittest.TestCase):
     def test_with_pass_through_kwargs_handling(self):
         """Test map2 with a function accepting dynamic kwargs, specifically to check the handling of 'experiment_name'
         passed through **kwargs, using the original signature for f_with_kwargs."""
@@ -132,8 +134,6 @@ class TestCheckout(unittest.TestCase):
         )
         self.assertTrue(True)  # If the test reaches this point, it has passed
 
-
-class TestMap2Function(unittest.TestCase):
     def test_with_kwargs_function_parallelism_false(self):
         # Define a test function that takes a positional argument and arbitrary kwargs
         def test_func(a, **kwargs):
@@ -161,9 +161,6 @@ class TestMap2Function(unittest.TestCase):
         def test_func(a, **kwargs):
             return a + kwargs.get("increment", 0)
 
-        # Since 'a' is now a fixed value, we no longer need to provide it in args
-        args = []  # No positional arguments are passed here
-
         # Define the kwargs to pass to map2, each dict represents kwargs for one call
         kwargs = [{"increment": 10}, {"increment": 20}, {"increment": 30}]
 
@@ -180,6 +177,21 @@ class TestMap2Function(unittest.TestCase):
 
         # Assert that the actual result matches the expected result
         self.assertEqual(result, expected_results)
+
+    def test_with_no_kwargs(self):
+        # Define a test function that takes a positional argument and no kwargs
+        def test_func(a):
+            return a + 1
+
+        # While we're at it, also test the pathway that normalizes the args.
+        args = range(1, 4)
+        result = map2(
+            func=test_func,
+            args=args,
+            parallelism=False,
+        )
+
+        self.assertEqual(result, [2, 3, 4])
 
 
 if __name__ == "__main__":

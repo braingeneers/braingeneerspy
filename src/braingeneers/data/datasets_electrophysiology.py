@@ -505,7 +505,6 @@ def load_data_maxwell_parallel(metadata: dict, batch_uuid: str, experiment: str,
     data_per_block_per_channel = common_utils.map2(
         func=_load_data_maxwell_per_channel,
         args=filepaths_channels_starts_lengths,
-        parallelism=False,
     )
     data = np.vstack(data_per_block_per_channel)
 
