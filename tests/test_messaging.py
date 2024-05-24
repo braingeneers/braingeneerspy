@@ -184,44 +184,6 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         self.assertDictEqual(message1, {'test': 1})
         self.assertDictEqual(message2, {'test': 2})
 
-    # def test_list_devices_basic(self):
-    #     q = self.mb_test_device.subscribe_message('test/unittest', callback=messaging.CallableQueue())
-    #     self.mb_test_device.publish_message('test/unittest', message={'test': 'true'})
-    #     q.get()  # waits for the message to be published and received before moving on to check the online devices
-
-    #     time.sleep(20)  # Due to issue: https://stackoverflow.com/questions/72564492
-    #     devices_online = self.mb_test_device.list_devices()
-    #     self.assertTrue(len(devices_online) > 0)
-
-    # @staticmethod
-    # def callback_device_state_change(barrier: threading.Barrier, result: dict,
-    #                                  device_name: str, device_state_key: str, new_value):
-    #     print('')
-    #     print(f'unittest callback - device_name: {device_name}, device_state_key: {device_state_key}, new_value: {new_value}')
-    #     result['device_name'] = device_name
-    #     result['device_state_key'] = device_state_key
-    #     result['new_value'] = new_value
-    #     barrier.wait()
-
-    # def test_subscribe_device_state_change(self):
-    #     result = {}
-    #     t = str(datetime.datetime.today())
-    #     self.mb_test_device.update_device_state('unittest', {'unchanging_key': 'static'})
-    #     barrier = threading.Barrier(2)
-    #     func = functools.partial(self.callback_device_state_change, barrier, result)
-    #     self.mb_test_device.subscribe_device_state_change(
-    #         device_name='unittest', device_state_keys=['test_key'], callback=func
-    #     )
-    #     self.mb_test_device.update_device_state('unittest', {'test_key': t})
-    #     try:
-    #         barrier.wait(timeout=5)
-    #     except threading.BrokenBarrierError:
-    #         self.fail(msg='Barrier timeout')
-
-    #     self.assertEqual(result['device_name'], 'unittest')
-    #     self.assertEqual(result['device_state_key'], 'test_key')
-    #     self.assertEqual(result['new_value'], t)
-
 
 class TestInterprocessQueue(unittest.TestCase):
     def setUp(self) -> None:
