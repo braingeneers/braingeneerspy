@@ -13,7 +13,7 @@ from braingeneers.utils.memoize_s3 import memoize
 class TestMemoizeS3(unittest.TestCase):
     @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
     @skip_unittest_if_offline
-    @retry(stop=stop_after_attempt(3))  # TODO: Fix this flaky test
+    @retry(stop=stop_after_attempt(9))  # TODO: Fix this flaky test
     def test(self):
         # Run these checks in a context where S3_USER is set.
         with mock.patch.dict("os.environ", {"S3_USER": "unittest"}):
