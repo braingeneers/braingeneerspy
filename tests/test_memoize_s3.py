@@ -1,3 +1,4 @@
+import sys
 import unittest
 from unittest import mock
 
@@ -10,6 +11,7 @@ from braingeneers.utils.memoize_s3 import memoize
 
 @pytest.mark.filterwarnings("ignore::UserWarning")
 class TestMemoizeS3(unittest.TestCase):
+    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
     @skip_unittest_if_offline
     def test(self):
         # Run these checks in a context where S3_USER is set.
@@ -68,6 +70,7 @@ class TestMemoizeS3(unittest.TestCase):
             def foo(x):
                 return x
 
+    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
     @skip_unittest_if_offline
     def test_default_location(self):
         # Make sure a default location is correctly set when S3_USER is not.

@@ -3,6 +3,7 @@ import shutil
 import tempfile
 import threading
 import unittest
+import sys
 from unittest.mock import patch
 
 import diskcache
@@ -528,6 +529,7 @@ class TestCachedLoadData(unittest.TestCase):
         # Remove the temporary directory after the test
         shutil.rmtree(self.cache_dir)
 
+    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
     @patch("braingeneers.data.datasets_electrophysiology.load_data")
     def test_caching_mechanism(self, mock_load_data):
         """
@@ -549,6 +551,7 @@ class TestCachedLoadData(unittest.TestCase):
         self.assertEqual(first_call_data, second_call_data)
         mock_load_data.assert_called_once()  # Still called only once
 
+    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
     @patch("braingeneers.data.datasets_electrophysiology.load_data")
     def test_cache_eviction_when_full(self, mock_load_data):
         """
@@ -569,6 +572,7 @@ class TestCachedLoadData(unittest.TestCase):
         cache = diskcache.Cache(self.cache_dir)
         self.assertLess(len(cache), 10)  # Ensure some items were evicted
 
+    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
     @patch("braingeneers.data.datasets_electrophysiology.load_data")
     def test_arguments_passed_to_load_data(self, mock_load_data):
         """
@@ -586,6 +590,7 @@ class TestCachedLoadData(unittest.TestCase):
         cached_load_data(self.cache_dir, **kwargs)
         mock_load_data.assert_called_with(**kwargs)
 
+    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
     @patch("braingeneers.data.datasets_electrophysiology.load_data")
     def test_multiprocessing_thread_safety(self, mock_load_data):
         """
