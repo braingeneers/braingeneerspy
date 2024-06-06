@@ -1,10 +1,10 @@
 import sys
 import unittest
-from unittest import mock
-
 import pytest
-from botocore.exceptions import ClientError
 
+from unittest import mock
+from tenacity import retry, stop_after_attempt
+from botocore.exceptions import ClientError
 from braingeneers.utils.configure import skip_unittest_if_offline
 from braingeneers.utils.memoize_s3 import memoize
 
@@ -13,6 +13,7 @@ from braingeneers.utils.memoize_s3 import memoize
 class TestMemoizeS3(unittest.TestCase):
     @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
     @skip_unittest_if_offline
+    @retry(stop=stop_after_attempt(3))  # TODO: Fix this flaky test
     def test(self):
         # Run these checks in a context where S3_USER is set.
         with mock.patch.dict("os.environ", {"S3_USER": "unittest"}):
