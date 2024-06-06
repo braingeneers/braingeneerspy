@@ -3,7 +3,6 @@ import unittest
 import pytest
 
 from unittest import mock
-from tenacity import retry, stop_after_attempt
 from botocore.exceptions import ClientError
 from braingeneers.utils.configure import skip_unittest_if_offline
 from braingeneers.utils.memoize_s3 import memoize
