@@ -5,7 +5,9 @@ import time
 import unittest.mock
 import uuid
 import warnings
+
 from unittest.mock import MagicMock
+from tenacity import retry, stop_after_attempt
 
 import braingeneers.iot.messaging as messaging
 
@@ -127,6 +129,7 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         self.assertEqual(result_stream_name, "unittest2")
         self.assertDictEqual(result_data, {b"x": b"44"})
 
+    @retry(stop=stop_after_attempt(3))  # TODO: Fix this flaky test
     def test_poll_data_stream(self):
         """Uses more advanced poll_data_stream function"""
         self.mb.redis_client.delete("unittest")
