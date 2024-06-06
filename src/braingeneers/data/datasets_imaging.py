@@ -1,10 +1,9 @@
+import os
 import urllib.request, json 
 from urllib.error import HTTPError
+
 from skimage import io
-from matplotlib import pyplot as plt
-from urllib.error import HTTPError
-from matplotlib import pyplot as plt
-import os
+
 
 camera_ids = [11, 12, 13, 14, 15, 16, 21, 22, 23, 24, 25, 26, 31, 32, 33, 34, 35, 36, 41, 42, 43, 44, 45, 46]
 
@@ -12,13 +11,6 @@ def get_timestamps(uuid):
     with urllib.request.urlopen("https://s3.nautilus.optiputer.net/braingeneers/archive/"+uuid+ "/images/manifest.json") as url:
         data = json.loads(url.read().decode())
         return data['captures']
-    
-
-import urllib.request, json 
-from urllib.error import HTTPError
-from skimage import io
-from matplotlib import pyplot as plt
-import os
 
 camera_ids = [11, 12, 13, 14, 15, 16, 21, 22, 23, 24, 25, 26, 31, 32, 33, 34, 35, 36, 41, 42, 43, 44, 45, 46]
 
@@ -44,8 +36,6 @@ def save_images(uuid, timestamps = None, cameras=None , focal_lengths=None):
         os.mkdir(uuid+'/images')
     
     
-    
-    images = []
     
     json_file = import_json(uuid)
     

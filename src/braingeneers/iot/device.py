@@ -15,7 +15,6 @@ import pytz
 import diskcache
 from functools import wraps
 
-import braingeneers.utils.s3wrangler as wr
 import braingeneers.utils.smart_open_braingeneers as smart_open
 from braingeneers.iot import messaging
 
@@ -185,11 +184,6 @@ class Device:
         pattern = f"^{re.escape(self.root_topic)}/{re.escape(self.experiment_uuid)}/{re.escape(self.logging_token)}/.*REQUEST$"
         return bool(re.match(pattern, topic))
     
-    # def is_teammate_topic(self, topic, filter_teammate = None):
-    #     if filter_teammate is not None:
-    #         return filter_teammate in topic.split('/')
-    #     return self.teammates in topic.split('/')
-
     def get_command_key_from_topic(self, topic):
         return topic.split('/')[-2]
 
@@ -320,15 +314,6 @@ class Device:
 
         return True, filtered
 
-
-    # def set_mqtt_publish_topic(self, topic = None):
-    #         # only change class variable, don't need to do change internal message broker settings
-    #         if topic is not None:
-    #             self.mqtt_publish_topic = topic
-    #         else:
-    #             new_topic = [self.root_topic, self.experiment_uuid, self.logging_token, self.device_name] #use to have /cmnd also
-    #             self.mqtt_publish_topic = '/'.join(new_topic)
-    #         return
 
     def set_mqtt_subscribe_topics(self, topics = None): # topics must be an array
         # unsubscribe from old topic
@@ -866,10 +851,10 @@ class Device:
         return local_file_path
 
     def _s3_job_worker(self):
-        print(f"Entered the _s3_job_worker!")
+        print("Entered the _s3_job_worker!")
 
         with self.queue_lock:
-            print(f"Entered inside a lock!")
+            print("Entered inside a lock!")
             print("QUEUE", list(self.cache_queue))
             try:
                 job_type, args, task_id = self.cache_queue.popleft() # Remove the processed job
@@ -903,7 +888,7 @@ class Device:
    
 
     def _enqueue_file_task(self, args, wait_for_completion=False):
-        print(f"Entered the _enqueue_file_task!")
+        print("Entered the _enqueue_file_task!")
 
         future = Future()
         task_id = str(uuid.uuid4())

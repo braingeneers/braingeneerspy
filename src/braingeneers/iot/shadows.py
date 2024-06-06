@@ -46,8 +46,6 @@ class DatabaseInteractor:
         - get_well: returns a well object given its id
     """
     def __init__(self , credentials: Union[str, io.IOBase] = None, overwrite_endpoint = None, overwrite_api_key = None) -> None:
-        # self.endpoint = endpoint
-        # self.token = api_token
 
         if credentials is None:
             credentials = os.path.expanduser('~/.aws/credentials')  # default credentials location
@@ -102,14 +100,11 @@ class DatabaseInteractor:
             self.id = response_data['id']
             self.attributes = response_data['attributes']
             for key in self.attributes:
-                # print(key, self.attributes[key])
                 if type(self.attributes[key]) is dict and "data" in self.attributes[key]:
                     if self.attributes[key]["data"] is not None and len(self.attributes[key]["data"]) != 0:
-                        # print("found data", self.attributes[key]["data"])
                         item_list = []
                         if type(self.attributes[key]["data"]) is list:
                             for item in self.attributes[key]["data"]:
-                                # print("item", item)
                                 if "id" in item:
                                     item_list.append(item["id"])
                         else:
@@ -126,23 +121,16 @@ class DatabaseInteractor:
             url = self.endpoint + "/"+self.api_object_id+"?filters[name][$eq]=" + self.attributes["name"] + "&populate=%2A"
             headers = {"Authorization": "Bearer " + self.token}
             response = requests.get(url, headers=headers)
-            # print("spawn response " ,response.json())
             if len(response.json()['data']) == 0:
-                # thing = self.Thing(type, name)
                 api_url = self.endpoint+"/"+self.api_object_id+"?populate=%2A"
                 data = {"data": self.attributes}
                 response = requests.post(api_url, json=data, headers={
                                         'Authorization': 'bearer ' + self.token})
-                # print(response.status_code)
-                # print("response after creating new object", response.json())
                 if response.status_code == 200:
                     self.parse_API_response(response.json()['data'])
-                    # self.id = response.json()['data']['id']
             else:
                 print(self.api_object_id + " object already exists")
-                # print(response.json())
                 try:
-                    # print("parse API response", response.json()['data'][0])
                     self.parse_API_response(response.json()['data'][0])
                 except KeyError:
                     print("some values are missing")
@@ -154,10 +142,7 @@ class DatabaseInteractor:
             url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
             headers = {"Authorization": "Bearer " + self.token}
             data = {"data": self.attributes}
-            # print("pushing data", data)
             response = requests.put(url, headers=headers, json=data)
-            # print(response.json())
-            # print(response.status_code)
             self.parse_API_response(response.json()['data'])
 
         def pull(self):
@@ -169,8 +154,6 @@ class DatabaseInteractor:
             response = requests.get(url, headers=headers)
             if len(response.json()['data']) == 0:
                 raise Exception("Object not found")
-            # print(response.json())
-            # print(response.status_code)
 
             self.parse_API_response(response.json()['data'])
 
@@ -182,7 +165,6 @@ class DatabaseInteractor:
             headers = {"Authorization": "Bearer " + self.token}
             response = requests.get(url, headers=headers)
             if len(response.json()['data']) == 0:
-                # raise Exception("No object with name " + name + " found")
                 raise Exception("no " + self.api_object_id + " object with name " + name)
             else:
                 self.parse_API_response(response.json()['data'][0])
@@ -198,11 +180,7 @@ class DatabaseInteractor:
                 raise Exception("Object not found")
             else:
                 self.parse_API_response(response.json()['data'])
-                # self.id = response.json()['data']['id']
-                # self.attributes = response.json()['data']['attributes']
                 self.attributes["marked_for_deletion"] = True
-                # print("marked for deletion")
-                # print(self.attributes)
                 self.push()
 
         def recover_from_trash(self):
@@ -259,9 +237,6 @@ class DatabaseInteractor:
 
             updates the current experiment of the thing
             """
-            # if self.attributes["experiments"] is None:
-            #     self.attributes["experiments"] = []
-            # self.attributes["experiments"].append(experiment.id)
             self.attributes["current_experiment"] = experiment.id
             self.push()
 
@@ -350,8 +325,6 @@ class DatabaseInteractor:
           url = self.endpoint + "/"+object+"?filters[marked_for_deletion][$eq]=true&populate=%2A"
           headers = {"Authorization": "Bearer " + self.token}
           response = requests.get(url, headers=headers)
-          # print(response.json())
-          # print(response.status_code)
           for item in response.json()['data']:
               url = self.endpoint + "/"+object+"/" + str(item['id'])
               response = requests.delete(url, headers=headers)
@@ -403,7 +376,6 @@ class DatabaseInteractor:
             plate.pull()
             plate.add_uuid_to_image_params(value)
         else: 
-            #raise exception
             raise Exception("no plate associated with thing")
  
     def list_objects(self, api_object_id, filter = "?", hide_deleted = True):
@@ -432,7 +404,6 @@ class DatabaseInteractor:
         response = self.list_objects("experiments", "?", hide_deleted)
         output = []
         for i in response:
-            # print(i["attributes"]["name"])
             output.append(i["attributes"]["name"])
         return output
 

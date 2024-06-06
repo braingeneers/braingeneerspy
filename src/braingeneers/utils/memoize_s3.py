@@ -4,11 +4,16 @@ from functools import partial
 
 import awswrangler as wr
 import boto3
-from joblib import Memory, register_store_backend
-from joblib._store_backends import StoreBackendBase, StoreBackendMixin
 from smart_open.s3 import parse_uri
 
 from .smart_open_braingeneers import open
+
+
+try:
+    from joblib import Memory, register_store_backend
+    from joblib._store_backends import StoreBackendBase, StoreBackendMixin
+except ImportError:
+    raise ImportError("joblib is required to use memoize_s3")
 
 
 def s3_isdir(path):
@@ -23,16 +28,26 @@ def s3_isdir(path):
         return False
 
 
+def normalize_location(location: str):
+    """
+    Normalize a location string to use forward slashes instead of backslashes. This is
+    necessary on Windows because joblib uses `os.path.join` to construct paths, but S3
+    always uses forward slashes.
+    """
+    return location.replace("\\", "/")
+
+
 class S3StoreBackend(StoreBackendBase, StoreBackendMixin):
     _open_item = staticmethod(open)
 
-    def _item_exists(self, location):
+    def _item_exists(self, location: str):
+        location = normalize_location(location)
         return wr.s3.does_object_exist(location) or s3_isdir(location)
 
     def _move_item(self, src_uri, dst_uri):
         # awswrangler only includes a fancy move/rename method that actually
         # makes it pretty hard to just do a simple move.
-        src, dst = [parse_uri(x) for x in (src_uri, dst_uri)]
+        src, dst = [parse_uri(normalize_location(x)) for x in (src_uri, dst_uri)]
         self.client.copy_object(
             Bucket=dst["bucket_id"],
             Key=dst["key_id"],
@@ -45,6 +60,7 @@ class S3StoreBackend(StoreBackendBase, StoreBackendMixin):
         pass
 
     def clear_location(self, location):
+        location = normalize_location(location)
         # This should only ever be used for prefixes contained within a joblib cache
         # directory, so make sure that's actually happening before deleting.
         if not location.startswith(self.location):
@@ -52,6 +68,9 @@ class S3StoreBackend(StoreBackendBase, StoreBackendMixin):
         wr.s3.delete_objects(glob.escape(location))
 
     def get_items(self):
+        # This is only ever used to find cache items for deletion, which we can't
+        # support because we don't have access times for S3 objects. Returning nothing
+        # here means it will silently have no effect.
         return []
 
     def configure(self, location, verbose, backend_options={}):
@@ -78,7 +97,7 @@ class S3StoreBackend(StoreBackendBase, StoreBackendMixin):
         # We don't have to check that the bucket exists because joblib
         # performs a `list_objects()` in it, but note that this doesn't
         # actually check whether we can write to it!
-        self.location = location
+        self.location = normalize_location(location)
 
         # We need a boto3 client, so create it using the endpoint which was
         # configured in awswrangler by importing smart_open_braingeneers.

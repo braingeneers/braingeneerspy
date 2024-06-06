@@ -194,7 +194,7 @@ def map2(func: Callable,
         assert len(args) == len(kwargs), \
             f"args and kwargs must have the same length, found lengths: len(args)={len(args)} and len(kwargs)={len(kwargs)}"
     assert isinstance(fixed_values, (dict, type(None)))
-    assert parallelism is False or isinstance(parallelism, (bool, int)), "parallelism must be a boolean or an integer"
+    assert isinstance(parallelism, (bool, int)), "parallelism must be a boolean or an integer"
     parallelism = multiprocessing.cpu_count() if parallelism is True else 1 if parallelism is False else parallelism
     assert isinstance(parallelism, int), "parallelism must be resolved to an integer"
 
@@ -203,12 +203,13 @@ def map2(func: Callable,
     required_params = [p.name for p in func_signature.parameters.values() if
                        p.default == inspect.Parameter.empty and p.name not in fixed_values]
 
-    args_list = list(args or [])
-    kwargs_list = list(kwargs or [])
-    args_tuples = args_list if all(isinstance(a, tuple) for a in args_list) else [(a,) for a in args_list]
-
-    # Adjusted to handle cases where args might not be provided
-    call_parameters = list(zip(args_tuples, kwargs_list)) if args_tuples else [((), kw) for kw in kwargs_list]
+    if not args:
+        args = [()] * len(kwargs or [])
+    if not kwargs:
+        kwargs = [{}] * len(args)
+    if not all(isinstance(a, tuple) for a in args):
+        args = [(a,) for a in args]
+    call_parameters = list(zip(args, kwargs))
 
     if parallelism == 1:
         result_iterator = map(lambda params: _map2_wrapper(fixed_values, required_params, func, params[0], params[1]),
