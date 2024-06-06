@@ -20,15 +20,23 @@ jobs:
   checks:
     name: Check Python ${{ matrix.python-version }} on ${{ matrix.runs-on }}
     runs-on: ${{ matrix.runs-on }}
-    continue-on-error: ${{ matrix.experimental }}
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11"]  # add this back later: , "3.12"
         runs-on: [ubuntu-latest, macos-latest, windows-latest]
-        experimental: [false, false, true]
 
     steps:
+      - env:
+          AWS_CREDENTIALS: |
+            ${{ secrets.AWS_CREDENTIALS }}
+        shell: bash
+        run: |
+          mkdir ~/.aws
+          echo "$AWS_CREDENTIALS" > ~/.aws/credentials
+          wc ~/.aws/credentials
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0

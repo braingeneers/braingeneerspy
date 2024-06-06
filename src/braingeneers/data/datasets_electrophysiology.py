@@ -1,34 +1,33 @@
 from __future__ import annotations
 
-import os
-import sys
-import json
-import warnings
+import bisect
 import copy
-import diskcache
+import io
+import itertools
+import json
+import os
+import posixpath
+import shutil
+import sys
+import time
+import warnings
+from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from typing import List, Union, Iterable, Optional
 
+import diskcache
+import h5py
 import matplotlib.pyplot as plt
 import numpy as np
-import shutil
-import h5py
-import braingeneers.utils.smart_open_braingeneers as smart_open
-from collections import namedtuple
-import time
-from braingeneers.utils import s3wrangler
-from concurrent.futures import ThreadPoolExecutor
-from typing import List, Union, Iterable, Optional
-from nptyping import NDArray, Int16, Float16, Float32, Float64
-import io
-import braingeneers
-from braingeneers.utils import common_utils
-import itertools
-import posixpath
 import pandas as pd
-from datetime import datetime
 import requests
-import re
-from types import ModuleType
-import bisect
+from deprecated import deprecated
+from nptyping import NDArray, Int16, Float16, Float32, Float64
+
+import braingeneers
+import braingeneers.utils.smart_open_braingeneers as smart_open
+from braingeneers.utils import s3wrangler, common_utils
 
 
 VALID_LOAD_DATA_DTYPES = [np.int16, np.float16, np.float32, np.float64]
@@ -176,8 +175,8 @@ def load_data(metadata: dict,
     assert isinstance(experiment, (str, int)), \
         f'Parameter experiment must be an int index or experiment name string. Got: {experiment}'
     assert length is not None, \
-        f'Length parameter must be set explicitly, use -1 for the full experiment dataset ' \
-        f'(across all files, warning, this can be a very large amount of data)'
+        'Length parameter must be set explicitly, use -1 for the full experiment dataset ' \
+        '(across all files, warning, this can be a very large amount of data)'
     assert parallelism == 'auto', \
         'This feature has not yet been implemented, it is reserved for future use.'
     assert np.dtype(dtype) in VALID_LOAD_DATA_DTYPES, \
@@ -446,16 +445,6 @@ def load_data_maxwell(metadata, batch_uuid, experiment: str, channels, start, le
     # TODO: Check the length and see if there are enough blocks to even support it
     # NOTE: Blocks (right now) are worthless to me
 
-    experiment_stem = posixpath.basename(metadata['ephys_experiments'][experiment]['blocks'][0]['path'])
-
-    # if length == -1:
-    #     print(
-    #         f"Loading file Maxwell, UUID {batch_uuid}, {experiment}: {experiment_stem}, frame {start} to end of file....")
-    # else:
-    #     print(
-    #         f"Loading file Maxwell, UUID {batch_uuid}, {experiment}: {experiment_stem}, frame {start} to {start + length}....")
-    # get datafile
-
     filename = metadata['ephys_experiments'][experiment]['blocks'][0]['path'].split('/')[-1]
     datafile = posixpath.join(get_basepath(), 'ephys', batch_uuid, 'original', 'data', filename)
 
@@ -466,7 +455,9 @@ def load_data_maxwell(metadata, batch_uuid, experiment: str, channels, start, le
     with smart_open.open(datafile, 'rb') as file:
         with h5py.File(file, 'r', libver='latest', rdcc_nbytes=2 ** 25) as h5file:
             # know that there are 1028 channels which all record and make 'num_frames'
-            # lsb = np.float32(h5file['settings']['lsb'][0]*1000) #1000 for uv to mv  # voltage scaling factor is not currently implemented properly in maxwell reader
+            # The MaxWell reader currently does not implement voltage scaling factor
+            # correctly. Eventually, we should calculate the LSB this way:
+            # lsb = np.float32(h5file['settings']['lsb'][0]*1000) #1000 for uv to mv
             table = 'sig' if 'sig' in h5file.keys() else '/data_store/data0000/groups/routed/raw'
             dataset = h5file[table]
             if channels is not None:
@@ -514,7 +505,6 @@ def load_data_maxwell_parallel(metadata: dict, batch_uuid: str, experiment: str,
     data_per_block_per_channel = common_utils.map2(
         func=_load_data_maxwell_per_channel,
         args=filepaths_channels_starts_lengths,
-        parallelism=False,
     )
     data = np.vstack(data_per_block_per_channel)
 
@@ -680,14 +670,14 @@ def load_stims_maxwell(uuid: str, metadata_ephys_exp: dict = None, experiment_st
         with smart_open.open(stim_path, 'rb') as f:
             # read the csv into dataframe
             f = io.TextIOWrapper(f, encoding='utf-8')
-            df = pd.read_csv(f, header=0)#, index_col=0)
+            df = pd.read_csv(f, header=0)
         return df
         
     except FileNotFoundError:
-        print(f'\tThere seems to be no stim log file for this experiment! :(', file=sys.stderr)
+        print('\tThere seems to be no stim log file for this experiment! :(', file=sys.stderr)
         return None
     except OSError:
-        print(f'\tThere seems to be no stim log file (on s3) for this experiment! :(', file=sys.stderr)
+        print('\tThere seems to be no stim log file (on s3) for this experiment! :(', file=sys.stderr)
         return None
 
    
@@ -726,6 +716,7 @@ def compute_milliseconds(num_frames, sampling_rate):
     return f'{(num_frames / sampling_rate) * 1000} ms of total recording'
 
 
+@deprecated(reason="Likely dead code: calls nonexistent methods.")
 def load_spikes(batch_uuid, experiment_num):
     batch = load_batch(batch_uuid)
     experiment_name_with_json = batch['experiments'][experiment_num]
@@ -749,6 +740,7 @@ def load_spikes(batch_uuid, experiment_num):
         return spikes
 
 
+@deprecated(reason="Likely dead code: calls nonexistent methods.")
 def load_firings(batch_uuid, experiment_num, sorting_type):  # sorting type is "ms4" or "klusta" etc
     batch = load_batch(batch_uuid)
     experiment_name_with_json = batch['experiments'][experiment_num]
@@ -776,6 +768,7 @@ def load_firings(batch_uuid, experiment_num, sorting_type):  # sorting type is "
         return firings
 
 
+@deprecated(reason="Likely dead code: calls nonexistent methods.")
 def min_max_blocks(experiment, batch_uuid):
     batch = load_batch(batch_uuid)
     index = batch['experiments'].index("{}.json".format(experiment['name']))
@@ -791,13 +784,9 @@ def min_max_blocks(experiment, batch_uuid):
             for j in range(0, X.shape[1], step)])
 
 
+@deprecated(reason="Likely dead code: calls nonexistent methods.")
 def create_overview(batch_uuid, experiment_num, with_spikes=True):
-    # batch_uuid = '2020-02-06-kvoitiuk'
-
-    batch = load_batch(batch_uuid)
-
     experiment = load_experiment(batch_uuid, experiment_num)
-    index = batch['experiments'].index("{}.json".format(experiment['name']))
     plt.figure(figsize=(15, 5))
 
     overview = np.concatenate(list(min_max_blocks(experiment, batch_uuid)))
@@ -823,8 +812,6 @@ def create_overview(batch_uuid, experiment_num, with_spikes=True):
             plt.axvline(i, .1, .2, color='r', linewidth=.8, linestyle='-', alpha=.05)
 
     plt.show()
-    # path = "archive/features/overviews/{}/{}.npy".format(batch["uuid"], experiment["name"])
-    # print(path)
 
 
 # Next 4 fcns are for loading data quickly from the maxwell,
@@ -834,7 +821,6 @@ def create_overview(batch_uuid, experiment_num, with_spikes=True):
 def fast_batch_path(uuid):
     if os.path.exists("/home/jovyan/Projects/maxwell_analysis/ephys/" + uuid):
         uuid = "/home/jovyan/Projects/maxwell_analysis/ephys/" + uuid
-        metadata = json.load(smart_open.open(uuid + 'metadata.json', 'r'))
     else:
         uuid = "s3://braingeneers/ephys/" + uuid
     print(uuid)
@@ -1050,10 +1036,8 @@ def _axion_generate_per_block_metadata(filename: str):
         fid.seek(26, 0)
 
         # mark start for entries and get record list
-        buff = fid.read(8 * 124)  # replace two read calls below with this one
-        # buff = fid.read(8)
+        buff = fid.read(8 * 124)
         entries_start = np.frombuffer(buff[:8], dtype=np.uint64, count=1)
-        # buff = fid.read(8 * 123)
         entry_slots = np.frombuffer(buff[8:], dtype=np.uint64, count=123)
         record_list = from_uint64(entry_slots)
 
@@ -1106,20 +1090,6 @@ def _axion_generate_per_block_metadata(filename: str):
                 # determine what well the data is corresponding to
                 for idx, item in enumerate(channel_map):
                     well = ((item.wRow - 1) * plate_layout_row_col[1]) + (item.wCol - 1)
-
-                    # well = None
-                    # if item.wRow == 1 and item.wCol == 1:
-                    #     well = 0
-                    # elif item.wRow == 1 and item.wCol == 2:
-                    #     well = 1
-                    # elif item.wRow == 1 and item.wCol == 3:
-                    #     well = 2
-                    # elif item.wRow == 2 and item.wCol == 1:
-                    #     well = 3
-                    # elif item.wRow == 2 and item.wCol == 2:
-                    #     well = 4
-                    # elif item.wRow == 2 and item.wCol == 3:
-                    #     well = 5
 
                     # need electrode layout in rows and columns
                     corrected_idx = ((item.eRow - 1) * electrode_layout_row_col[0]) + (item.eCol - 1)

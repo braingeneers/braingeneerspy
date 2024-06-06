@@ -1,24 +1,21 @@
-import numpy as np
-import musclebeachtools as mbt
 import glob
-import sys
+import logging
 import os
 import re
-import functools
 import subprocess
+import sys
+import warnings
 from pathlib import Path
 
+import ipywidgets as widgets
+import musclebeachtools as mbt
+import numpy as np
 from .utils import s3wrangler as wr
 from .utils.numpy_s3_memmap import NumpyS3Memmap
+from IPython.display import display, clear_output
 
-from ipywidgets import interact, interactive, fixed, interact_manual
-import ipywidgets as widgets
-from IPython.display import display
-from IPython.display import clear_output
 
-import warnings
 warnings.filterwarnings("ignore")
-import logging, sys
 logging.disable(sys.maxsize)
 
 
@@ -152,9 +149,7 @@ class NeuralAid:
             well_grp = ch.split('/')[-1]
             well, grp = well_grp.split('chgroup')
 
-            #Maps group to full name
-            temp = {well+grp:ch}
-
+            # Maps group to full name
             if well not in seen_ch:
                 seen_ch.append(well)
                 self.well_dict[well] = {}
@@ -164,7 +159,7 @@ class NeuralAid:
         return
     
     
-    def get_ratings_dict():
+    def get_ratings_dict(self):
         objs = wr.list_objects('s3://braingeneers/ephys/*/dataset/*.npy')
 
         ratings_dict = {}
@@ -332,8 +327,6 @@ class NeuralAid:
     def load_well_b(self,b):
         '''Loads all channel groups from the specified well selected in the drop down menu'''
 
-        neurons = None
-
         #Load from dropdowns
         self.set_well()
 
@@ -365,7 +358,7 @@ class NeuralAid:
         #Rate neuron of i-1
         if type(b.description) != str:
             rate = int(b.description)
-            ratings[ind_neurons]=rate
+            self.ratings[self.ind_neurons]=rate
 
 
         #Show neuron i
@@ -505,7 +498,6 @@ def get_ratings_dict():
     objs = wr.list_objects('s3://braingeneers/ephys/*/dataset/*.npy')
     
     ratings_dict = {}
-    seen_wells = []
     
     for o in objs:
         #This is dirty
@@ -534,8 +526,6 @@ def load_ratings(fname):
 def load_all_rated():
     '''
     Loads all neurons(outputted from the sorter) that have been rated
-    
-
     '''
     na = NeuralAid()
     #Local storage
@@ -556,157 +546,3 @@ def load_all_rated():
 
     print('Loaded {} neurons and ratings'.format(len(neurons)))
     return (neurons,ratings)
-
-
-
-    
-# ############# Experiment Loading Functions ###################    
-
-
-
-
-
-
-
-
-# def load_well_b(b):
-#     '''Loads all channel groups from the specified well selected in the drop down menu'''
-#     global neurons
-#     global fs
-#     global ratings
-    
-#     neurons = None
-    
-#     #Load from dropdowns
-#     well = select_well.value
-#     exp = select_exp.value
-    
-#     neurons,ratings = load_well(well,well_dict,exp)
-    
-#     fs = neurons[0].fs
-#     return
-
-
-# def load_well_raw(well,well_dict,exp):
-#     '''Loads corresponding wells raw electrode data
-    
-#     Arguments:
-#     well -- location of well (ex. 'A1')
-#     exp -- name of experiment followed by '/' (ex. test1/)
-    
-#     Global vars:
-#     data_path -- path where data will be downloaded
-    
-#     '''
-    
-#     neurons = []
-#     #Sort by actual number
-#     well_data = {k: v for k,v in sorted(well_dict[well].items(),key=lambda x: x[0])}
-    
-#     #Load and append each group to the data list, accumulating raw
-#     for group in well_data.values():
-#         nf = glob.glob(group + '/spikeintf/outputs/neurons*')
-        
-#         print(nf)
-#         n_temp = np.load(nf[0],allow_pickle=True)
-#         n_prb = open(glob.glob(group+'/spikeintf/inputs/*probefile.prb')[0])
-#         mbt.load_spike_amplitudes(n_temp, group+'/spikeintf/outputs/amplitudes0.npy')
-        
-#         lines = n_prb.readlines()
-#         real_chans = []
-#         s = lines[5]
-#         n = s.split()
-        
-#         for chan in range(1,len(n)):
-#             result = re.search('c_(.*)\'', n[chan])
-#             real_chans.append(int(result.group(1)))
-
-#         for i in range(len(n_temp)):
-#             chan = n_temp[i].peak_channel
-#             n_temp[i].peak_channel = real_chans[chan]
-
-#         if type(neurons) != np.ndarray:
-#             neurons = n_temp
-#         else:
-#             neurons = np.append(neurons,n_temp)
-
-#         n_prb.close()    
-
-    
-    
-    
-    
-    
-    
-    
-    
-
-    
-# def get_well_data(well_dict,stim_period=None):
-#     '''
-#     Loads data from specific well in well_dict.
-    
-#     Parameters:
-#     -----------
-#     well_dict: dict
-#               Dictionary of the well groups returned by get_well()
-#               This looks like get_data_well(well_dict['A1'])
-#     stim_period: int
-#               How the data can be split over a 3rd dim, cutting the time into chunks of
-#               {stim_period} seconds.
-    
-#     Returns:
-#     --------
-#     Tuple- 
-#     Data: np.array
-#           n,k,t array of neurons, stims, stim_period
-#     fs:   int
-#           Sampling freq
-#     neu:  list
-#           List of neuron objects
-#     '''
-#     arrs = []
-#     neu = []
-#     n = neuron.Neuron('temp')
-#     fs = 0
-#     for pref in well_dict.values():
-    
-#         #Load file
-#         nf = glob.glob(pref + '/spikeintf/outputs/neurons*')
-#         data = np.load(nf[0],allow_pickle=True)
-#         fs = data[0].fs
-
-#         #Make dense
-#         spike_list = [data[i].spike_time for i in range(len(data))]
-#         arrs.append(n.load_spike_times(spike_list,max_neurons=100))
-        
-#         af = glob.glob(pref + '/spikeintf/outputs/amplitudes0*')
-#         data = mbt.load_spike_amplitudes(data, af[0])
-
-#         neu = neu + list(data)
-        
-#         #Shorten data to shortest of them all
-#     data = shorten_all_fs(arrs,fs)
-    
-    
-#     if stim_period is not None:
-#         #Make data fit under multiple of stim_periods
-#         data = shorten_fs(data,stim_period)
-#         data = data.reshape((data.shape[0],data.shape[1]//stim_period,stim_period))
-#     return (data,fs,neu)
-    
-    
-    
-    
-# def shorten_all_fs(nd,fs):
-#     min_time = min([i.shape[1] for i in nd])
-#     cut_amount = int(min_time%fs)
-#     cut_ind = min_time - cut_amount
-    
-#     return np.vstack([i[:,:cut_ind] for i in nd])
-
-# def shorten_fs(nd,fs):
-#     cut_amount = int(nd.shape[1]%fs)
-#     cut_ind = nd.shape[1] - cut_amount
-    
-#     return nd[:,:cut_ind]
