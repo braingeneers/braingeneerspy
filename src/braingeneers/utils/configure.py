@@ -84,7 +84,7 @@ def skip_unittest_if_offline(f):
     def wrapper(self, *args, **kwargs):
         allow_online_tests = bool(distutils.util.strtobool(os.environ.get('ONLINE_TESTS', 'true')))
         if not allow_online_tests:
-            self.skipTest()
+            self.skipTest("User disabled online tests.")
         else:
             f(self, *args, **kwargs)
     return wrapper
