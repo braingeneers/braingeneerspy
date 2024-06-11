@@ -1,20 +1,23 @@
 import sys
 import unittest
-import pytest
-
 from unittest import mock
+
+import pytest
 from botocore.exceptions import ClientError
+
 from braingeneers.utils.configure import skip_unittest_if_offline
 from braingeneers.utils.memoize_s3 import memoize
 
 
+# These have to all ignore UserWarnings because joblib generates them whenever
+# the store backend takes more than a few hundred ms, which S3 often does.
 @pytest.mark.filterwarnings("ignore::UserWarning")
 class TestMemoizeS3(unittest.TestCase):
     @skip_unittest_if_offline
-    @unittest.skip(reason="TODO: Passes rarely.  Extremely flaky and needs fixing.")
     def test(self):
         # Run these checks in a context where S3_USER is set.
-        with mock.patch.dict("os.environ", {"S3_USER": "unittest"}):
+        unique_user = f"unittest-{id(self)}"
+        with mock.patch.dict("os.environ", {"S3_USER": unique_user}):
             # Memoize a function that counts its calls.
             @memoize()(ignore=["y"])
             def foo(x, y):
@@ -23,7 +26,8 @@ class TestMemoizeS3(unittest.TestCase):
                 return x
 
             self.assertEqual(
-                foo.store_backend.location, "s3://braingeneersdev/unittest/cache/joblib"
+                foo.store_backend.location,
+                f"s3://braingeneersdev/{unique_user}/cache/joblib",
             )
 
             # Call it a few times and make sure it only runs once.
@@ -38,7 +42,8 @@ class TestMemoizeS3(unittest.TestCase):
             self.assertEqual(side_effect, 2)
 
             # Clean up by reaching into the cache and clearing the directory
-            # without recreating the cache.
+            # without recreating the cache. This is important to avoid
+            # cluttering with fake user directories after tests are done.
             foo.store_backend.clear()
 
     @skip_unittest_if_offline
