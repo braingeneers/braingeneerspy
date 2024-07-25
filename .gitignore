@@ -172,3 +172,6 @@ tmp/
 **/.DS_Store
 dist/
 **/.vscode/**
+
+# don't commit the service_account file
+src/braingeneers/iot/service_account/config.json
