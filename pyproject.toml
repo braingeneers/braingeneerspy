@@ -52,7 +52,6 @@ dependencies = [
     'diskcache',
     'pytz', 
     'tzlocal',
-    'webbrowser',
 ]
 
 [tool.hatch.build.hooks.vcs]

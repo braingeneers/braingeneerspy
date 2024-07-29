@@ -920,6 +920,15 @@ def picroscope_authenticate_and_update_token(credentials_file):
     token_exists = 'api_key' in config['strapi']
     expire_exists = 'api_key_expires' in config['strapi']
 
+    if expire_exists:
+        expiration_str = config['strapi']['api_key_expires']
+        expiration_str = expiration_str.split(' ')[0] + ' ' + expiration_str.split(' ')[1]  # Remove timezone
+        expiration_date = datetime.datetime.fromisoformat(expiration_str)
+        days_remaining = (expiration_date - datetime.datetime.now()).days
+        print('Days remaining for token:', days_remaining)
+    else:
+        days_remaining = -1
+
     # check if api_key_expires exists, if not, it's expired, else check if it has <90 days remaining on it
     manual_refresh = not token_exists \
                      or not expire_exists \
