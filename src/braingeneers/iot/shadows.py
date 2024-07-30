@@ -123,7 +123,7 @@ class DatabaseInteractor:
             creates a new object in the database
             """
             url = self.endpoint + "/"+self.api_object_id+"?filters[name][$eq]=" + self.attributes["name"] + "&populate=%2A"
-            headers = {"Authorization": "Bearer " + self.token + " Bearer " + self.jwt_service_token['access_token']}
+            headers = {"Authorization": "Bearer " + self.jwt_service_token['access_token']}
             response = requests.get(url, headers=headers)
             if len(response.json()['data']) == 0:
                 api_url = self.endpoint+"/"+self.api_object_id+"?populate=%2A"
@@ -143,7 +143,7 @@ class DatabaseInteractor:
             updates the database with the current state of the object
             """
             url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
-            headers = {"Authorization": "Bearer " + self.token + " Bearer " + self.jwt_service_token['access_token']}
+            headers = {"Authorization": "Bearer " + self.jwt_service_token['access_token']}
             data = {"data": self.attributes}
             response = requests.put(url, headers=headers, json=data)
             self.parse_API_response(response.json()['data'])
@@ -153,7 +153,7 @@ class DatabaseInteractor:
             updates object with the latest data from the database
             """
             url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
-            headers = {"Authorization": "Bearer " + self.token + " Bearer " + self.jwt_service_token['access_token']}
+            headers = {"Authorization": "Bearer " + self.jwt_service_token['access_token']}
             response = requests.get(url, headers=headers)
             if len(response.json()['data']) == 0:
                 raise Exception("Object not found")
