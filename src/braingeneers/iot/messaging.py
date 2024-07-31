@@ -814,7 +814,7 @@ class MessageBroker:
                     self._jwt_service_account_token = json.load(f)
 
             if self._jwt_service_account_token is None:
-                raise PermissionError('JWT service account token not found, please generate one using: python -m braingeneers.iot.messaging authenticate')
+                raise PermissionError('JWT service account token not found, please generate one using: python -m braingeneers.iot.authenticate')
 
         # Check if the token is still valid, this happens on every access, but takes no action while it's still valid.
         # If the token has less than JWT_TOKEN_REFRESH_DAYS days, refresh it, default tokens have 30 days at issuance.
