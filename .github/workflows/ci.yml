@@ -37,11 +37,11 @@ jobs:
           echo "$AWS_CREDENTIALS" > ~/.aws/credentials
           wc ~/.aws/credentials
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5
         with:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
@@ -55,4 +55,4 @@ jobs:
           --durations=20
 
       - name: Upload coverage report
-        uses: codecov/codecov-action@v4.4.1
+        uses: codecov/codecov-action@a079530fc142d3d288ddf76321ca0b7fe5b18df5 # v4.4.1
