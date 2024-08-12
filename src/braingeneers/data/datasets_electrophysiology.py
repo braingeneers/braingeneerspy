@@ -1376,3 +1376,43 @@ def generate_metadata_maxwell(batch_uuid: str, experiment_prefix: Optional[str] 
             json.dump(metadata_json, f, indent=2)
 
     return metadata_json
+
+
+def remove_portion_of_timeseries_from_maxwell_nwb(filename: str, seconds: float):
+    """
+    Assuming an NWB file contains an 'ElectricalSeries', trim the first x seconds from that timeseries.
+
+    'filename' is a local path to the NWB file.
+    'seconds' is the number of seconds to trim from the beginning of the timeseries.
+
+    NOTE: Right now this is hard-coded to use the Maxwell sample rate of 20000 Hz.
+    """
+    start_time = time.time()
+    print(f'Trimming {seconds}s from the beginning of: {filename}')
+    with h5py.File(filename, "r+") as f:
+        new_starting_time = f["acquisition"]['ElectricalSeries']['starting_time'][()] + seconds
+        f["acquisition"]['ElectricalSeries']['starting_time'] = new_starting_time  # set the new file's start time
+
+        maxwell_sample_rate = 20000
+        num_electrodes = f["acquisition"]['ElectricalSeries']['electrodes'].shape[0]
+        trimmed_amount = seconds * maxwell_sample_rate
+
+        if num_electrodes == f["acquisition"]['ElectricalSeries']['data'].shape[0]:
+            electrodes_number = f["acquisition"]['ElectricalSeries']['data'].shape[0]
+            timeseries_number = f["acquisition"]['ElectricalSeries']['data'].shape[1]
+            # actually trim the data
+            trimmed_data = f["acquisition"]['ElectricalSeries']['data'][:electrodes_number, trimmed_amount:]
+            f["acquisition"]['ElectricalSeries']['data'][:electrodes_number, :-trimmed_amount] = trimmed_data
+            f["acquisition"]['ElectricalSeries']['data'].resize((electrodes_number, timeseries_number - trimmed_amount))
+        elif num_electrodes == f["acquisition"]['ElectricalSeries']['data'].shape[1]:
+            electrodes_number = f["acquisition"]['ElectricalSeries']['data'].shape[1]
+            timeseries_number = f["acquisition"]['ElectricalSeries']['data'].shape[0]
+            # actually trim the data
+            trimmed_data = f["acquisition"]['ElectricalSeries']['data'][trimmed_amount:, :electrodes_number]
+            f["acquisition"]['ElectricalSeries']['data'][:-trimmed_amount, :electrodes_number] = trimmed_data
+            f["acquisition"]['ElectricalSeries']['data'].resize((timeseries_number - trimmed_amount, electrodes_number))
+        else:
+            raise RuntimeError(f'Something is wrong with the electrode count in the ElectricalSeries: '
+                               f'{num_electrodes} not in {f["acquisition"]["ElectricalSeries"]["data"].shape}')
+
+    print(f'--- Completed in {(time.time() - start_time) / 60.0} minutes ---')
