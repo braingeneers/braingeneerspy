@@ -1378,7 +1378,7 @@ def generate_metadata_maxwell(batch_uuid: str, experiment_prefix: Optional[str] 
     return metadata_json
 
 
-def validate_sections(sections: List[float]):
+def validate_sections(sections: List[List[float]]):
     previous_start_time = 0
     previous_end_time = 0
     for start_time, end_time in sections:
@@ -1407,7 +1407,8 @@ def split_nwb_into_subfiles(base_filename: str, sections: str):
     """
     start_time = time.time()
     maxwell_sample_rate = 20000
-    sections = [i.split('-') for i in sections.split(',')]
+    sections = [[float(j) for j in i.split('-')] for i in sections.split(',')]
+    validate_sections(sections)
     print(f'Creating {len(sections)} files from: {base_filename}')
     for start_time, end_time in sections:
         if base_filename.endswith('.nwb'):
