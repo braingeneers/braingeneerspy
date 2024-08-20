@@ -1378,6 +1378,81 @@ def generate_metadata_maxwell(batch_uuid: str, experiment_prefix: Optional[str] 
     return metadata_json
 
 
+def validate_sections(sections: List[float]):
+    previous_start_time = 0
+    previous_end_time = 0
+    for start_time, end_time in sections:
+        end_time = end_time or float('inf')
+        if end_time < start_time:
+            raise RuntimeError(f'Section start time cannot be greater than the end time: {start_time, end_time}')
+        if previous_end_time > start_time:
+            raise RuntimeError(f'Section preceding this overlaps: "{previous_start_time, previous_end_time}" "{start_time, end_time}"')
+
+
+def split_nwb_into_subfiles(base_filename: str, sections: str):
+    """
+    Assuming an NWB file contains an 'ElectricalSeries', separate "sections" of the timeseries into
+    their own individual files.
+
+    'base_filename' is a local path to the NWB file that we are splitting.  This will create subfiles
+    that will have section "#" appended to their names.
+
+    'sections' are the sections of the timeseries as a comma-separated string of float-dash-float
+    values, each of which is put into its own file.  For example:
+
+    '0-300,300-1200,1300-10000,9000000-'
+
+    Would write 4 separate files, with the data in seconds for each of the comma-separated ranges
+    described above.  NOTE: A dash at the end without a number signifies writing to completion.
+    """
+    start_time = time.time()
+    maxwell_sample_rate = 20000
+    sections = [i.split('-') for i in sections.split(',')]
+    print(f'Creating {len(sections)} files from: {base_filename}')
+    for start_time, end_time in sections:
+        if base_filename.endswith('.nwb'):
+            base_filename = base_filename[:-len('.nwb')]
+        shutil.copyfile(base_filename, f'{base_filename}.{start_time}-{end_time}.nwb')
+
+    for start_time, end_time in sections:
+        with h5py.File(f'{base_filename}.{start_time}-{end_time}.nwb', "r+") as r:
+            r["acquisition"]['ElectricalSeries']['starting_time'] = start_time  # set the new file's start time
+
+            num_electrodes = r["acquisition"]['ElectricalSeries']['electrodes'].shape[0]
+            section_start = start_time * maxwell_sample_rate
+            section_end = end_time * maxwell_sample_rate if end_time else 0
+
+            if num_electrodes == r["acquisition"]['ElectricalSeries']['data'].shape[0]:
+                electrodes_number = r["acquisition"]['ElectricalSeries']['data'].shape[0]
+                timeseries_number = r["acquisition"]['ElectricalSeries']['data'].shape[1]
+                # actually trim the data
+                if not section_end:
+                    trimmed_data = r["acquisition"]['ElectricalSeries']['data'][:electrodes_number, section_start:]
+                    r["acquisition"]['ElectricalSeries']['data'][:electrodes_number, :-section_start] = trimmed_data
+                    r["acquisition"]['ElectricalSeries']['data'].resize((electrodes_number, timeseries_number - section_start))
+                else:
+                    trimmed_data = r["acquisition"]['ElectricalSeries']['data'][:electrodes_number, section_start:section_end]
+                    r["acquisition"]['ElectricalSeries']['data'][:electrodes_number, :-(timeseries_number - (section_end - section_start))] = trimmed_data
+                    r["acquisition"]['ElectricalSeries']['data'].resize((electrodes_number, (section_end - section_start)))
+            elif num_electrodes == r["acquisition"]['ElectricalSeries']['data'].shape[1]:
+                electrodes_number = r["acquisition"]['ElectricalSeries']['data'].shape[1]
+                timeseries_number = r["acquisition"]['ElectricalSeries']['data'].shape[0]
+                # actually trim the data
+                if not section_end:
+                    trimmed_data = r["acquisition"]['ElectricalSeries']['data'][section_start:, :electrodes_number]
+                    r["acquisition"]['ElectricalSeries']['data'][:-section_start, :electrodes_number] = trimmed_data
+                    r["acquisition"]['ElectricalSeries']['data'].resize((timeseries_number - section_start, electrodes_number))
+                else:
+                    trimmed_data = r["acquisition"]['ElectricalSeries']['data'][section_start:section_end, :electrodes_number]
+                    r["acquisition"]['ElectricalSeries']['data'][:-(timeseries_number - (section_end - section_start)), :electrodes_number] = trimmed_data
+                    r["acquisition"]['ElectricalSeries']['data'].resize(((section_end - section_start), electrodes_number))
+            else:
+                raise RuntimeError(f'Something is wrong with the electrode count in the ElectricalSeries: '
+                                   f'{num_electrodes} not in {r["acquisition"]["ElectricalSeries"]["data"].shape}')
+
+    print(f'--- Completed in {(time.time() - start_time) / 60.0} minutes ---')
+
+
 def remove_portion_of_timeseries_from_maxwell_nwb(filename: str, seconds: float):
     """
     Assuming an NWB file contains an 'ElectricalSeries', trim the first x seconds from that timeseries.
