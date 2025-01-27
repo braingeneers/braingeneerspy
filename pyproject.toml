@@ -33,7 +33,7 @@ classifiers = [
 dynamic = ["version"]
 dependencies = [
     'awswrangler==3.*',
-    'boto3',
+    'boto3==1.35.95',  # until https://github.com/boto/boto3/issues/4398 is fixed
     'braingeneers-smart-open==2023.10.6',
     'deprecated',
     'h5py',
