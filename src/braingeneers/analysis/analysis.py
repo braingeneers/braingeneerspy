@@ -164,13 +164,14 @@ def load_spike_data(
             positions = np.load(f_zip.open("channel_positions.npy"))
             amplitudes = np.load(f_zip.open("amplitudes.npy")).squeeze()
 
-            if "cluster_KSLabel.tsv" in f_zip.namelist():
-                cluster_info = pd.read_csv(f_zip.open("cluster_KSLabel.tsv"), sep="\t")
+            if "cluster_info.tsv" in f_zip.namelist():
+                cluster_info = pd.read_csv(f_zip.open("cluster_info.tsv"), sep="\t")
                 cluster_id = np.array(cluster_info["cluster_id"])
                 labeled_clusters = cluster_id[
                     cluster_info["group"].isin(groups_to_load)
-            elif "cluster_info.tsv" in f_zip.namelist():
-                cluster_info = pd.read_csv(f_zip.open("cluster_info.tsv"), sep="\t")
+                ]
+            elif "cluster_KSLabel.tsv" in f_zip.namelist():
+                cluster_info = pd.read_csv(f_zip.open("cluster_KSLabel.tsv"), sep="\t")
                 cluster_id = np.array(cluster_info["cluster_id"])
                 labeled_clusters = cluster_id[
                     cluster_info["group"].isin(groups_to_load)
@@ -278,7 +279,13 @@ def read_phy_files(path: str, fs=20000.0):
             )  # in ms
             positions = np.load(f_zip.open("channel_positions.npy"))
             amplitudes = np.load(f_zip.open("amplitudes.npy")).squeeze()
-            if "cluster_info.tsv" in f_zip.namelist():
+            
+            if "cluster_KSLabel.tsv" in f_zip.namelist():
+                cluster_info = pd.read_csv(f_zip.open("cluster_KSLabel.tsv"), sep="\t")
+                cluster_id = np.array(cluster_info["cluster_id"])
+                labeled_clusters = cluster_id[cluster_info["group"].isin(groups_to_load)]
+                
+            elif "cluster_info.tsv" in f_zip.namelist():
                 cluster_info = pd.read_csv(f_zip.open("cluster_info.tsv"), sep="\t")
                 cluster_id = np.array(cluster_info["cluster_id"])
                 # select clusters using curation label, remove units labeled as "noise"
