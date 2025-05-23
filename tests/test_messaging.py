@@ -2,7 +2,7 @@
 import queue
 import threading
 import time
-import unittest.mock
+import unittest
 import uuid
 import warnings
 
@@ -12,14 +12,22 @@ from tenacity import retry, stop_after_attempt
 import braingeneers.iot.messaging as messaging
 
 
+def _make_message_broker():
+    try:
+        return messaging.MessageBroker(f"unittest-{uuid.uuid4()}")
+    except PermissionError:
+        raise unittest.SkipTest("Can't test messaging without access token.") from None
+
+
 class TestBraingeneersMessageBroker(unittest.TestCase):
     def setUp(self) -> None:
         warnings.filterwarnings(
             "ignore", category=ResourceWarning, message="unclosed.*<ssl.SSLSocket.*>"
         )
-        self.mb = messaging.MessageBroker(f"test-{uuid.uuid4()}")
+        self.mb = _make_message_broker()
         self.mb_test_device = messaging.MessageBroker("unittest")
         self.mb.create_device("test", "Other")
+
 
     def tearDown(self) -> None:
         self.mb.shutdown()
@@ -210,7 +218,7 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
 
 class TestInterprocessQueue(unittest.TestCase):
     def setUp(self) -> None:
-        self.mb = messaging.MessageBroker()
+        self.mb = _make_message_broker()
         self.mb.delete_queue("unittest")
 
     @retry(stop=stop_after_attempt(3))  # TODO: Fix this flaky test
@@ -282,7 +290,7 @@ class TestInterprocessQueue(unittest.TestCase):
 
 class TestNamedLock(unittest.TestCase):
     def setUp(self) -> None:
-        self.mb = messaging.MessageBroker()
+        self.mb = _make_message_broker()
         self.mb.delete_lock("unittest")
 
     def tearDown(self) -> None:
