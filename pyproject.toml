@@ -33,7 +33,7 @@ classifiers = [
 dynamic = ["version"]
 dependencies = [
     'awswrangler==3.*',
-    'boto3==1.35.95',  # until https://github.com/boto/boto3/issues/4398 is fixed
+    'boto3==1.35.95', # until https://github.com/boto/boto3/issues/4398 is fixed
     'braingeneers-smart-open==2023.10.6',
     'deprecated',
     'h5py',
@@ -46,19 +46,20 @@ dependencies = [
     'requests',
     'schedule',
     'scipy',
-    'spikedata @ git+https://github.com/braingeneers/SpikeData',
     'tenacity',
     "typing_extensions>=4.6; python_version<'3.11'",
     'diskcache',
-    'pytz', 
+    'pytz',
     'tzlocal',
+    "spikedata>=0.2.1",
 ]
 
 [tool.hatch.build.hooks.vcs]
 version-file = "src/braingeneers/_version.py"
 
-[tool.hatch.version.raw-options]
-local_scheme = "no-local-version"
+[tool.hatch.version]
+raw-options.local_scheme = "no-local-version"
+source = "vcs"
 
 [project.optional-dependencies]
 all = [
@@ -81,6 +82,11 @@ dev = [
   "joblib",
 ]
 
+[dependency-groups]
+dev = [
+    "braingeneers[all]",
+]
+
 [project.urls]
 Homepage = "https://github.com/braingeneers/braingeneerspy"
 "Bug Tracker" = "https://github.com/braingeneers/braingeneerspy/issues"
@@ -89,7 +95,6 @@ Changelog = "https://github.com/braingeneers/braingeneerspy/releases"
 
 [tool.hatch]
 metadata.allow-direct-references = true
-version.source = "vcs"
 envs.default.dependencies = [
   "pytest",
   "pytest-cov",
@@ -192,3 +197,6 @@ messages_control.disable = [
   "missing-module-docstring",
   "wrong-import-position",
 ]
+
+[tool.uv.sources]
+braingeneers = { workspace = true }
