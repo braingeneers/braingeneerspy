@@ -30,7 +30,6 @@ class MaxwellReaderTests(unittest.TestCase):
         )
         self.assertEqual(data.shape, (2, 4))  # trivial check that we read data
 
-    @unittest.skip("currently broken and needs fixing; ValueError: need at least one array to concatenate")
     @skip_unittest_if_offline
     def test_online_maxwell_load_data(self):
         uuid = "2022-05-18-e-connectoid"
@@ -54,7 +53,6 @@ class MaxwellReaderTests(unittest.TestCase):
             data.tolist(), [497, 497, 497, 495, 496, 497, 497, 496, 497, 497]
         )  # manually confirmed result
 
-    @unittest.skip("currently broken and needs fixing; ValueError: need at least one array to concatenate")
     @skip_unittest_if_offline
     def test_read_maxwell_parallel_maxwell_v1_format(self):
         """V1 maxwell HDF5 data format"""
@@ -98,7 +96,6 @@ class MaxwellReaderTests(unittest.TestCase):
             ],
         )
 
-    @unittest.skip("currently broken and needs fixing; ValueError: need at least one array to concatenate")
     @skip_unittest_if_offline
     def test_read_data_maxwell_v2_format(self):
         """V2 maxwell HDF5 data format"""
@@ -283,7 +280,7 @@ class AxionReaderTests(unittest.TestCase):
     def tearDown(self) -> None:
         pass
 
-    @unittest.skip
+    @unittest.skip("TODO broken: TypeError: unhashable type: 'dict' (in load_data_axion L381)")
     def test_online_multiple_files(self):
         """Warning: large (Many GB) data transfer"""
         metadata = ephys.load_metadata("2021-09-23-e-MR-89-0526-drug-3hr")
