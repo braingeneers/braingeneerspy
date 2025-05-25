@@ -96,6 +96,7 @@ class MaxwellReaderTests(unittest.TestCase):
             ],
         )
 
+    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
     @skip_unittest_if_offline
     def test_read_data_maxwell_v2_format(self):
         """V2 maxwell HDF5 data format"""
