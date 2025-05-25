@@ -75,11 +75,10 @@ class TestMemoizeS3(unittest.TestCase):
             def foo(x):
                 return x
 
-    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
     @skip_unittest_if_offline
     def test_default_location(self):
         # Make sure a default location is correctly set when S3_USER is not.
-        with mock.patch.dict("os.environ", {}, clear=True):
+        with mock.patch.dict("os.environ", {"S3_USER": ""}):
 
             @memoize()
             def foo(x):

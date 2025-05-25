@@ -157,7 +157,7 @@ def memoize(
         )(location)
 
     if location is None and backend == "s3":
-        user = os.environ.get("S3_USER", "common")
+        user = os.environ.get("S3_USER") or "common"
         location = f"s3://braingeneersdev/{user}/cache"
 
     return partial(
