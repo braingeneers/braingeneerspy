@@ -3,7 +3,6 @@ import shutil
 import tempfile
 import threading
 import unittest
-import sys
 from unittest.mock import patch
 
 import diskcache
@@ -11,14 +10,12 @@ import numpy as np
 import pytest
 
 import braingeneers.data.datasets_electrophysiology as ephys
+from braingeneers.utils.configure import fails_on_windows
 import braingeneers.utils.smart_open_braingeneers as smart_open
 from braingeneers import skip_unittest_if_offline
 from braingeneers.data.datasets_electrophysiology import cached_load_data
 
 
-# TODO some of the tests are loading old datasets that now raise a warning because
-# they are not in the new format. We should update the tests to use the new datasets
-# instead of  suppressing the warning in the tests.
 @pytest.mark.filterwarnings("ignore::UserWarning")
 class MaxwellReaderTests(unittest.TestCase):
     @skip_unittest_if_offline
@@ -96,7 +93,7 @@ class MaxwellReaderTests(unittest.TestCase):
             ],
         )
 
-    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
+    @fails_on_windows
     @skip_unittest_if_offline
     def test_read_data_maxwell_v2_format(self):
         """V2 maxwell HDF5 data format"""
@@ -281,9 +278,10 @@ class AxionReaderTests(unittest.TestCase):
     def tearDown(self) -> None:
         pass
 
-    @unittest.skip("TODO broken: TypeError: unhashable type: 'dict' (in load_data_axion L381)")
+    # TypeError: unhashable type: 'dict' (in load_data_axion L381)
+    @unittest.expectedFailure
+    @unittest.skip("Large (many GB) data transfer")
     def test_online_multiple_files(self):
-        """Warning: large (Many GB) data transfer"""
         metadata = ephys.load_metadata("2021-09-23-e-MR-89-0526-drug-3hr")
         data = ephys.load_data(metadata, "A3", 0, 45000000, None)
         self.assertTrue(data.shape[1] == 45000000)
@@ -527,7 +525,7 @@ class TestCachedLoadData(unittest.TestCase):
         # Remove the temporary directory after the test
         shutil.rmtree(self.cache_dir)
 
-    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
+    @fails_on_windows
     @patch("braingeneers.data.datasets_electrophysiology.load_data")
     def test_caching_mechanism(self, mock_load_data):
         """
@@ -549,7 +547,7 @@ class TestCachedLoadData(unittest.TestCase):
         self.assertEqual(first_call_data, second_call_data)
         mock_load_data.assert_called_once()  # Still called only once
 
-    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
+    @fails_on_windows
     @patch("braingeneers.data.datasets_electrophysiology.load_data")
     def test_cache_eviction_when_full(self, mock_load_data):
         """
@@ -570,7 +568,7 @@ class TestCachedLoadData(unittest.TestCase):
         cache = diskcache.Cache(self.cache_dir)
         self.assertLess(len(cache), 10)  # Ensure some items were evicted
 
-    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
+    @fails_on_windows
     @patch("braingeneers.data.datasets_electrophysiology.load_data")
     def test_arguments_passed_to_load_data(self, mock_load_data):
         """
@@ -588,7 +586,7 @@ class TestCachedLoadData(unittest.TestCase):
         cached_load_data(self.cache_dir, **kwargs)
         mock_load_data.assert_called_with(**kwargs)
 
-    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
+    @fails_on_windows
     @patch("braingeneers.data.datasets_electrophysiology.load_data")
     def test_multiprocessing_thread_safety(self, mock_load_data):
         """

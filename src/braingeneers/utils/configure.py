@@ -2,6 +2,7 @@
 import distutils.util
 import functools
 import os
+import sys
 
 
 """
@@ -66,6 +67,15 @@ def set_default_endpoint(endpoint: str = None, verify_ssl_cert: bool = True) -> 
 
     global CURRENT_ENDPOINT
     CURRENT_ENDPOINT = endpoint
+
+
+def fails_on_windows(test_item):
+    """
+    Decorator for unit tests which are known to not work on Windows, so they will
+    be run and the failure will be logged.
+    """
+    test_item.__unittest_expecting_failure__ = sys.platform.startswith("win")
+    return test_item
 
 
 def skip_unittest_if_offline(f):

@@ -137,7 +137,7 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         self.assertEqual(result_stream_name, "unittest2")
         self.assertDictEqual(result_data, {b"x": b"44"})
 
-    @retry(stop=stop_after_attempt(3))  # TODO: Fix this flaky test
+    @retry(stop=stop_after_attempt(3))
     def test_poll_data_stream(self):
         """Uses more advanced poll_data_stream function"""
         self.mb.redis_client.delete("unittest")
@@ -167,7 +167,8 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         self.assertDictEqual(result3[0][1][1][1], {b"x": b"43"})
         self.assertDictEqual(result3[0][1][2][1], {b"x": b"44"})
 
-    @unittest.skip("currently broken and needs fixing; TypeError: 'NoneType' object is not subscriptable")
+    # TypeError: 'NoneType' object is not subscriptable
+    @unittest.expectedFailure
     def test_delete_device_state(self):
         self.mb.delete_device_state("test")
         self.mb.update_device_state("test", {"x": 42, "y": 24})
@@ -182,7 +183,8 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         self.assertTrue("y" in state)
         self.assertTrue(state["y"] == 24)
 
-    @unittest.skip("currently broken and needs fixing; TypeError: 'NoneType' object is not subscriptable")
+    # TypeError: 'NoneType' object is not subscriptable
+    @unittest.expectedFailure
     def test_get_update_device_state(self):
         self.mb_test_device.delete_device_state("test")
         self.mb_test_device.update_device_state("test", {"x": 42})
@@ -221,28 +223,27 @@ class TestInterprocessQueue(unittest.TestCase):
         self.mb = _make_message_broker()
         self.mb.delete_queue("unittest")
 
-    @retry(stop=stop_after_attempt(3))  # TODO: Fix this flaky test
+    @retry(stop=stop_after_attempt(3))
     def test_get_put_defaults(self):
         q = self.mb.get_queue("unittest")
         q.put("some-value")
         result = q.get("some-value")
         self.assertEqual(result, "some-value")
 
-    @unittest.skip("currently broken (on CI) and needs fixing; https://github.com/braingeneers/braingeneerspy/actions/runs/9408812836/job/25917518445?pr=88#step:6:35")
     def test_get_put_nonblocking_without_maxsize(self):
         q = self.mb.get_queue("unittest")
         q.put("some-value", block=False)
         result = q.get(block=False)
         self.assertEqual(result, "some-value")
 
-    @retry(stop=stop_after_attempt(3))  # TODO: Fix this flaky test
+    @retry(stop=stop_after_attempt(3))
     def test_maxsize(self):
         q = self.mb.get_queue("unittest", maxsize=1)
         q.put("some-value")
         result = q.get()
         self.assertEqual(result, "some-value")
 
-    @retry(stop=stop_after_attempt(3))  # TODO: Fix this flaky test
+    @retry(stop=stop_after_attempt(3))
     def test_timeout_put(self):
         q = self.mb.get_queue("unittest", maxsize=1)
         q.put("some-value-1")
@@ -262,7 +263,6 @@ class TestInterprocessQueue(unittest.TestCase):
                 "Queue failed to throw an expected exception after 0.1s timeout period."
             )
 
-    @unittest.skip("currently broken (on CI) and needs fixing; https://github.com/braingeneers/braingeneerspy/actions/runs/9408812836/job/25917518445?pr=88#step:6:35")
     def test_task_done_join(self):
         """Test that task_done and join work as expected."""
 
