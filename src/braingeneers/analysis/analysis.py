@@ -164,22 +164,25 @@ def load_spike_data(
             positions = np.load(f_zip.open("channel_positions.npy"))
             amplitudes = np.load(f_zip.open("amplitudes.npy")).squeeze()
 
-            if "cluster_info.tsv" in f_zip.namelist():
-                cluster_info = pd.read_csv(f_zip.open("cluster_info.tsv"), sep="\t")
-                cluster_id = np.array(cluster_info["cluster_id"])
-                labeled_clusters = cluster_id[
-                    cluster_info["group"].isin(groups_to_load)
-                ]
-            elif "cluster_KSLabel.tsv" in f_zip.namelist():
-                cluster_info = pd.read_csv(f_zip.open("cluster_KSLabel.tsv"), sep="\t")
-                cluster_id = np.array(cluster_info["cluster_id"])
-                labeled_clusters = cluster_id[
-                    cluster_info["group"].isin(groups_to_load)
-                ]
+            # Load cluster info from the first detected of several possible filenames.
+            tsv_names = {"cluster_info.tsv", "cluster_group.tsv", "cluster_KSLabel.tsv"}
+            for tsv in tsv_names & set(f_zip.namelist()):
+                cluster_info = pd.read_csv(f_zip.open(tsv), sep="\t")
+                cluster_id = cluster_info.cluster_id.values
+                # Sometimes this file has the column "KSLabel" instead of "group".
+                if "KSLabel" in cluster_info:
+                    cluster_info.rename(columns=dict(KSLabel="group"), inplace=True)
+                labeled_clusters = cluster_id[cluster_info.group.isin(groups_to_load)]
+                # Delete labeled clusters that were not assigned to any spike.
+                labeled_clusters = np.intersect1d(labeled_clusters, clusters)
+                break
+
+            # If no file is detected, print a warning, but continue with filler labels.
             else:
-                logger.info("No cluster_info.tsv file found. Generating blank labels.")
+                logger.warning(
+                    "No cluster assignment TSV file found. Generating blank labels."
+                )
                 labeled_clusters = np.unique(clusters)
-                # Generate blank labels
                 cluster_info = pd.DataFrame(
                     {
                         "cluster_id": labeled_clusters,
@@ -279,12 +282,14 @@ def read_phy_files(path: str, fs=20000.0):
             )  # in ms
             positions = np.load(f_zip.open("channel_positions.npy"))
             amplitudes = np.load(f_zip.open("amplitudes.npy")).squeeze()
-            
+
             if "cluster_KSLabel.tsv" in f_zip.namelist():
                 cluster_info = pd.read_csv(f_zip.open("cluster_KSLabel.tsv"), sep="\t")
                 cluster_id = np.array(cluster_info["cluster_id"])
-                labeled_clusters = cluster_id[cluster_info["group"].isin(groups_to_load)]
-                
+                labeled_clusters = cluster_id[
+                    cluster_info["group"].isin(groups_to_load)
+                ]
+
             elif "cluster_info.tsv" in f_zip.namelist():
                 cluster_info = pd.read_csv(f_zip.open("cluster_info.tsv"), sep="\t")
                 cluster_id = np.array(cluster_info["cluster_id"])

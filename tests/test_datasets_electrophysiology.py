@@ -16,9 +16,6 @@ from braingeneers import skip_unittest_if_offline
 from braingeneers.data.datasets_electrophysiology import cached_load_data
 
 
-# TODO some of the tests are loading old datasets that now raise a warning because
-# they are not in the new format. We should update the tests to use the new datasets
-# instead of  suppressing the warning in the tests.
 @pytest.mark.filterwarnings("ignore::UserWarning")
 class MaxwellReaderTests(unittest.TestCase):
     @skip_unittest_if_offline
@@ -30,7 +27,6 @@ class MaxwellReaderTests(unittest.TestCase):
         )
         self.assertEqual(data.shape, (2, 4))  # trivial check that we read data
 
-    @unittest.skip("currently broken and needs fixing; ValueError: need at least one array to concatenate")
     @skip_unittest_if_offline
     def test_online_maxwell_load_data(self):
         uuid = "2022-05-18-e-connectoid"
@@ -54,7 +50,6 @@ class MaxwellReaderTests(unittest.TestCase):
             data.tolist(), [497, 497, 497, 495, 496, 497, 497, 496, 497, 497]
         )  # manually confirmed result
 
-    @unittest.skip("currently broken and needs fixing; ValueError: need at least one array to concatenate")
     @skip_unittest_if_offline
     def test_read_maxwell_parallel_maxwell_v1_format(self):
         """V1 maxwell HDF5 data format"""
@@ -98,7 +93,7 @@ class MaxwellReaderTests(unittest.TestCase):
             ],
         )
 
-    @unittest.skip("currently broken and needs fixing; ValueError: need at least one array to concatenate")
+    @unittest.skipIf(sys.platform.startswith("win"), "TODO: Test is broken on Windows.")
     @skip_unittest_if_offline
     def test_read_data_maxwell_v2_format(self):
         """V2 maxwell HDF5 data format"""
@@ -283,9 +278,10 @@ class AxionReaderTests(unittest.TestCase):
     def tearDown(self) -> None:
         pass
 
-    @unittest.skip
+    # TypeError: unhashable type: 'dict' (in load_data_axion L381)
+    @unittest.expectedFailure
+    @unittest.skip("Large (many GB) data transfer")
     def test_online_multiple_files(self):
-        """Warning: large (Many GB) data transfer"""
         metadata = ephys.load_metadata("2021-09-23-e-MR-89-0526-drug-3hr")
         data = ephys.load_data(metadata, "A3", 0, 45000000, None)
         self.assertTrue(data.shape[1] == 45000000)
