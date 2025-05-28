@@ -40,7 +40,8 @@ def normalize_location(location: str):
 
 
 class S3StoreBackend(StoreBackendBase, StoreBackendMixin):
-    _open_item = staticmethod(open)
+    def _open_item(self, f, mode):
+        return open(normalize_location(f), mode)
 
     def _item_exists(self, location: str):
         location = normalize_location(location)
