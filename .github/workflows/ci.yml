@@ -17,7 +17,6 @@ jobs:
   checks:
     name: Check Python ${{ matrix.python-version }} on ${{ matrix.runs-on }}
     runs-on: ${{ matrix.runs-on }}
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
