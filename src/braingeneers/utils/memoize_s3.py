@@ -1,13 +1,15 @@
 import glob
 import os
 from functools import partial
+from warnings import warn
 
 import awswrangler as wr
 import boto3
+from botocore.client import ClientError
+from botocore.exceptions import NoCredentialsError
 from smart_open.s3 import parse_uri
 
 from .smart_open_braingeneers import open
-
 
 try:
     from joblib import Memory, register_store_backend
@@ -114,6 +116,9 @@ def memoize(
     `s3://braingeneersdev/$S3_USER/cache`, where $S3_USER defaults to "common" if unset.
     Alternately, the cache directory can be provided explicitly.
 
+    If the user has no access to the provided S3 bucket, fall back to local storage
+    (but errors may occur if only partial permissions such as read-only are available).
+
     Accepts all the same keyword arguments as `joblib.Memory`, including `backend`,
     which can be set to "local" to recover default behavior. Also accepts the
     keyword arguments of `joblib.Memory.cache()` and passes them on. Usage:
@@ -138,10 +143,6 @@ def memoize(
         return x
     ```
 
-    If the bucket doesn't exist, an error will be raised, but if the only
-    problem is permissions, silent failure to cache may be all that occurs,
-    depending on the verbosity setting.
-
     Another known issue is that size-based cache eviction is NOT supported,
     and will also silently fail. This is because there is no easy way to get
     access times out of S3, so we can't find LRU entries.
@@ -156,9 +157,28 @@ def memoize(
             **kwargs,
         )(location)
 
-    if location is None and backend == "s3":
-        user = os.environ.get("S3_USER") or "common"
-        location = f"s3://braingeneersdev/{user}/cache"
+    if backend == "s3":
+        # Default to the braingeneersdev bucket, using the user's name.
+        if location is None:
+            user = os.environ.get("S3_USER") or "common"
+            location = f"s3://braingeneersdev/{user}/cache"
+
+        # Get the bucket name from the location URI.
+        try:
+            uri = parse_uri(normalize_location(location))
+            bucket = uri["bucket_id"]
+        except AssertionError as e:
+            raise ValueError(f"Invalid location: {e}") from None
+
+        # Check the user's credentials for that bucket.
+        try:
+            boto3.Session().client(
+                "s3", endpoint_url=wr.config.s3_endpoint_url
+            ).list_objects_v2(Bucket=bucket, MaxKeys=1)
+        except (NoCredentialsError, ClientError) as e:
+            warn(f"Cannot access s3://{bucket} ({e}). Memoizing locally.")
+            backend = "local"
+            location = uri["key_id"]
 
     return partial(
         Memory(location, backend=backend, **kwargs).cache,

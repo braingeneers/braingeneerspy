@@ -3,7 +3,6 @@ import unittest
 from unittest import mock
 
 import pytest
-from botocore.exceptions import ClientError
 
 from braingeneers.utils.configure import skip_unittest_if_offline
 from braingeneers.utils.memoize_s3 import memoize
@@ -62,14 +61,15 @@ class TestMemoizeS3(unittest.TestCase):
         # impossible on S3.
         with self.assertRaises(ValueError):
 
-            @memoize("s3://this-uri-doesnt-matter/", mmap_mode=True)
+            @memoize(mmap_mode=True)
             def foo(x):
                 return x
 
     @skip_unittest_if_offline
     def test_bucket_existence(self):
-        # Bucket existence should be checked at creation.
-        with self.assertRaises(ClientError):
+        # Bucket existence should be checked at creation, and the user should get a
+        # warning that we're falling back to local storage.
+        with self.assertWarns(UserWarning):
 
             @memoize("s3://i-sure-hope-this-crazy-bucket-doesnt-exist/")
             def foo(x):
