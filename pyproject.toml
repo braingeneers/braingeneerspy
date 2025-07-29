@@ -33,7 +33,7 @@ classifiers = [
 dynamic = ["version"]
 dependencies = [
     'awswrangler==3.*',
-    'boto3',
+    'boto3==1.35.95',  # until https://github.com/boto/boto3/issues/4398 is fixed
     'braingeneers-smart-open==2023.10.6',
     'deprecated',
     'h5py',
@@ -42,11 +42,11 @@ dependencies = [
     'numpy',
     'paho-mqtt>=2',
     'pandas',
-    'powerlaw',
     'redis',
     'requests',
     'schedule',
-    'scipy>=1.10.0',
+    'scipy',
+    'spikedata @ git+https://github.com/braingeneers/SpikeData',
     'tenacity',
     "typing_extensions>=4.6; python_version<'3.11'",
     'diskcache',

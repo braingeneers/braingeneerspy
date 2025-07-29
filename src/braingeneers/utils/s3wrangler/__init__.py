@@ -11,6 +11,11 @@ import awswrangler
 from awswrangler import config
 from awswrangler.s3 import *
 import braingeneers
+import botocore
 
+awswrangler.config.botocore_config = botocore.config.Config(
+        retries={"max_attempts": 10}, 
+        connect_timeout=20, 
+        max_pool_connections=50)
 
 braingeneers.set_default_endpoint()
