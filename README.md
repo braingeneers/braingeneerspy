@@ -123,10 +123,29 @@ To set a custom endpoint, follow these steps:
 1. Set an environment variable `ENDPOINT` with the new endpoint. For example, on Unix-based systems:
 
    ```bash
-   export ENDPOINT="https://s3-west.nrp-nautilus.io"
+   export ENDPOINT="https://s3.braingeneers.gi.ucsc.edu"
    ```
 
 2. Call `braingeneers.set_default_endpoint(endpoint: str)` and `braingeneers.get_default_endpoint()`. These functions will update both `smart_open` and `s3wrangler` (if it's an S3 endpoint, local path endpoints are ignored by `s3wrangler`).
+
+## Service Accounts
+Braingeneers uses JWT-based service accounts for secure access to APIs. Tokens are issued via Auth0 and must be included in all HTTP requests using the `Authorization: Bearer <token>` header.
+
+For most users, authentication is handled automatically by braingeneerspy. However, the first-time setup requires a manual step:
+
+1. Run the authentication helper:
+   ```bash
+   python -m braingeneers.iot.authenticate
+   ```
+
+2. This command will open the token generation page:
+
+   https://service-accounts.braingeneers.gi.ucsc.edu/generate_token
+
+3. Sign in using your UCSC credentials. 
+4. You will be prompted to copy the (full) JSON to the console which will then be stored locally.
+
+Once authenticated, the token is valid for 1 months and will be automatically refreshed every month. If the token is revoked or expires, you'll need to re-authenticate manually using the same command above.
 
 ### Using the PRP Internal S3 Endpoint
 
