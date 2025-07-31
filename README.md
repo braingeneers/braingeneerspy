@@ -147,7 +147,7 @@ For most users, authentication is handled automatically by braingeneerspy. Howev
 
 Once authenticated, the token is valid for 1 months and will be automatically refreshed every month. If the token is revoked or expires, you'll need to re-authenticate manually using the same command above.
 
-### Using the PRP Internal S3 Endpoint
+## Using the PRP Internal S3 Endpoint
 
 When running a job on the PRP, you can use the PRP internal S3 endpoint, which is faster than the default external endpoint. To do this, add the following environment variable to your job YAML file:
 
