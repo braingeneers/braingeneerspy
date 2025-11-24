@@ -26,6 +26,9 @@ AWS_PROFILE = 'aws-braingeneers-iot'
 REDIS_HOST = 'redis.braingeneers.gi.ucsc.edu'
 REDIS_PORT = 6379
 
+# JWT service-account tokens for access to web services calls, see mission_control repo for details
+GENERATE_TOKEN_URL = 'https://service-accounts.braingeneers.gi.ucsc.edu/generate_token'
+JWT_TOKEN_REFRESH_DAYS = 21  # Automatically refresh service-account tokens when <21 days remain on it (once a week for the default 1 month tokens)
 
 class MQTTError(RuntimeError):
     """Exception raised for errors during MQTT operations."""
@@ -814,10 +817,9 @@ class MessageBroker:
                 raise PermissionError('JWT service account token not found, please generate one using: python -m braingeneers.iot.authenticate')
 
         # Check if the token is still valid, this happens on every access, but takes no action while it's still valid.
-        # If the token has less than 3 month left, refresh it, default tokens have 30 days at issuance.
+        # If the token has less than JWT_TOKEN_REFRESH_DAYS days, refresh it, default tokens have 30 days at issuance.
         expires_at = datetime.datetime.fromisoformat(self._jwt_service_account_token['expires_at'].replace(' UTC', ''))
-        if (expires_at - datetime.datetime.now()).days < 90:
-            GENERATE_TOKEN_URL = 'https://service-accounts.braingeneers.gi.ucsc.edu/generate_token'
+        if (expires_at - datetime.datetime.now()).days < JWT_TOKEN_REFRESH_DAYS:
             self._jwt_service_account_token = requests.get(GENERATE_TOKEN_URL).json()
             with open(config_file, 'w') as f:
                 json.dump(self._jwt_service_account_token, f)
