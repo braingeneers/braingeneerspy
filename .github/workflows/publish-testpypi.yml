@@ -1,22 +1,25 @@
-# Configure this in github actions workflows:
 name: Publish to PyPI Test Server
 
 on:
   push:
-    branches: [main]
+    branches: [master]
+  pull_request:
+    branches: [master]
 
 jobs:
   publish:
     runs-on: ubuntu-latest
 
-    # Optional extra guard; on: push + branches:[master] is usually enough
-    if: github.ref == 'refs/heads/master'
+    # Extra safety: ensure we only ever run for master base/ref
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'master')
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # need tags + history for version calc
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -33,6 +36,7 @@ jobs:
         run: |
           set -e
 
+          # Latest *stable* tag of form X.Y.Z
           TAG=$(git describe --tags --match "[0-9]*.[0-9]*.[0-9]*" --abbrev=0 2>/dev/null || true)
 
           if [ -z "$TAG" ]; then
@@ -42,11 +46,13 @@ jobs:
 
           echo "Base tag: $TAG"
 
+          # Commits since that tag
           COMMITS_SINCE=$(git rev-list "${TAG}..HEAD" --count)
           echo "Commits since base tag: $COMMITS_SINCE"
 
           BASE_VERSION="$TAG"
 
+          # Zero-pad build number: 0000, 0001, ...
           printf -v BUILD "%04d" "$COMMITS_SINCE"
 
           VERSION="${BASE_VERSION}.${BUILD}"
@@ -88,6 +94,8 @@ jobs:
           python -m build
 
       - name: Publish to TestPyPI
+        # Only actually upload on push to master, not on PRs
+        if: github.event_name == 'push'
         uses: pypa/gh-action-pypi-publish@v1.9.0
         with:
           repository-url: https://test.pypi.org/legacy/

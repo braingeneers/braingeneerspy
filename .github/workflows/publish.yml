@@ -2,23 +2,22 @@ name: Publish to PyPI
 
 on:
   push:
-#    # Automated publishing
+    #### Choose one or the other branches settings below to enable or disable automatic publication ####
+#    # Automated publishing (normal steady state operation)
 #    branches: [main]
-    # Disables publishing
+    # Disables publishing to PyPi (for testing and development time)
     branches: [__disabled__]
 
 jobs:
   publish:
     runs-on: ubuntu-latest
 
-    # Optional extra guard; on: push + branches:[master] is usually enough
     if: github.ref == 'refs/heads/master'
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # We need full history + tags to compute versions
           fetch-depth: 0
 
       - name: Set up Python
@@ -36,7 +35,6 @@ jobs:
         run: |
           set -e
 
-          # Latest *stable* tag of form X.Y.Z
           TAG=$(git describe --tags --match "[0-9]*.[0-9]*.[0-9]*" --abbrev=0 2>/dev/null || true)
 
           if [ -z "$TAG" ]; then
@@ -46,13 +44,11 @@ jobs:
 
           echo "Base tag: $TAG"
 
-          # Commits since that tag
-          COMMITS_SINCE=$(git rev-list "${TAG}..HEAD" --count)
+          COMMITS_SINCE=$(git.rev-list "${TAG}..HEAD" --count)
           echo "Commits since base tag: $COMMITS_SINCE"
 
           BASE_VERSION="$TAG"
 
-          # Zero-pad build number: 0000, 0001, ...
           printf -v BUILD "%04d" "$COMMITS_SINCE"
 
           VERSION="${BASE_VERSION}.${BUILD}"
@@ -77,7 +73,6 @@ jobs:
           pattern = r'(?m)^(version\s*=\s*")[^"]*(")'
 
           def repl(match):
-              # version = "<here>"
               return f'{match.group(1)}{version}{match.group(2)}'
 
           new_text, count = re.subn(pattern, repl, text)
