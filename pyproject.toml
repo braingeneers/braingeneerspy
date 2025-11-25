@@ -106,7 +106,7 @@ testpaths = [
 run.source = ["braingeneers"]
 port.exclude_lines = [
   "pragma: no cover",
-  "\.\.\.",
+  "\\.\\.\\.",
   "if typing.TYPE_CHECKING:",
 ]
 
