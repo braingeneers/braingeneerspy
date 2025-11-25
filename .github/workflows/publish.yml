@@ -5,17 +5,20 @@ on:
 #    # Automated publishing
 #    branches: [main]
     # Disables publishing
-    branches: []
+    branches: [__disabled__]
 
 jobs:
   publish:
     runs-on: ubuntu-latest
 
+    # Optional extra guard; on: push + branches:[master] is usually enough
+    if: github.ref == 'refs/heads/master'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # we need full history + tags to compute versions
+          # We need full history + tags to compute versions
           fetch-depth: 0
 
       - name: Set up Python
@@ -43,13 +46,13 @@ jobs:
 
           echo "Base tag: $TAG"
 
-          # commits since that tag
+          # Commits since that tag
           COMMITS_SINCE=$(git rev-list "${TAG}..HEAD" --count)
           echo "Commits since base tag: $COMMITS_SINCE"
 
           BASE_VERSION="$TAG"
 
-          # zero-pad build number
+          # Zero-pad build number: 0000, 0001, ...
           printf -v BUILD "%04d" "$COMMITS_SINCE"
 
           VERSION="${BASE_VERSION}.${BUILD}"
@@ -71,17 +74,18 @@ jobs:
           pyproject = pathlib.Path("pyproject.toml")
           text = pyproject.read_text()
 
-          new_text, count = re.subn(
-              r'(?m)^(version\s*=\s*")[^"]*(")',
-              rf'\1{version}\2',
-              text,
-          )
+          pattern = r'(?m)^(version\s*=\s*")[^"]*(")'
 
+          def repl(match):
+              # version = "<here>"
+              return f'{match.group(1)}{version}{match.group(2)}'
+
+          new_text, count = re.subn(pattern, repl, text)
           if count == 0:
-              raise SystemExit("Did not find a version = \"...\" line in pyproject.toml")
+              raise SystemExit('Did not find a version = "..." line in pyproject.toml')
 
           pyproject.write_text(new_text)
-          print(f"Set version = \"{version}\" in pyproject.toml")
+          print(f'Set version = "{version}" in pyproject.toml')
           EOF
         env:
           VERSION: ${{ steps.version.outputs.version }}
