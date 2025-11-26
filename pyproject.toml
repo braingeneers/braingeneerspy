@@ -74,6 +74,11 @@ dev = [
   "joblib",
 ]
 
+[dependency-groups]
+dev = [
+    "braingeneers[all]",
+]
+
 [project.urls]
 Homepage = "https://github.com/braingeneers/braingeneerspy"
 "Bug Tracker" = "https://github.com/braingeneers/braingeneerspy/issues"
@@ -184,3 +189,6 @@ messages_control.disable = [
   "missing-module-docstring",
   "wrong-import-position",
 ]
+
+[tool.uv.sources]
+braingeneers = { workspace = true }

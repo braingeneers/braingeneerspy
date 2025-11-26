@@ -104,10 +104,10 @@ def parse_args():
     Two commands are available:
 
         # Authenticate and obtain a JWT service account token for braingeneerspy
-        python -m braingeneers.iot.messaging authenticate
+        python -m braingeneers.iot.authenticate
 
         # Authenticate and obtain a JWT service account token for picroscope specific environment
-        python -m braingeneers.iot.messaging authenticate picroscope
+        python -m braingeneers.iot.authenticate picroscope
     """
     parser = argparse.ArgumentParser(description='JWT Service Account Token Management')
     parser.add_argument('config', nargs='?', choices=['picroscope'], help='Picroscope specific JWT token configuration.')
