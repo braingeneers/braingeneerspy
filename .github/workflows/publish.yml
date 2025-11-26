@@ -1,0 +1,95 @@
+name: Publish to PyPI
+
+on:
+  push:
+    #### Choose one or the other branches settings below to enable or disable automatic publication ####
+#    # Automated publishing (normal steady state operation)
+#    branches: [main]
+    # Disables publishing to PyPi (for testing and development time)
+    branches: [__disabled__]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    if: github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Compute version from git tags
+        id: version
+        run: |
+          set -e
+
+          TAG=$(git describe --tags --match "[0-9]*.[0-9]*.[0-9]*" --abbrev=0 2>/dev/null || true)
+
+          if [ -z "$TAG" ]; then
+            echo "No base tag matching X.Y.Z found. Refusing to publish."
+            exit 1
+          fi
+
+          echo "Base tag: $TAG"
+
+          COMMITS_SINCE=$(git.rev-list "${TAG}..HEAD" --count)
+          echo "Commits since base tag: $COMMITS_SINCE"
+
+          BASE_VERSION="$TAG"
+
+          printf -v BUILD "%04d" "$COMMITS_SINCE"
+
+          VERSION="${BASE_VERSION}.${BUILD}"
+          echo "Computed version: $VERSION"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Inject computed version into pyproject.toml
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          echo "Injecting version $VERSION into pyproject.toml"
+
+          python - << 'EOF'
+          import os
+          import pathlib
+          import re
+
+          version = os.environ["VERSION"]
+          pyproject = pathlib.Path("pyproject.toml")
+          text = pyproject.read_text()
+
+          pattern = r'(?m)^(version\s*=\s*")[^"]*(")'
+
+          def repl(match):
+              return f'{match.group(1)}{version}{match.group(2)}'
+
+          new_text, count = re.subn(pattern, repl, text)
+          if count == 0:
+              raise SystemExit('Did not find a version = "..." line in pyproject.toml')
+
+          pyproject.write_text(new_text)
+          print(f'Set version = "{version}" in pyproject.toml')
+          EOF
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Build package
+        run: |
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.9.0
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}

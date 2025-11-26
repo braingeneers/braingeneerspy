@@ -1,17 +1,17 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 
 [project]
+version = "0.3.0.0000"  # NOTE: This is a placeholder; CI overwrites it based on git tags + commit count. It's set only to the last manual push.
 name = "braingeneers"
 authors = [
   { name = "UCSC Braingeneers", email = "ucscgi@ucsc.edu" },
 ]
 maintainers = [
-  { name = "David", email = "dfparks@ucsc.edu" },
-  { name = "Alex", email = "atspaeth@ucsc.edu" },
-  { name = "Lon", email = "lblauvel@ucsc.edu" },
+  { name = "David Parks", email = "dfparks@ucsc.edu" },
+  { name = "Kate Voitiuk", email = "kvoitiuk@ucsc.edu" },
 ]
 description = "Braingeneers Python utilities"
 readme = "README.md"
@@ -30,44 +30,37 @@ classifiers = [
   "Topic :: Scientific/Engineering",
   "Typing :: Typed",
 ]
-dynamic = ["version"]
 dependencies = [
-    'awswrangler==3.*',
-    'boto3==1.35.95',  # until https://github.com/boto/boto3/issues/4398 is fixed
-    'braingeneers-smart-open==2023.10.6',
-    'deprecated',
-    'h5py',
-    'matplotlib',
-    'nptyping',
-    'numpy',
-    'paho-mqtt>=2',
-    'pandas',
-    'redis',
-    'requests',
-    'schedule',
-    'scipy',
-    'spikedata @ git+https://github.com/braingeneers/SpikeData',
-    'tenacity',
-    "typing_extensions>=4.6; python_version<'3.11'",
-    'diskcache',
-    'pytz', 
-    'tzlocal',
+  "awswrangler==3.*",
+  "boto3==1.35.95",  # until https://github.com/boto/boto3/issues/4398 is fixed
+  "braingeneers-smart-open==2023.10.6",
+  "deprecated",
+  "h5py",
+  "matplotlib",
+  "nptyping",
+  "numpy",
+  "paho-mqtt>=2",
+  "pandas",
+  "redis",
+  "requests",
+  "schedule",
+  "scipy",
+  "spikedata",
+  "tenacity",
+  "typing_extensions>=4.6; python_version<'3.11'",
+  "diskcache",
+  "pytz",
+  "tzlocal",
 ]
-
-[tool.hatch.build.hooks.vcs]
-version-file = "src/braingeneers/_version.py"
-
-[tool.hatch.version.raw-options]
-local_scheme = "no-local-version"
 
 [project.optional-dependencies]
 all = [
-  'braingeneers[ml]',
-  'braingeneers[dev]',
+  "braingeneers[ml]",
+  "braingeneers[dev]",
 ]
 ml = [
-  'torch',
-  'scikit-learn',
+  "torch",
+  "scikit-learn",
 ]
 dev = [
   "pytest >=6",
@@ -81,6 +74,11 @@ dev = [
   "joblib",
 ]
 
+[dependency-groups]
+dev = [
+    "braingeneers[all]",
+]
+
 [project.urls]
 Homepage = "https://github.com/braingeneers/braingeneerspy"
 "Bug Tracker" = "https://github.com/braingeneers/braingeneerspy/issues"
@@ -89,7 +87,6 @@ Changelog = "https://github.com/braingeneers/braingeneerspy/releases"
 
 [tool.hatch]
 metadata.allow-direct-references = true
-version.source = "vcs"
 envs.default.dependencies = [
   "pytest",
   "pytest-cov",
@@ -102,7 +99,7 @@ addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
 xfail_strict = true
 filterwarnings = [
   "error",
-  "ignore::DeprecationWarning"
+  "ignore::DeprecationWarning",
 ]
 log_cli_level = "INFO"
 testpaths = [
@@ -113,9 +110,9 @@ testpaths = [
 [tool.coverage]
 run.source = ["braingeneers"]
 port.exclude_lines = [
-  'pragma: no cover',
-  '\.\.\.',
-  'if typing.TYPE_CHECKING:',
+  "pragma: no cover",
+  "\\.\\.\\.",
+  "if typing.TYPE_CHECKING:",
 ]
 
 [tool.mypy]
@@ -182,7 +179,7 @@ isort.required-imports = ["from __future__ import annotations"]
 
 [tool.pylint]
 py-version = "3.10"
-ignore-paths= ["src/braingeneers/_version.py"]
+ignore-paths = ["src/braingeneers/_version.py"]
 reports.output-format = "colorized"
 similarities.ignore-imports = "yes"
 messages_control.disable = [
@@ -192,3 +189,6 @@ messages_control.disable = [
   "missing-module-docstring",
   "wrong-import-position",
 ]
+
+[tool.uv.sources]
+braingeneers = { workspace = true }
