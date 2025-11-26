@@ -69,22 +69,21 @@ jobs:
           import os
           import pathlib
           import re
-
+          
           version = os.environ["VERSION"]
           pyproject = pathlib.Path("pyproject.toml")
           text = pyproject.read_text()
-
-          pattern = r'(?m)^(version\s*=\s*")[^"]*(")'
-
-          def repl(match):
-              return f'{match.group(1)}{version}{match.group(2)}'
-
-          new_text, count = re.subn(pattern, repl, text)
-          if count == 0:
-              raise SystemExit('Did not find a version = "..." line in pyproject.toml')
-
-          pyproject.write_text(new_text)
-          print(f'Set version = "{version}" in pyproject.toml')
+          
+          # Ensure the [project] table contains name/version keys explicitly
+          # Replace or insert version field
+          if 'version =' in text:
+              text = re.sub(r'(?m)^version\s*=\s*".*"', f'version = "{version}"', text)
+          else:
+              # Insert version after [project] line
+              text = re.sub(r'(?m)^\[project\]', f'[project]\nversion = "{version}"', text)
+          
+          pyproject.write_text(text)
+          print(f"Set version = \"{version}\" in pyproject.toml")
           EOF
         env:
           VERSION: ${{ steps.version.outputs.version }}
