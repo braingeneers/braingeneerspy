@@ -26,13 +26,13 @@ You can install `braingeneers` using `pip` with the following commands:
 ### Install from PyPI (Recommended)
 
 ```bash
-pip install braingeneers
+python -m pip install braingeneers
 ```
 
 ### Install from GitHub
 
 ```bash
-pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git
+python -m pip install --force-reinstall git+https://github.com/braingeneers/braingeneerspy.git
 ```
 
 ### Install with Optional Dependencies
@@ -42,25 +42,25 @@ You can install `braingeneers` with specific optional dependencies based on your
 - Install with machine-learning dependencies:
 
 ```bash
-pip install "braingeneers[ml]"
+python -m pip install "braingeneers[ml]"
 ```
 
 - Install with Hengen lab dependencies:
 
 ```bash
-pip install "braingeneers[hengenlab]"
+python -m pip install "braingeneers[hengenlab]"
 ```
 
 - Install with developer dependencies (running tests and building sphinx docs):
 
 ```bash
-pip install "braingeneers[dev]"
+python -m pip install "braingeneers[dev]"
 ```
 
 - Install with all optional dependencies:
 
 ```bash
-pip install "braingeneers[all]"
+python -m pip install "braingeneers[all]"
 ```
 
 ## Committing Changes to the Repo
