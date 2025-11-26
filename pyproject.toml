@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 
 [project]
-version = "0.0.0.0000"  # NOTE: This is a placeholder; CI overwrites it based on git tags + commit count.
+version = "0.3.0.0000"  # NOTE: This is a placeholder; CI overwrites it based on git tags + commit count. It's set only to the last manual push.
 name = "braingeneers"
 authors = [
   { name = "UCSC Braingeneers", email = "ucscgi@ucsc.edu" },
@@ -45,7 +45,7 @@ dependencies = [
   "requests",
   "schedule",
   "scipy",
-  "spikedata @ git+https://github.com/braingeneers/SpikeData",
+  "spikedata",
   "tenacity",
   "typing_extensions>=4.6; python_version<'3.11'",
   "diskcache",
