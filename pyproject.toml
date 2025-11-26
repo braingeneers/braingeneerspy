@@ -45,7 +45,7 @@ dependencies = [
   "requests",
   "schedule",
   "scipy",
-  "spikedata @ git+https://github.com/braingeneers/SpikeData",
+  "spikedata",
   "tenacity",
   "typing_extensions>=4.6; python_version<'3.11'",
   "diskcache",
