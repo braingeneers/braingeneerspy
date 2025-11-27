@@ -60,8 +60,7 @@ jobs:
             COUNT=$(git rev-list --count "$TAG"..HEAD)
           fi
 
-          PADDED=$(printf "%04d" "$COUNT")
-          VERSION="${TAG}.${PADDED}"
+          VERSION="${TAG}.${COUNT}"
 
           echo "Using version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -100,3 +99,5 @@ jobs:
         with:
           repository-url: https://test.pypi.org/legacy/
           password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+VERSION="${TAG}:
+  ${COUNT}":
