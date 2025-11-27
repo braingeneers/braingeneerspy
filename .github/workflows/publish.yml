@@ -2,23 +2,28 @@ name: Publish to PyPI
 
 on:
   push:
-    #### Choose one or the other branches settings below to enable or disable automatic publication ####
-#    # Automated publishing (normal steady state operation)
-#    branches: [main]
-    # Disables publishing to PyPi (for testing and development time)
-    branches: [__disabled__]
+    branches: [ master ]
+    tags:
+      - '*.*.*'         # e.g. 0.3.1
+  release:
+    types: [published]
+  pull_request:
+    branches: [ master ]
 
 jobs:
   publish:
     runs-on: ubuntu-latest
 
-    if: github.ref == 'refs/heads/master'
+    # Extra safety: only run when base is master
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'master')
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # IMPORTANT: we need full history for tags + commit count
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,67 +33,68 @@ jobs:
       - name: Install build tools
         run: |
           python -m pip install --upgrade pip
-          pip install build twine
+          python -m pip install build
 
-      - name: Compute version from git tags
+      - name: Get latest tag (X.Y.Z)
+        id: tag
+        run: |
+          set -e
+          # Use latest tag matching X.Y.Z; adjust pattern if you use "vX.Y.Z" tags instead
+          if git describe --tags --match '*.*.*' >/dev/null 2>&1; then
+            TAG=$(git describe --tags --match '*.*.*' --abbrev=0)
+          else
+            # Fallback if no tags yet
+            TAG="0.0.0"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Compute version from tag and commit count
         id: version
         run: |
           set -e
+          TAG="${{ steps.tag.outputs.tag }}"
 
-          TAG=$(git describe --tags --match "[0-9]*.[0-9]*.[0-9]*" --abbrev=0 2>/dev/null || true)
-
-          if [ -z "$TAG" ]; then
-            echo "No base tag matching X.Y.Z found. Refusing to publish."
-            exit 1
+          if [ "$TAG" = "0.0.0" ]; then
+            COUNT=$(git rev-list --count HEAD)
+          else
+            COUNT=$(git rev-list --count "$TAG"..HEAD)
           fi
 
-          echo "Base tag: $TAG"
+          VERSION="${TAG}.${COUNT}"
 
-          COMMITS_SINCE=$(git.rev-list "${TAG}..HEAD" --count)
-          echo "Commits since base tag: $COMMITS_SINCE"
-
-          BASE_VERSION="$TAG"
-
-          printf -v BUILD "%04d" "$COMMITS_SINCE"
-
-          VERSION="${BASE_VERSION}.${BUILD}"
-          echo "Computed version: $VERSION"
-
+          echo "Using version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Inject computed version into pyproject.toml
+      - name: Patch version into pyproject.toml
         run: |
-          VERSION=${{ steps.version.outputs.version }}
-          echo "Injecting version $VERSION into pyproject.toml"
+          python - << 'PY'
+          from pathlib import Path
+          import os, re
 
-          python - << 'EOF'
-          import os
-          import pathlib
-          import re
-          
           version = os.environ["VERSION"]
-          pyproject = pathlib.Path("pyproject.toml")
-          text = pyproject.read_text()
-          
-          # Ensure the [project] table contains name/version keys explicitly
-          # Replace or insert version field
-          if 'version =' in text:
-              text = re.sub(r'(?m)^version\s*=\s*".*"', f'version = "{version}"', text)
-          else:
-              # Insert version after [project] line
-              text = re.sub(r'(?m)^\[project\]', f'[project]\nversion = "{version}"', text)
-          
-          pyproject.write_text(text)
-          print(f"Set version = \"{version}\" in pyproject.toml")
-          EOF
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
+          path = Path("pyproject.toml")
+          text = path.read_text(encoding="utf-8")
+
+          # Replace the first 'version = "..."' line in [project]
+          new_text, n = re.subn(
+              r'(?m)^version\s*=\s*".*"', 
+              f'version = "{version}"',
+              text,
+              count=1,
+          )
+          if n == 0:
+              raise SystemExit("Did not find a version = \"...\" line to replace in pyproject.toml")
+
+          path.write_text(new_text, encoding="utf-8")
+          PY
 
       - name: Build package
         run: |
           python -m build
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.9.0
+        if: github.event_name == 'push'
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
