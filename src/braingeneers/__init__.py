@@ -10,7 +10,11 @@ import warnings
 from . import utils
 from .utils.configure import \
     set_default_endpoint, get_default_endpoint, skip_unittest_if_offline
-from ._version import version as VERSION  # noqa
+
+try:  # preferred: read version from installed package metadata
+    VERSION = _pkg_version("braingeneers")
+except PackageNotFoundError:  # e.g. running from a source tree without an installed dist
+    VERSION = "0.0.0.0000"
 
 __version__ = VERSION
 
