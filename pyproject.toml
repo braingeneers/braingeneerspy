@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 version = "0.3.1.0000"  # NOTE: This is a placeholder; CI overwrites it based on git tags + commit count. It's set only to the last manual push.
-name = "braingeneers"
+name = "braingeneers-dev"
 authors = [
   { name = "UCSC Braingeneers", email = "ucscgi@ucsc.edu" },
 ]
@@ -179,7 +179,7 @@ isort.required-imports = ["from __future__ import annotations"]
 
 [tool.pylint]
 py-version = "3.10"
-ignore-paths = ["src/braingeneers/_version.py"]
+ignore-paths = []
 reports.output-format = "colorized"
 similarities.ignore-imports = "yes"
 messages_control.disable = [
