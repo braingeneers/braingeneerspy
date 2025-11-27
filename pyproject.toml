@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 version = "0.3.1.0000"  # NOTE: This is a placeholder; CI overwrites it based on git tags + commit count. It's set only to the last manual push.
 name = "braingeneers"
 authors = [
-  { name = "UCSC Braingeneers", email = "ucscgi@ucsc.edu" },
+  { name = "UCSC Braingeneers", email = "braingeneers-admins-group@ucsc.edu" },
 ]
 maintainers = [
   { name = "David Parks", email = "dfparks@ucsc.edu" },
