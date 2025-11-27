@@ -3,6 +3,10 @@ name: Publish to TestPyPI
 on:
   push:
     branches: [ master ]
+    tags:
+      - '*.*.*'         # e.g. 0.3.1
+  release:
+    types: [published]
   pull_request:
     branches: [ master ]
 
