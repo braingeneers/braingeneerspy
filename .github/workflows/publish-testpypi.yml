@@ -55,10 +55,8 @@ jobs:
           TAG="${{ steps.tag.outputs.tag }}"
 
           if [ "$TAG" = "0.0.0" ]; then
-            # no tags: count from the beginning of the repo
             COUNT=$(git rev-list --count HEAD)
           else
-            # count commits strictly after the tag
             COUNT=$(git rev-list --count "$TAG"..HEAD)
           fi
 
@@ -68,7 +66,7 @@ jobs:
           echo "Using version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-
+            
       - name: Patch version into pyproject.toml
         run: |
           python - << 'PY'
