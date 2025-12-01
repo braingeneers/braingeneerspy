@@ -183,3 +183,56 @@ The docs directory has been set up using `sphinx-build -M html docs/source/ docs
 The `devcontainer.json` file allows you to customize your Codespace container and VS Code environment using extensions. You can add more extensions to tailor the environment to your specific needs. Explore the VS Code extensions marketplace for additional tools that may enhance your workflow.
 
 For more information about Braingeneers, visit our [website](https://braingeneers.ucsc.edu/).
+
+Here’s a standalone section you can drop into the README — no intro/outro text added:
+
+## Versioning and PyPI Releases
+
+This package uses an automated versioning system tied to GitHub Actions. Contributors do not need to manually update version numbers in the codebase.
+
+There are two parts to each release version:
+
+```
+A.B.C.N
+│ │ │ └── Commit count since the most recent A.B.C tag  
+│ │ └──── Patch version  
+│ └────── Minor version  
+└──────── Major version
+```
+
+### Creating a New Base Version
+
+To define a new base version (the `A.B.C` portion), create and push a Git tag using semantic versioning:
+
+```bash
+git tag 0.4.0
+git push --tags
+```
+
+Creating a GitHub Release for the tag is recommended but not required.
+
+Once a new tag exists, future versions will count commits from that tag.
+
+### How Automatic Versioning Works
+
+Every merge into `master` triggers:
+
+1. Version calculation:
+
+   * The latest `A.B.C` tag is located
+   * The number of commits since that tag is counted
+   * Final version becomes `A.B.C.N` (e.g., `0.4.0.12`)
+2. The version is injected into `pyproject.toml`
+3. The package is built and uploaded to PyPI
+
+Because pull requests often include several commits, `N` does **not** increment by one per PR — a single PR may increase the count by multiple commits.
+
+### Where to See Published Versions
+
+All published releases are visible on PyPI:
+
+* [https://pypi.org/project/braingeneers/#history](https://pypi.org/project/braingeneers/#history)
+
+Each successful merge to `master` results in a new entry there.
+
+The github workflow that performs these actions is defined at `.github/workflows/publish.yaml`,
