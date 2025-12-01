@@ -186,7 +186,11 @@ For more information about Braingeneers, visit our [website](https://braingeneer
 
 Here’s a standalone section you can drop into the README — no intro/outro text added:
 
-## Versioning and PyPI Releases
+Here’s an updated version of that section with workflow details added:
+
+---
+
+## Versioning, Builds, and PyPI Releases
 
 This package uses an automated versioning system tied to GitHub Actions. Contributors do not need to manually update version numbers in the codebase.
 
@@ -215,17 +219,35 @@ Once a new tag exists, future versions will count commits from that tag.
 
 ### How Automatic Versioning Works
 
-Every merge into `master` triggers:
+Every merge into `master` triggers a GitHub Actions workflow that:
 
-1. Version calculation:
-
-   * The latest `A.B.C` tag is located
-   * The number of commits since that tag is counted
-   * Final version becomes `A.B.C.N` (e.g., `0.4.0.12`)
-2. The version is injected into `pyproject.toml`
-3. The package is built and uploaded to PyPI
+1. Locates the latest `A.B.C` tag
+2. Counts the number of commits since that tag
+3. Computes the final version as `A.B.C.N` (e.g., `0.4.0.12`)
+4. Patches this version into `pyproject.toml`
+5. Builds the package
+6. Uploads the package to PyPI (or TestPyPI, depending on the workflow)
 
 Because pull requests often include several commits, `N` does **not** increment by one per PR — a single PR may increase the count by multiple commits.
+
+The GitHub workflow that performs these actions is defined at `.github/workflows/publish.yaml`.
+
+### Workflows: Where They Live and What They Do
+
+The repository defines workflows under `.github/workflows/`, the following workflow is responsible for publishing to pypi.org. There are other workflows that execute test suites and such.
+
+* **`.github/workflows/publish.yml`**
+
+  * Triggered on pushes/merges to `master`
+  * Computes the `A.B.C.N` version
+  * Builds the package
+  * Publishes to **PyPI**
+
+You can view the history and status of these workflows in the GitHub Actions UI:
+
+* [https://github.com/braingeneers/braingeneerspy/actions](https://github.com/braingeneers/braingeneerspy/actions)
+
+This is the best place to check whether a given commit/PR successfully built and published.
 
 ### Where to See Published Versions
 
@@ -233,6 +255,4 @@ All published releases are visible on PyPI:
 
 * [https://pypi.org/project/braingeneers/#history](https://pypi.org/project/braingeneers/#history)
 
-Each successful merge to `master` results in a new entry there.
-
-The github workflow that performs these actions is defined at `.github/workflows/publish.yaml`,
+Each successful merge to `master` that passes the publish workflow will result in a new version entry there.
