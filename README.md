@@ -234,7 +234,7 @@ The GitHub workflow that performs these actions is defined at `.github/workflows
 
 ### Workflows: Where They Live and What They Do
 
-The repository defines two main publishing workflows under `.github/workflows/`:
+The repository defines workflows under `.github/workflows/`, the following workflow is responsible for publishing to pypi.org. There are other workflows that execute test suites and such.
 
 * **`.github/workflows/publish.yml`**
 
@@ -242,13 +242,6 @@ The repository defines two main publishing workflows under `.github/workflows/`:
   * Computes the `A.B.C.N` version
   * Builds the package
   * Publishes to **PyPI**
-
-* **`.github/workflows/publish-testpypi.yml`**
-
-  * Triggered similarly (e.g. pushes/PRs to `master`)
-  * Uses the same versioning logic
-  * Builds the package
-  * Publishes to **TestPyPI** (for validation before a real release)
 
 You can view the history and status of these workflows in the GitHub Actions UI:
 
