@@ -2,13 +2,13 @@ name: Publish to PyPI
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
     tags:
-      - '*.*.*'         # e.g. 0.3.1
+      - '*.*.*'         # Github tag format for braingeneerpy repo formatted as in this example, "0.3.1"
   release:
     types: [published]
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 jobs:
   publish:
