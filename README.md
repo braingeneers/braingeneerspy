@@ -184,12 +184,6 @@ The `devcontainer.json` file allows you to customize your Codespace container an
 
 For more information about Braingeneers, visit our [website](https://braingeneers.ucsc.edu/).
 
-Here’s a standalone section you can drop into the README — no intro/outro text added:
-
-Here’s an updated version of that section with workflow details added:
-
----
-
 ## Versioning, Builds, and PyPI Releases
 
 This package uses an automated versioning system tied to GitHub Actions. Contributors do not need to manually update version numbers in the codebase.
