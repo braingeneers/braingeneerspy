@@ -34,7 +34,7 @@ jobs:
           echo "$AWS_CREDENTIALS" > ~/.aws/credentials
           wc ~/.aws/credentials
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
