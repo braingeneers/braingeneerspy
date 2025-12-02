@@ -250,3 +250,81 @@ All published releases are visible on PyPI:
 * [https://pypi.org/project/braingeneers/#history](https://pypi.org/project/braingeneers/#history)
 
 Each successful merge to `master` that passes the publish workflow will result in a new version entry there.
+
+
+## Service account authentication
+
+"Service accounts" are defined as code that runs without a human operator present at the keyboard.
+These could be services running on the `braingeneers` server, remote code running on an edge device, etc.
+All Braingeneers web services require UCSC password authentication, see the [mission_control repo](https://github.com/braingeneers/mission_control) for details.
+Service accounts must be authenticated once and will remain authenticated after that (assuming they are continuously used).
+You will configure authentication for your service accounts in one of these ways, a) manual authentication of an edge device, and b) running an NRP job, c) running a service on the `braingeneers` server via the [mission_control repo](https://github.com/braingeneers/mission_control).
+
+### Manual Authentication of an Edge Device
+
+To run code that you can interact with, such as on a lab edge device like a Maxwell ephys devices, for example, 
+you can manually authenticate your `braingeneerspy` installation once. So long as you use that
+code at least once per month the authentication token you generate manually will be refreshed automatically. Detailed
+documentation is available on the [mission_control repo](https://github.com/braingeneers/mission_control).
+
+```bash
+python -m braingeneers.iot.authenticate
+```
+
+### Running a job on the NRP
+
+When running a kubernetes job on the NRP cluster you'll submit a YAML job specification. In the
+`braingeneers` namespace secret files for authentication are stored in the `braingeneers` namespace
+secrets (these are standard kubernetes secrets, which are small files accessible to all authenticated and authorized users of the `braingeneers` namespace).
+If you can submit a job to the NRP in the `braingeneers` namespace you have access to all secrets.
+
+You can mount the service account JWT token to your job. This token is maintained by our `secret-fetcher` service maintained in the [mission_control repo](https://github.com/braingeneers/mission_control).
+To do so add the following yaml to your job yaml configuration.
+
+You will need to set the `mountPath` to the location in your docker container. To get the correct location to mount the JWT
+service account token, log into your docker container and run the following command. It will return a result
+akin to the one shown in the example below. Every docker container will have a unique location (the example below
+was taken from inside the `braineneers/braingeneers:latest` docker container.
+
+```bash
+python -c "import braingeneers.iot, os, importlib; print(os.path.join(importlib.resources.files(braingeneers.iot), 'service_account', 'config.json'))"
+```
+
+```yaml
+kind: Job
+spec:
+  template:
+    spec:
+      containers:
+        volumeMounts:
+          - name: "braingeneers-jwt-service-account-token"
+            mountPath: "/opt/conda/lib/python3.10/site-packages/braingeneers/iot/service_account/config.json"
+            subPath: "config.json"
+      volumes:
+        - name: "braingeneers-jwt-service-account-token"
+          secret:
+            secretName: "braingeneers-jwt-service-account-token"
+```
+
+### Running a service on `braingeneers` server using `mission_control` repo
+
+See the [mission control repo](https://github.com/braingeneers/mission_control) documentation on [adding secrets in services](https://github.com/braingeneers/mission_control?tab=readme-ov-file#configuring-shared-secrets) running permanently
+on our `braingeneers` server.
+
+Services running in this environment can access an in-memory volume called `secrets` which contains all
+secret files stored in our kubernetes namespace. These files are secured because access to `braingeneers` server
+services are limited to users with a valid kubernetes authentication `~/.kube/config`.
+
+The step by step directions for mounting the secrets volume and copying the file from that volume to the appropriate location are
+maintained in the `mission_control` repo linked above. The JWT service account token is found at:
+
+```bash
+/secrets/braingeneers-jwt-service-account-token/braingeneners_jwt_token.json
+```
+
+That file should be copied to the location specific to your docker container which you can find by running this command in yoru docker container:
+
+```bash
+python -c "import braingeneers.iot, os, importlib; print(os.path.join(importlib.resources.files(braingeneers.iot), 'service_account', 'config.json'))"
+```
+
