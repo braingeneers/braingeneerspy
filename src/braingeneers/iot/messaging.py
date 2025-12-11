@@ -160,6 +160,7 @@ class MessageBroker:
 
         self.certs_temp_dir = None
         self._mqtt_connection = None
+        self._mqtt_loop_running = False
         self._mqtt_profile_id = config['braingeneers-mqtt']['profile-id']
         self._mqtt_profile_key = config['braingeneers-mqtt']['profile-key']
         self._mqtt_endpoint = config['braingeneers-mqtt']['endpoint']
@@ -747,6 +748,8 @@ class MessageBroker:
     @property
     def mqtt_connection(self):
         """ Lazy initialization of mqtt connection. """
+        if not hasattr(self, "_mqtt_loop_running"):
+            self._mqtt_loop_running = False
         if self._mqtt_connection is None:
             '''
             root certs only required for https connection our current mqtt broker does not have this yet
@@ -755,6 +758,14 @@ class MessageBroker:
             def on_connect(client, userdata, flags, rc):
                 if rc == 0:
                     self.logger.info('MQTT connected: client:' + str(client) + ' userdata:' + str(userdata) + ' flags:' + str(flags) + ' rc:' + str(rc))
+                    if not self._mqtt_loop_running:
+                        try:
+                            self._mqtt_connection.loop_start()
+                        except ValueError:
+                            self.logger.debug("MQTT loop already running on connect")
+                            self._mqtt_loop_running = True
+                        else:
+                            self._mqtt_loop_running = True
                     if len(self._subscribed_message_callback_map) > 0:
                         with self._subscribe_message_lock:
                             reconnect_topics = [topic for _, topic in self._subscribed_message_callback_map.values()]
@@ -764,6 +775,18 @@ class MessageBroker:
                 else:
                     self.logger.error("Failed to connect to MQTT, return code %d\n", rc)
 
+            def on_disconnect(client, userdata, rc):
+                self.logger.warning("MQTT disconnected with rc %s", rc)
+                self._mqtt_loop_running = False
+                try:
+                    self._mqtt_connection.loop_start()
+                except ValueError:
+                    # Loop already running or stopping; best effort to keep it alive.
+                    self.logger.debug("MQTT loop already running on disconnect")
+                    self._mqtt_loop_running = True
+                else:
+                    self._mqtt_loop_running = True
+
             def on_log(client, userdata, level, buf):
                 self.logger.debug("MQTT log: %s", buf)
 
@@ -771,10 +794,22 @@ class MessageBroker:
             self._mqtt_connection = mqtt_client.Client(CallbackAPIVersion.VERSION1, client_id)
             self._mqtt_connection.username_pw_set(self._mqtt_profile_id, self._mqtt_profile_key)
             self._mqtt_connection.on_connect = on_connect
+            self._mqtt_connection.on_disconnect = on_disconnect
             self._mqtt_connection.on_log = on_log
             self._mqtt_connection.reconnect_delay_set(min_delay=1, max_delay=60)
             self._mqtt_connection.connect(host=self._mqtt_endpoint, port=self._mqtt_port, keepalive=15)
             self._mqtt_connection.loop_start()
+            self._mqtt_loop_running = True
+        elif not self._mqtt_loop_running:
+            # If the loop thread died after a disconnect, restart it to allow reconnection attempts.
+            try:
+                self._mqtt_connection.loop_start()
+            except ValueError:
+                # If the loop is already running, just mark it as such.
+                self.logger.debug("MQTT loop already running when attempting restart")
+                self._mqtt_loop_running = True
+            else:
+                self._mqtt_loop_running = True
 
         return self._mqtt_connection
 
