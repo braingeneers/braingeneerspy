@@ -763,6 +763,7 @@ class MessageBroker:
                             self._mqtt_connection.loop_start()
                         except ValueError:
                             self.logger.debug("MQTT loop already running on connect")
+                            self._mqtt_loop_running = True
                         else:
                             self._mqtt_loop_running = True
                     if len(self._subscribed_message_callback_map) > 0:
@@ -777,6 +778,14 @@ class MessageBroker:
             def on_disconnect(client, userdata, rc):
                 self.logger.warning("MQTT disconnected with rc %s", rc)
                 self._mqtt_loop_running = False
+                try:
+                    self._mqtt_connection.loop_start()
+                except ValueError:
+                    # Loop already running or stopping; best effort to keep it alive.
+                    self.logger.debug("MQTT loop already running on disconnect")
+                    self._mqtt_loop_running = True
+                else:
+                    self._mqtt_loop_running = True
 
             def on_log(client, userdata, level, buf):
                 self.logger.debug("MQTT log: %s", buf)
@@ -791,6 +800,16 @@ class MessageBroker:
             self._mqtt_connection.connect(host=self._mqtt_endpoint, port=self._mqtt_port, keepalive=15)
             self._mqtt_connection.loop_start()
             self._mqtt_loop_running = True
+        elif not self._mqtt_loop_running:
+            # If the loop thread died after a disconnect, restart it to allow reconnection attempts.
+            try:
+                self._mqtt_connection.loop_start()
+            except ValueError:
+                # If the loop is already running, just mark it as such.
+                self.logger.debug("MQTT loop already running when attempting restart")
+                self._mqtt_loop_running = True
+            else:
+                self._mqtt_loop_running = True
 
         return self._mqtt_connection
 
