@@ -1,4 +1,5 @@
 """ Unit test for BraingeneersMqttClient, assumes Braingeneers ~/.aws/credentials file exists """
+import logging
 import queue
 import threading
 import time
@@ -7,6 +8,7 @@ import uuid
 import warnings
 
 from unittest.mock import MagicMock
+from unittest.mock import patch
 from tenacity import retry, stop_after_attempt
 
 import braingeneers.iot.messaging as messaging
@@ -216,6 +218,132 @@ class TestBraingeneersMessageBroker(unittest.TestCase):
         topic2, message2 = q2.get(timeout=5)
         self.assertDictEqual(message1, {"test": 1})
         self.assertDictEqual(message2, {"test": 2})
+
+
+class TestMqttDisconnect(unittest.TestCase):
+    def setUp(self):
+        self.config = """
+[braingeneers-mqtt]
+profile-id = test-id
+profile-key = test-key
+endpoint = localhost
+port = 1883
+"""
+
+        # Manually construct MessageBroker without invoking __init__ to avoid
+        # external dependencies such as Redis and JWT credentials.
+        self.broker = messaging.MessageBroker.__new__(messaging.MessageBroker)
+        self.broker.logger = logging.getLogger(__name__)
+        self.broker.name = "test-broker"
+        self.broker._credentials = self.config
+        self.broker._mqtt_connection = None
+        self.broker._mqtt_profile_id = "test-id"
+        self.broker._mqtt_profile_key = "test-key"
+        self.broker._mqtt_endpoint = "localhost"
+        self.broker._mqtt_port = 1883
+        self.broker._boto_iot_client = None
+        self.broker._boto_iot_data_client = None
+        self.broker._redis_client = None
+        self.broker._jwt_service_account_token = None
+        self.broker.certs_temp_dir = None
+        self.broker._subscribed_data_streams = set()
+        self.broker._subscribed_message_callback_map = {}
+        self.broker._subscribe_message_lock = threading.Lock()
+
+    @staticmethod
+    def _make_fake_client_class(event_queue):
+        class FakeMessageInfo:
+            def __init__(self, rc=0):
+                self.rc = rc
+
+        class FakeClient:
+            def __init__(self, _callback_version, _client_id):
+                self.connected = False
+                self.loop_running = False
+                self.on_connect = None
+                self.on_disconnect = None
+                self.on_message = None
+                self.published_payloads = []
+
+            def username_pw_set(self, *_args, **_kwargs):
+                pass
+
+            def reconnect_delay_set(self, *_args, **_kwargs):
+                pass
+
+            def connect(self, *_, **__):
+                self.connected = True
+                if self.on_connect:
+                    self.on_connect(self, None, None, 0)
+
+            def loop_start(self):
+                self.loop_running = True
+
+            def subscribe(self, *_args, **_kwargs):
+                event_queue.put("subscribed")
+
+            def unsubscribe(self, *_args, **_kwargs):
+                pass
+
+            def publish(self, *_args, **_kwargs):
+                info = FakeMessageInfo(rc=0 if self.connected else 1)
+                self.published_payloads.append(kwargs.get("payload"))
+                return info
+
+            def simulate_disconnect(self):
+                self.connected = False
+                self.loop_running = False
+                if self.on_disconnect:
+                    self.on_disconnect(self, None, 1)
+
+            def simulate_reconnect(self):
+                self.connected = True
+                if self.on_connect:
+                    self.on_connect(self, None, None, 0)
+
+            def trigger_message(self, topic, payload):
+                if self.connected and self.loop_running and self.on_message:
+                    class Msg:
+                        def __init__(self, t, p):
+                            self.topic = t
+                            self.payload = p
+
+                    self.on_message(self, None, Msg(topic, payload))
+
+        return FakeClient
+
+    def test_callbacks_continue_after_disconnect_and_reconnect(self):
+        """Expose regression where callbacks stop firing after reconnect."""
+
+        event_queue = queue.Queue()
+        FakeClient = self._make_fake_client_class(event_queue)
+
+        with patch.object(messaging.mqtt_client, "Client", FakeClient):
+            received = queue.Queue()
+
+            # Initialize connection and subscription
+            self.broker.subscribe_message("test/topic", lambda t, m: received.put((t, m)))
+            self.assertEqual(event_queue.get(timeout=1), "subscribed")
+
+            # Deliver a message before disconnect
+            self.broker.mqtt_connection.trigger_message("test/topic", b'{"ok": true}')
+            topic, message = received.get(timeout=1)
+            self.assertEqual(topic, "test/topic")
+            self.assertEqual(message, {"ok": True})
+
+            # Simulate connection drop
+            self.broker.mqtt_connection.simulate_disconnect()
+
+            # Simulate broker reconnecting without restarting the loop thread
+            self.broker.mqtt_connection.simulate_reconnect()
+
+            # Messages after a reconnect should still invoke callbacks.
+            self.broker.mqtt_connection.trigger_message("test/topic", b'{"after": true}')
+
+            # Expected behavior: callbacks keep working and deliver the message.
+            topic, message = received.get(timeout=0.5)
+            self.assertEqual(topic, "test/topic")
+            self.assertEqual(message, {"after": True})
 
 
 class TestInterprocessQueue(unittest.TestCase):
