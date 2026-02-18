@@ -120,6 +120,9 @@ This module wraps a seekable file object (including one returned by `smart_open.
 an adaptive range cache. It is useful when `h5py`/NWB access patterns produce many tiny reads
 over S3.
 
+For detailed behavior, metrics interpretation, and manual validation workflows, see:
+[`docs/source/utils/range_cache_file.md`](docs/source/utils/range_cache_file.md).
+
 ```python
 import h5py
 import braingeneers.utils.smart_open_braingeneers as smart_open

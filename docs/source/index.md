@@ -4,6 +4,7 @@
 :maxdepth: 2
 :hidden:
 
+utils/range_cache_file
 ```
 
 ```{include} ../README.md
