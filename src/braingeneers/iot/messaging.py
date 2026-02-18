@@ -13,6 +13,7 @@ import json
 import braingeneers.iot.shadows as sh
 import pickle
 import importlib
+import requests
 import datetime
 
 from typing import Callable, Tuple, List, Dict, Union
@@ -803,7 +804,13 @@ class MessageBroker:
                 self.logger.debug("MQTT log: %s", buf)
 
             client_id = f'braingeneerspy-{random.randint(0, 1000)}'
-            self._mqtt_connection = mqtt_client.Client(CallbackAPIVersion.VERSION1, client_id)
+            # Preserve session state across reconnects to avoid duplicate deliveries when the
+            # connection is interrupted mid-flight. With a persistent session the broker can
+            # complete any in-flight QoS 2 handshakes after reconnect instead of treating the
+            # messages as new publishes.
+            self._mqtt_connection = mqtt_client.Client(
+                CallbackAPIVersion.VERSION1, client_id=client_id, clean_session=False
+            )
             self._mqtt_connection.username_pw_set(self._mqtt_profile_id, self._mqtt_profile_key)
             self._mqtt_connection.on_connect = on_connect
             self._mqtt_connection.on_disconnect = on_disconnect

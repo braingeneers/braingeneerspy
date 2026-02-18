@@ -251,19 +251,22 @@ port = 1883
         self.broker._subscribe_message_lock = threading.Lock()
 
     @staticmethod
-    def _make_fake_client_class(event_queue):
+    def _make_fake_client_class(event_queue, simulate_duplicate_redelivery=False):
         class FakeMessageInfo:
             def __init__(self, rc=0):
                 self.rc = rc
 
         class FakeClient:
-            def __init__(self, _callback_version, _client_id):
+            def __init__(self, _callback_version, *_args, client_id=None, clean_session=True, **_kwargs):
                 self.connected = False
                 self.loop_running = False
                 self.on_connect = None
                 self.on_disconnect = None
                 self.on_message = None
                 self.published_payloads = []
+                self.client_id = client_id
+                self.clean_session = clean_session
+                self._last_incoming = None
 
             def username_pw_set(self, *_args, **_kwargs):
                 pass
@@ -300,9 +303,22 @@ port = 1883
                 self.connected = True
                 if self.on_connect:
                     self.on_connect(self, None, None, 0)
+                # Simulate a broker replaying the last QoS message when using a clean session.
+                if (
+                    simulate_duplicate_redelivery
+                    and self.clean_session
+                    and self.connected
+                    and self.loop_running
+                    and self.on_message
+                    and self._last_incoming is not None
+                ):
+                    topic, payload = self._last_incoming
+                    self.trigger_message(topic, payload)
 
             def trigger_message(self, topic, payload):
                 if self.connected and self.loop_running and self.on_message:
+                    self._last_incoming = (topic, payload)
+
                     class Msg:
                         def __init__(self, t, p):
                             self.topic = t
@@ -344,6 +360,39 @@ port = 1883
             topic, message = received.get(timeout=0.5)
             self.assertEqual(topic, "test/topic")
             self.assertEqual(message, {"after": True})
+
+    def test_mqtt_client_uses_persistent_session(self):
+        event_queue = queue.Queue()
+        FakeClient = self._make_fake_client_class(event_queue)
+
+        with patch.object(messaging.mqtt_client, "Client", FakeClient):
+            connection = self.broker.mqtt_connection
+            self.assertFalse(connection.clean_session)
+            self.assertIsNotNone(connection.client_id)
+
+    def test_reconnect_does_not_redeliver_duplicate_message(self):
+        event_queue = queue.Queue()
+        FakeClient = self._make_fake_client_class(
+            event_queue, simulate_duplicate_redelivery=True
+        )
+
+        with patch.object(messaging.mqtt_client, "Client", FakeClient):
+            received = queue.Queue()
+
+            self.broker.subscribe_message("test/topic", lambda t, m: received.put((t, m)))
+            self.assertEqual(event_queue.get(timeout=1), "subscribed")
+
+            self.broker.mqtt_connection.trigger_message("test/topic", b'{"id": 1}')
+            topic, message = received.get(timeout=1)
+            self.assertEqual(topic, "test/topic")
+            self.assertEqual(message, {"id": 1})
+
+            self.broker.mqtt_connection.simulate_disconnect()
+            self.broker.mqtt_connection.simulate_reconnect()
+
+            # With clean_session=False we should not receive a replayed duplicate.
+            with self.assertRaises(queue.Empty):
+                received.get(timeout=0.2)
 
 
 class TestInterprocessQueue(unittest.TestCase):
