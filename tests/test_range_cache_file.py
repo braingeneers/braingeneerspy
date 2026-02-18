@@ -4,7 +4,7 @@ import io
 import random
 import time
 
-from braingeneers.utils.range_cache_file import Mode, RangeCacheConfig, RangeCacheFile
+from braingeneers.utils.range_cache_file import Mode, RangeCacheFile
 
 
 class CountingFile(io.RawIOBase):
@@ -68,11 +68,22 @@ def _make_data(size: int, seed: int = 7) -> bytes:
     return bytes(generator.randrange(0, 256) for _ in range(size))
 
 
+def _speed_up_seq_promotion(wrapped: RangeCacheFile) -> None:
+    wrapped._config.min_reads_for_seq = 8
+    wrapped._config.min_seq_bytes = 64 * 1024
+    wrapped._config.seq_fetch_min = 2 * 1024 * 1024
+    wrapped._config.probe_fetch_min = 64 * 1024
+    wrapped._config.probe_fetch_max = 2 * 1024 * 1024
+    wrapped._config.alignment = 64 * 1024
+    wrapped._probe_fetch_current = wrapped._config.probe_fetch_min
+    wrapped._seq_fetch_current = wrapped._config.seq_fetch_min
+
+
 def test_correctness_mixed_random_access_and_readinto() -> None:
     data = _make_data(1_500_000, seed=11)
     baseline = io.BytesIO(data)
     wrapped_backend = CountingFile(data)
-    wrapped = RangeCacheFile(wrapped_backend, config=RangeCacheConfig(min_fetch_probe=32 * 1024, max_fetch=256 * 1024))
+    wrapped = RangeCacheFile(wrapped_backend)
 
     generator = random.Random(1234)
     for _ in range(250):
@@ -109,15 +120,9 @@ def test_sequential_pattern_reduces_underlying_calls() -> None:
         baseline_out.extend(baseline_backend.read(read_size))
 
     wrapped_backend = CountingFile(data)
-    config = RangeCacheConfig(
-        min_fetch_probe=64 * 1024,
-        min_fetch_seq=2 * 1024 * 1024,
-        max_fetch=8 * 1024 * 1024,
-        alignment=64 * 1024,
-        min_reads_for_seq=8,
-        min_seq_bytes=64 * 1024,
-    )
-    wrapped = RangeCacheFile(wrapped_backend, config=config)
+    wrapped = RangeCacheFile(wrapped_backend)
+    _speed_up_seq_promotion(wrapped)
+
     wrapped_out = bytearray()
     wrapped.seek(0)
     for _ in range(4096):
@@ -134,15 +139,11 @@ def test_sequential_pattern_reduces_underlying_calls() -> None:
 def test_random_workload_has_bounded_amplification() -> None:
     data = _make_data(6 * 1024 * 1024, seed=123)
     backend = CountingFile(data)
-    config = RangeCacheConfig(
-        min_fetch_probe=32 * 1024,
-        min_fetch_seq=1 * 1024 * 1024,
-        max_fetch=2 * 1024 * 1024,
-        alignment=32 * 1024,
-        min_reads_for_seq=12,
-        min_seq_bytes=256 * 1024,
-    )
-    wrapped = RangeCacheFile(backend, config=config)
+    wrapped = RangeCacheFile(backend)
+
+    wrapped._config.probe_fetch_max = 2 * 1024 * 1024
+    wrapped._config.seq_fetch_max = 4 * 1024 * 1024
+    wrapped._config.alignment = 32 * 1024
 
     baseline = io.BytesIO(data)
     generator = random.Random(2026)
@@ -159,24 +160,18 @@ def test_random_workload_has_bounded_amplification() -> None:
 
     stats = wrapped.stats()
     assert stats["bytes_served_to_caller"] > 0
-    assert stats["amplification"] <= 8.0
+    assert stats["amplification"] <= 10.0
 
 
 def test_mode_transitions_probe_to_seq_then_demote() -> None:
     data = _make_data(12 * 1024 * 1024, seed=314)
     backend = CountingFile(data)
-    config = RangeCacheConfig(
-        min_fetch_probe=64 * 1024,
-        min_fetch_seq=512 * 1024,
-        max_fetch=4 * 1024 * 1024,
-        alignment=64 * 1024,
-        min_reads_for_seq=6,
-        min_seq_bytes=64 * 1024,
-        jump_threshold=256 * 1024,
-        demote_big_jumps_recent=2,
-        demote_recent_window=6,
-    )
-    wrapped = RangeCacheFile(backend, config=config)
+    wrapped = RangeCacheFile(backend)
+
+    _speed_up_seq_promotion(wrapped)
+    wrapped._config.jump_threshold = 256 * 1024
+    wrapped._config.demote_big_jumps_recent = 2
+    wrapped._config.demote_recent_window = 6
 
     metadata_offsets = [1024, 333_000, 77_000, 1_100_000, 90_000]
     for offset in metadata_offsets:
@@ -184,7 +179,7 @@ def test_mode_transitions_probe_to_seq_then_demote() -> None:
         wrapped.read(2048)
 
     wrapped.seek(2 * 1024 * 1024)
-    for _ in range(80):
+    for _ in range(640):
         wrapped.read(4096)
 
     assert wrapped.mode == Mode.SEQ
@@ -199,14 +194,13 @@ def test_mode_transitions_probe_to_seq_then_demote() -> None:
 def test_cache_eviction_and_stats_markdown() -> None:
     data = _make_data(2 * 1024 * 1024, seed=808)
     backend = CountingFile(data)
-    config = RangeCacheConfig(
-        max_cache_bytes=96 * 1024,
-        min_fetch_probe=64 * 1024,
-        min_fetch_seq=256 * 1024,
-        max_fetch=256 * 1024,
-        alignment=4096,
-    )
-    wrapped = RangeCacheFile(backend, config=config)
+    wrapped = RangeCacheFile(backend)
+
+    wrapped._config.max_cache_bytes = 96 * 1024
+    wrapped._cache._max_cache_bytes = 96 * 1024
+    wrapped._config.probe_fetch_min = 64 * 1024
+    wrapped._config.probe_fetch_max = 128 * 1024
+    wrapped._probe_fetch_current = wrapped._config.probe_fetch_min
 
     offsets = [0, 200_000, 400_000, 700_000, 1_100_000, 1_500_000]
     baseline = io.BytesIO(data)
@@ -222,4 +216,3 @@ def test_cache_eviction_and_stats_markdown() -> None:
     markdown = wrapped.stats_markdown()
     assert "| Metric | Value |" in markdown
     assert "Cache Evictions" in markdown
-

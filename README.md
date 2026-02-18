@@ -123,11 +123,10 @@ over S3.
 ```python
 import h5py
 import braingeneers.utils.smart_open_braingeneers as smart_open
-from braingeneers.utils.range_cache_file import RangeCacheConfig, RangeCacheFile
+from braingeneers.utils.range_cache_file import RangeCacheFile
 
-config = RangeCacheConfig(min_fetch_probe=1024 * 1024, min_fetch_seq=16 * 1024 * 1024)
 with smart_open.open("s3://braingeneersdev/example.nwb", "rb") as remote_file:
-    wrapped = RangeCacheFile(remote_file, config=config)
+    wrapped = RangeCacheFile(remote_file)
     with h5py.File(wrapped, "r") as h5:
         print(list(h5.keys()))
     print(wrapped.stats_markdown())

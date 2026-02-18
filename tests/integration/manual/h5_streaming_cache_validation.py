@@ -7,7 +7,7 @@ import time
 import h5py
 
 import braingeneers.utils.smart_open_braingeneers as smart_open
-from braingeneers.utils.range_cache_file import RangeCacheConfig, RangeCacheFile
+from braingeneers.utils.range_cache_file import RangeCacheFile
 
 
 DEFAULT_URI = "s3://braingeneers/ephys/2022-03-17-e-tetanusucsb/original/data/experiment1_stim.raw.h5"
@@ -32,18 +32,10 @@ def main() -> None:
     )
     parser.add_argument("--uri", default=DEFAULT_URI, help="S3 URI to the H5/NWB file.")
     parser.add_argument("--dataset-path", default=None, help="Dataset path inside the H5 file (default: auto-detect).")
-    parser.add_argument("--target-mb", type=float, default=5.0, help="Approx target segment size in MiB.")
-    parser.add_argument("--segments", type=int, default=8, help="Number of random segments to read.")
+    parser.add_argument("--target-mb", type=float, default=25.0, help="Approx target segment size in MiB.")
+    parser.add_argument("--segments", type=int, default=20, help="Number of random segments to read.")
     parser.add_argument("--seed", type=int, default=20260218, help="Random seed for reproducible segment selection.")
     args = parser.parse_args()
-
-    config = RangeCacheConfig(
-        max_cache_bytes=512 * 1024 * 1024,
-        min_fetch_probe=1 * 1024 * 1024,
-        min_fetch_seq=16 * 1024 * 1024,
-        max_fetch=64 * 1024 * 1024,
-        alignment=1 * 1024 * 1024,
-    )
 
     print("Range-cache remote H5 segment reader")
     print(f"- uri: {args.uri}")
@@ -53,7 +45,7 @@ def main() -> None:
 
     rng = random.Random(args.seed)
     with smart_open.open(args.uri, "rb") as remote_file:
-        wrapped = RangeCacheFile(remote_file, config=config)
+        wrapped = RangeCacheFile(remote_file)
         with h5py.File(wrapped, "r") as h5:
             dataset_path = resolve_dataset_path(h5, args.dataset_path)
             dataset = h5[dataset_path]

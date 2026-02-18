@@ -4,7 +4,7 @@ import io
 import os
 import time
 
-from braingeneers.utils.range_cache_file import RangeCacheConfig, RangeCacheFile
+from braingeneers.utils.range_cache_file import RangeCacheFile
 
 
 class LatencyCountingFile(io.RawIOBase):
@@ -67,17 +67,7 @@ def run_baseline(data: bytes, read_size: int, read_count: int, latency_sec: floa
 
 def run_wrapped(data: bytes, read_size: int, read_count: int, latency_sec: float) -> tuple[float, dict[str, object]]:
     backend = LatencyCountingFile(data, latency_sec=latency_sec)
-    wrapped = RangeCacheFile(
-        backend,
-        config=RangeCacheConfig(
-            min_fetch_probe=256 * 1024,
-            min_fetch_seq=4 * 1024 * 1024,
-            max_fetch=16 * 1024 * 1024,
-            alignment=64 * 1024,
-            min_reads_for_seq=8,
-            min_seq_bytes=256 * 1024,
-        ),
-    )
+    wrapped = RangeCacheFile(backend)
     start = time.perf_counter()
     for _ in range(read_count):
         wrapped.read(read_size)
