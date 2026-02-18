@@ -1,5 +1,7 @@
 import warnings
 
+from braingeneers.utils.range_cache_file import RangeCacheConfig, RangeCacheFile
+
 
 # Deprecated import braingeneers.utils.messaging is allowed for backwards compatibility.
 # This code should be removed in the future. This was added 27apr2022 by David Parks.
@@ -23,3 +25,6 @@ def __getattr__(name):
 
     else:
         raise AttributeError(name)
+
+
+__all__ = ("RangeCacheFile", "RangeCacheConfig")

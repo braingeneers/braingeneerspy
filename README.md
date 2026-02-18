@@ -114,6 +114,25 @@ import braingeneers.utils.smart_open_braingeneers as smart_open
 open = smart_open.open
 ```
 
+### `braingeneers.utils.range_cache_file`
+
+This module wraps a seekable file object (including one returned by `smart_open.open`) with
+an adaptive range cache. It is useful when `h5py`/NWB access patterns produce many tiny reads
+over S3.
+
+```python
+import h5py
+import braingeneers.utils.smart_open_braingeneers as smart_open
+from braingeneers.utils.range_cache_file import RangeCacheConfig, RangeCacheFile
+
+config = RangeCacheConfig(min_fetch_probe=1024 * 1024, min_fetch_seq=16 * 1024 * 1024)
+with smart_open.open("s3://braingeneersdev/example.nwb", "rb") as remote_file:
+    wrapped = RangeCacheFile(remote_file, config=config)
+    with h5py.File(wrapped, "r") as h5:
+        print(list(h5.keys()))
+    print(wrapped.stats_markdown())
+```
+
 ## Customizing S3 Endpoints
 
 By default, `smart_open` and `s3wrangler` are pre-configured for the standard Braingeneers S3 endpoint. However, you can specify a custom `ENDPOINT` if you'd like to use a different S3 service. This can be a local path or an endpoint URL for another S3 service (note that `s3wrangler` only supports S3 services, not local paths, while `smart_open` supports local paths).
