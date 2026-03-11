@@ -1,4 +1,6 @@
 """ A simplified MQTT client for Braingeneers specific connections """
+from collections import OrderedDict
+import hashlib
 import redis
 import logging
 import os
@@ -8,7 +10,6 @@ import configparser
 import threading
 import queue
 import uuid
-import random
 import json
 import braingeneers.iot.shadows as sh
 import pickle
@@ -30,6 +31,7 @@ REDIS_PORT = 6379
 # JWT service-account tokens for access to web services calls, see mission_control repo for details
 GENERATE_TOKEN_URL = 'https://service-accounts.braingeneers.gi.ucsc.edu/generate_token'
 JWT_TOKEN_REFRESH_DAYS = 21  # Automatically refresh service-account tokens when <21 days remain on it (once a week for the default 1 month tokens)
+MQTT_DUPLICATE_CACHE_SIZE = 512
 
 class MQTTError(RuntimeError):
     """Exception raised for errors during MQTT operations."""
@@ -162,6 +164,7 @@ class MessageBroker:
         self.certs_temp_dir = None
         self._mqtt_connection = None
         self._mqtt_loop_running = False
+        self._mqtt_client_id = f"braingeneerspy-{uuid.uuid4()}"
         self._mqtt_profile_id = config['braingeneers-mqtt']['profile-id']
         self._mqtt_profile_key = config['braingeneers-mqtt']['profile-key']
         self._mqtt_endpoint = config['braingeneers-mqtt']['endpoint']
@@ -174,6 +177,8 @@ class MessageBroker:
         self.shadow_interface = sh.DatabaseInteractor(jwt_service_token=self.jwt_service_account_token)
 
         self._subscribed_data_streams = set()  # keep track of subscribed data streams
+        self._recent_duplicate_mqtt_messages = OrderedDict()
+        self._recent_duplicate_mqtt_messages_lock = threading.Lock()
         self._subscribed_message_callback_map = {}  # keep track of subscribed message callbacks, key is regex, value is tuple of (callback, topic)
         self._subscribe_message_lock = threading.Lock()  # lock for updating self._subscribed_message_callback_map
 
@@ -413,11 +418,20 @@ class MessageBroker:
             a CallableQueue object is created and returned and all messages go into that queue.
         :return: the original callable, this is returned for convenience only, it's not altered in any way.
         """
+        self._ensure_mqtt_runtime_state()
         callback = callback if callback is not None else CallableQueue()
         assert isinstance(callback, Callable), 'callback must be a callable function (or CallableQueue object) ' \
                                                'with a signature of (topic, message)'
 
         def on_message(_client, _userdata, msg):
+            if self._is_duplicate_mqtt_redelivery(msg):
+                self.logger.info(
+                    "Dropping retransmitted MQTT duplicate for topic %s mid %s",
+                    msg.topic,
+                    getattr(msg, "mid", None),
+                )
+                return
+
             try:
                 message = json.loads(msg.payload.decode())
             except ValueError:
@@ -432,6 +446,9 @@ class MessageBroker:
                     for topic_regex_loop, (callback_loop, _) in self._subscribed_message_callback_map.items()
                     if re.match(topic_regex_loop, msg.topic)
                 ]
+
+            if matched_callbacks:
+                self._remember_mqtt_message(msg)
             for callback_loop in matched_callbacks:
                 callback_loop(msg.topic, message)
 
@@ -746,11 +763,73 @@ class MessageBroker:
             last_update_exclusive = '0-0'
         return last_update_exclusive
 
+    def _ensure_mqtt_runtime_state(self):
+        """Populate MQTT runtime fields for normal and manually-constructed instances."""
+        if not hasattr(self, "_mqtt_loop_running"):
+            self._mqtt_loop_running = False
+        if not hasattr(self, "_mqtt_client_id"):
+            self._mqtt_client_id = f"braingeneerspy-{uuid.uuid4()}"
+        if not hasattr(self, "_recent_duplicate_mqtt_messages"):
+            self._recent_duplicate_mqtt_messages = OrderedDict()
+        if not hasattr(self, "_recent_duplicate_mqtt_messages_lock"):
+            self._recent_duplicate_mqtt_messages_lock = threading.Lock()
+
+    @staticmethod
+    def _mqtt_message_payload_digest(msg) -> Union[bytes, None]:
+        payload = getattr(msg, "payload", None)
+        if payload is None:
+            return None
+        if not isinstance(payload, (bytes, bytearray)):
+            payload = str(payload).encode("utf-8")
+        return hashlib.sha1(payload).digest()
+
+    @staticmethod
+    def _mqtt_message_topic(msg) -> Union[str, None]:
+        topic = getattr(msg, "topic", None)
+        if topic is None:
+            return None
+        return topic.decode("utf-8") if isinstance(topic, bytes) else topic
+
+    def _mqtt_message_dedupe_key(self, msg) -> Union[Tuple[str, int, int, bytes], None]:
+        mid = getattr(msg, "mid", None)
+        topic = self._mqtt_message_topic(msg)
+        payload_digest = self._mqtt_message_payload_digest(msg)
+        if mid is None or topic is None or payload_digest is None:
+            return None
+        return topic, mid, getattr(msg, "qos", None), payload_digest
+
+    def _clear_recent_duplicate_mqtt_messages(self) -> None:
+        self._ensure_mqtt_runtime_state()
+        with self._recent_duplicate_mqtt_messages_lock:
+            self._recent_duplicate_mqtt_messages.clear()
+
+    def _remember_mqtt_message(self, msg) -> None:
+        dedupe_key = self._mqtt_message_dedupe_key(msg)
+        if dedupe_key is None:
+            return
+
+        with self._recent_duplicate_mqtt_messages_lock:
+            self._recent_duplicate_mqtt_messages[dedupe_key] = None
+            self._recent_duplicate_mqtt_messages.move_to_end(dedupe_key)
+            if len(self._recent_duplicate_mqtt_messages) > MQTT_DUPLICATE_CACHE_SIZE:
+                self._recent_duplicate_mqtt_messages.popitem(last=False)
+
+    def _is_duplicate_mqtt_redelivery(self, msg) -> bool:
+        self._ensure_mqtt_runtime_state()
+        if not getattr(msg, "dup", False):
+            return False
+
+        dedupe_key = self._mqtt_message_dedupe_key(msg)
+        if dedupe_key is None:
+            return False
+
+        with self._recent_duplicate_mqtt_messages_lock:
+            return dedupe_key in self._recent_duplicate_mqtt_messages
+
     @property
     def mqtt_connection(self):
         """ Lazy initialization of mqtt connection. """
-        if not hasattr(self, "_mqtt_loop_running"):
-            self._mqtt_loop_running = False
+        self._ensure_mqtt_runtime_state()
 
         def _is_loop_alive(client) -> bool:
             """Best-effort detection of the paho-mqtt network loop state."""
@@ -803,13 +882,10 @@ class MessageBroker:
             def on_log(client, userdata, level, buf):
                 self.logger.debug("MQTT log: %s", buf)
 
-            client_id = f'braingeneerspy-{random.randint(0, 1000)}'
-            # Preserve session state across reconnects to avoid duplicate deliveries when the
-            # connection is interrupted mid-flight. With a persistent session the broker can
-            # complete any in-flight QoS 2 handshakes after reconnect instead of treating the
-            # messages as new publishes.
             self._mqtt_connection = mqtt_client.Client(
-                CallbackAPIVersion.VERSION1, client_id=client_id, clean_session=False
+                CallbackAPIVersion.VERSION1,
+                client_id=self._mqtt_client_id,
+                clean_session=True,
             )
             self._mqtt_connection.username_pw_set(self._mqtt_profile_id, self._mqtt_profile_key)
             self._mqtt_connection.on_connect = on_connect
@@ -884,6 +960,21 @@ class MessageBroker:
 
     def shutdown(self):
         """ Release resources and shutdown connections as needed. """
+        if getattr(self, "_mqtt_connection", None) is not None:
+            try:
+                self._mqtt_connection.loop_stop()
+            except (AttributeError, TypeError):
+                pass
+
+            try:
+                self._mqtt_connection.disconnect()
+            except (AttributeError, TypeError):
+                pass
+
+            self._mqtt_connection = None
+            self._mqtt_loop_running = False
+            self._clear_recent_duplicate_mqtt_messages()
+
         if self.certs_temp_dir is not None:
             self.certs_temp_dir.cleanup()
 

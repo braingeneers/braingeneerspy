@@ -267,6 +267,9 @@ port = 1883
                 self.client_id = client_id
                 self.clean_session = clean_session
                 self._last_incoming = None
+                self._next_mid = 1
+                self.loop_stop_calls = 0
+                self.disconnect_calls = 0
 
             def username_pw_set(self, *_args, **_kwargs):
                 pass
@@ -281,6 +284,10 @@ port = 1883
 
             def loop_start(self):
                 self.loop_running = True
+
+            def loop_stop(self):
+                self.loop_running = False
+                self.loop_stop_calls += 1
 
             def subscribe(self, *_args, **_kwargs):
                 event_queue.put("subscribed")
@@ -299,32 +306,36 @@ port = 1883
                 if self.on_disconnect:
                     self.on_disconnect(self, None, 1)
 
+            def disconnect(self):
+                self.connected = False
+                self.disconnect_calls += 1
+
             def simulate_reconnect(self):
                 self.connected = True
                 if self.on_connect:
                     self.on_connect(self, None, None, 0)
-                # Simulate a broker replaying the last QoS message when using a clean session.
                 if (
                     simulate_duplicate_redelivery
-                    and self.clean_session
                     and self.connected
                     and self.loop_running
                     and self.on_message
                     and self._last_incoming is not None
                 ):
-                    topic, payload = self._last_incoming
-                    self.trigger_message(topic, payload)
+                    topic, payload, mid = self._last_incoming
+                    self.trigger_message(topic, payload, mid=mid, dup=True)
 
-            def trigger_message(self, topic, payload):
+            def trigger_message(self, topic, payload, mid=None, dup=False):
                 if self.connected and self.loop_running and self.on_message:
-                    self._last_incoming = (topic, payload)
-
-                    class Msg:
-                        def __init__(self, t, p):
-                            self.topic = t
-                            self.payload = p
-
-                    self.on_message(self, None, Msg(topic, payload))
+                    message_mid = self._next_mid if mid is None else mid
+                    if mid is None:
+                        self._next_mid += 1
+                    self._last_incoming = (topic, payload, message_mid)
+                    message = messaging.mqtt_client.MQTTMessage(mid=message_mid)
+                    message.topic = topic.encode("utf-8")
+                    message.payload = payload
+                    message.dup = dup
+                    message.qos = 2
+                    self.on_message(self, None, message)
 
         return FakeClient
 
@@ -361,14 +372,14 @@ port = 1883
             self.assertEqual(topic, "test/topic")
             self.assertEqual(message, {"after": True})
 
-    def test_mqtt_client_uses_persistent_session(self):
+    def test_mqtt_client_uses_clean_session_with_stable_client_id(self):
         event_queue = queue.Queue()
         FakeClient = self._make_fake_client_class(event_queue)
 
         with patch.object(messaging.mqtt_client, "Client", FakeClient):
             connection = self.broker.mqtt_connection
-            self.assertFalse(connection.clean_session)
-            self.assertIsNotNone(connection.client_id)
+            self.assertTrue(connection.clean_session)
+            self.assertTrue(connection.client_id.startswith("braingeneerspy-"))
 
     def test_reconnect_does_not_redeliver_duplicate_message(self):
         event_queue = queue.Queue()
@@ -390,9 +401,52 @@ port = 1883
             self.broker.mqtt_connection.simulate_disconnect()
             self.broker.mqtt_connection.simulate_reconnect()
 
-            # With clean_session=False we should not receive a replayed duplicate.
+            # Replayed QoS retransmissions from the same session should be ignored.
             with self.assertRaises(queue.Empty):
                 received.get(timeout=0.2)
+
+    def test_same_mid_with_different_payload_is_not_dropped(self):
+        event_queue = queue.Queue()
+        FakeClient = self._make_fake_client_class(event_queue)
+
+        with patch.object(messaging.mqtt_client, "Client", FakeClient):
+            received = queue.Queue()
+
+            self.broker.subscribe_message("test/topic", lambda t, m: received.put((t, m)))
+            self.assertEqual(event_queue.get(timeout=1), "subscribed")
+
+            self.broker.mqtt_connection.trigger_message("test/topic", b'{"id": 1}', mid=7)
+            topic, message = received.get(timeout=1)
+            self.assertEqual(topic, "test/topic")
+            self.assertEqual(message, {"id": 1})
+
+            # A later retransmission with the same packet id but different payload
+            # must still be delivered.
+            self.broker.mqtt_connection.trigger_message(
+                "test/topic", b'{"id": 2}', mid=7, dup=True
+            )
+            topic, message = received.get(timeout=1)
+            self.assertEqual(topic, "test/topic")
+            self.assertEqual(message, {"id": 2})
+
+    def test_shutdown_stops_mqtt_client_and_clears_duplicate_cache(self):
+        event_queue = queue.Queue()
+        FakeClient = self._make_fake_client_class(event_queue)
+
+        with patch.object(messaging.mqtt_client, "Client", FakeClient):
+            self.broker.subscribe_message("test/topic", lambda *_args: None)
+            self.assertEqual(event_queue.get(timeout=1), "subscribed")
+
+            self.broker.mqtt_connection.trigger_message("test/topic", b'{"id": 1}', mid=5)
+            self.assertTrue(self.broker._recent_duplicate_mqtt_messages)
+
+            connection = self.broker.mqtt_connection
+            self.broker.shutdown()
+
+            self.assertEqual(connection.loop_stop_calls, 1)
+            self.assertEqual(connection.disconnect_calls, 1)
+            self.assertFalse(self.broker._recent_duplicate_mqtt_messages)
+            self.assertIsNone(self.broker._mqtt_connection)
 
 
 class TestInterprocessQueue(unittest.TestCase):

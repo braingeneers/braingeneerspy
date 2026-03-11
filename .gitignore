@@ -178,3 +178,6 @@ src/braingeneers/iot/service_account/config.json
 
 # data-lifecycle tmp
 data-lifecycle/tmp
+
+# Local implementation plans
+plans/
