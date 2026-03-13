@@ -166,6 +166,45 @@ spec:
 
 Please note that this will only work on jobs run in the PRP environment. Setting the `ENDPOINT` environment variable can also be used to specify an endpoint other than the PRP/S3.
 
+## Internal Service HTTP Controls
+
+Some Braingeneers deployments call web services over an internal network name instead of the public ingress hostname. In those cases, you may need to control two behaviors independently:
+
+- whether the HTTP client should inherit environment-derived proxy or CA settings
+- whether the client should attach a bearer token at all
+
+For `braingeneers.iot.shadows.DatabaseInteractor`, these are available both as constructor arguments and as environment variables:
+
+- `trust_env` or `BRAINGENEERS_HTTP_TRUST_ENV`
+- `use_auth` or `BRAINGENEERS_HTTP_USE_AUTH`
+
+Defaults preserve existing behavior:
+
+- `trust_env=True`
+- `use_auth=True`
+
+Example for an internal Strapi/ShadowsDB service that is reachable directly on a private network and does not expect bearer authentication:
+
+```bash
+export BRAINGENEERS_HTTP_TRUST_ENV=false
+export BRAINGENEERS_HTTP_USE_AUTH=false
+```
+
+You can also set these directly in code:
+
+```python
+from braingeneers.iot.shadows import DatabaseInteractor
+
+db = DatabaseInteractor(
+    overwrite_endpoint="http://shadows-db:1337/api",
+    trust_env=False,
+    use_auth=False,
+    jwt_service_token=service_account_config,
+)
+```
+
+Use this only when the target service is intentionally unsecured on the internal network or when authentication is handled upstream by another trusted component. Public ingress endpoints should generally keep `use_auth=True`.
+
 ## Documentation
 
 The docs directory has been set up using `sphinx-build -M html docs/source/ docs/build/` to create a base project Documentation structure. You can add inline documentation (NumPy style) to further enrich our project's documentation. To render the documentation locally, navigate to the `docs/build/html` folder in the terminal and run `python3 -m http.server`.
