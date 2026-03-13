@@ -44,7 +44,24 @@ class DatabaseInteractor:
         - get_sample: returns a sample object given its id
         - get_well: returns a well object given its id
     """
-    def __init__(self, credentials: Union[str, io.IOBase] = None, overwrite_endpoint=None, overwrite_api_key=None, jwt_service_token=None) -> None:
+    @staticmethod
+    def _parse_bool(value):
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return None
+        return str(value).strip().lower() not in {"0", "false", "no", "off", ""}
+
+    def __init__(
+        self,
+        credentials: Union[str, io.IOBase] = None,
+        overwrite_endpoint=None,
+        overwrite_api_key=None,
+        jwt_service_token=None,
+        session=None,
+        trust_env=None,
+        timeout=30,
+    ) -> None:
 
         if credentials is None:
             credentials = os.path.expanduser('~/.aws/credentials')  # default credentials location
@@ -76,18 +93,35 @@ class DatabaseInteractor:
         if overwrite_api_key:
             self.token = overwrite_api_key
         self.jwt_service_token = jwt_service_token
+        self.timeout = timeout
+        self.session = session or requests.Session()
+        trust_env = self._parse_bool(trust_env)
+        if trust_env is None:
+            trust_env = self._parse_bool(os.getenv("BRAINGENEERS_SHADOWS_TRUST_ENV"))
+        if trust_env is None:
+            trust_env = True
+        self.session.trust_env = trust_env
+
+    def _auth_headers(self):
+        return {"Authorization": "Bearer " + self.jwt_service_token['access_token']}
+
+    def _request(self, method, url, **kwargs):
+        kwargs.setdefault("timeout", self.timeout)
+        return self.session.request(method, url, **kwargs)
 
     class __API_object:
         """
         This class is used to represent objects in the database as python objects
         """
-        def __init__(self, endpoint, api_token, api_object_id, jwt_service_token):
+        def __init__(self, endpoint, api_token, api_object_id, jwt_service_token, request_fn, timeout):
             self.endpoint = endpoint
             self.token = api_token
             self.id = None
             self.attributes = {}
             self.api_object_id = api_object_id
             self.jwt_service_token = jwt_service_token
+            self._request = request_fn
+            self.timeout = timeout
 
         def __str__(self):
             var_list = filter(lambda x: x not in ["endpoint", "token", "api_object_id"], vars(self))
@@ -124,11 +158,11 @@ class DatabaseInteractor:
             """
             url = self.endpoint + "/"+self.api_object_id+"?filters[name][$eq]=" + self.attributes["name"] + "&populate=%2A"
             headers = {"Authorization": "Bearer " + self.jwt_service_token['access_token']}
-            response = requests.get(url, headers=headers)
+            response = self._request("GET", url, headers=headers, timeout=self.timeout)
             if len(response.json()['data']) == 0:
                 api_url = self.endpoint+"/"+self.api_object_id+"?populate=%2A"
                 data = {"data": self.attributes}
-                response = requests.post(api_url, json=data, headers=headers)
+                response = self._request("POST", api_url, json=data, headers=headers, timeout=self.timeout)
                 if response.status_code == 200:
                     self.parse_API_response(response.json()['data'])
             else:
@@ -145,7 +179,7 @@ class DatabaseInteractor:
             url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
             headers = {"Authorization": "Bearer " + self.jwt_service_token['access_token']}
             data = {"data": self.attributes}
-            response = requests.put(url, headers=headers, json=data)
+            response = self._request("PUT", url, headers=headers, json=data, timeout=self.timeout)
             self.parse_API_response(response.json()['data'])
 
         def pull(self):
@@ -154,7 +188,7 @@ class DatabaseInteractor:
             """
             url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
             headers = {"Authorization": "Bearer " + self.jwt_service_token['access_token']}
-            response = requests.get(url, headers=headers)
+            response = self._request("GET", url, headers=headers, timeout=self.timeout)
             if len(response.json()['data']) == 0:
                 raise Exception("Object not found")
 
@@ -166,7 +200,7 @@ class DatabaseInteractor:
             """
             url = self.endpoint + "/"+self.api_object_id+"?filters[name][$eq]=" + name + "&populate=%2A"
             headers = {"Authorization": "Bearer " + self.jwt_service_token['access_token']}
-            response = requests.get(url, headers=headers)
+            response = self._request("GET", url, headers=headers, timeout=self.timeout)
             if len(response.json()['data']) == 0:
                 raise Exception("no " + self.api_object_id + " object with name " + name)
             else:
@@ -178,7 +212,7 @@ class DatabaseInteractor:
             """
             url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
             headers = {"Authorization": "Bearer " + self.jwt_service_token['access_token']}
-            response = requests.get(url, headers=headers)
+            response = self._request("GET", url, headers=headers, timeout=self.timeout)
             if len(response.json()['data']) == 0:
                 raise Exception("Object not found")
             else:
@@ -192,7 +226,7 @@ class DatabaseInteractor:
             """
             url = self.endpoint + "/"+self.api_object_id+"/" + str(self.id) + "?populate=%2A"
             headers = {"Authorization": "Bearer " + self.jwt_service_token['access_token']}
-            response = requests.get(url, headers=headers)
+            response = self._request("GET", url, headers=headers, timeout=self.timeout)
             if len(response.json()['data']) == 0:
                 raise Exception("Object not found")
             else:
@@ -202,8 +236,8 @@ class DatabaseInteractor:
                 self.push()
 
     class __Thing(__API_object):
-        def __init__(self, endpoint, api_token, jwt_service_token):
-            super().__init__(endpoint, api_token, "interaction-things", jwt_service_token)
+        def __init__(self, endpoint, api_token, jwt_service_token, request_fn, timeout):
+            super().__init__(endpoint, api_token, "interaction-things", jwt_service_token, request_fn, timeout)
 
         def add_to_shadow(self, json):
             if self.attributes["shadow"] is None:
@@ -243,8 +277,15 @@ class DatabaseInteractor:
             self.push()
 
     class __Experiment(__API_object):
-        def __init__(self, endpoint, api_token, jwt_service_token):
-            super().__init__(endpoint, api_token, "experiments", jwt_service_token=jwt_service_token)
+        def __init__(self, endpoint, api_token, jwt_service_token, request_fn, timeout):
+            super().__init__(
+                endpoint,
+                api_token,
+                "experiments",
+                jwt_service_token=jwt_service_token,
+                request_fn=request_fn,
+                timeout=timeout,
+            )
 
         def add_plate(self, plate):
             # Bidirectional relations have an owner and a related object, plate owns this relation
@@ -252,8 +293,8 @@ class DatabaseInteractor:
             self.pull()
 
     class __Plate(__API_object):
-        def __init__(self, endpoint, api_token, jwt_service_token):
-            super().__init__(endpoint, api_token, "plates", jwt_service_token)
+        def __init__(self, endpoint, api_token, jwt_service_token, request_fn, timeout):
+            super().__init__(endpoint, api_token, "plates", jwt_service_token, request_fn, timeout)
 
         def add_thing(self, thing):
             """
@@ -311,12 +352,12 @@ class DatabaseInteractor:
             self.push()
 
     class __Well(__API_object):
-        def __init__(self, endpoint, api_token, jwt_service_token):
-            super().__init__(endpoint, api_token, "wells", jwt_service_token)
+        def __init__(self, endpoint, api_token, jwt_service_token, request_fn, timeout):
+            super().__init__(endpoint, api_token, "wells", jwt_service_token, request_fn, timeout)
         
     class __Sample(__API_object):
-        def __init__(self, endpoint, api_token, jwt_service_token):
-            super().__init__(endpoint, api_token, "samples", jwt_service_token)
+        def __init__(self, endpoint, api_token, jwt_service_token, request_fn, timeout):
+            super().__init__(endpoint, api_token, "samples", jwt_service_token, request_fn, timeout)
 
     def empty_trash(self):
         """
@@ -326,21 +367,21 @@ class DatabaseInteractor:
         for object in object_list:
           url = self.endpoint + "/"+object+"?filters[marked_for_deletion][$eq]=true&populate=%2A"
           headers = {"Authorization": "Bearer " + self.jwt_service_token['access_token']}
-          response = requests.get(url, headers=headers)
+          response = self._request("GET", url, headers=headers)
           for item in response.json()['data']:
               url = self.endpoint + "/"+object+"/" + str(item['id'])
-              response = requests.delete(url, headers=headers)
+              response = self._request("DELETE", url, headers=headers)
               print("deleted object of type: " + object + " with id " + str(item['id']))
         
     def create_interaction_thing(self, type, name):
-        thing = self.__Thing(self.endpoint, self.token, self.jwt_service_token)
+        thing = self.__Thing(self.endpoint, self.token, self.jwt_service_token, self._request, self.timeout)
         thing.attributes["name"] = name
         thing.attributes["type"] = type
         thing.spawn()
         return thing
 
     def create_plate(self, name, rows, columns, image_params={}):
-        plate = self.__Plate(self.endpoint, self.token, self.jwt_service_token)
+        plate = self.__Plate(self.endpoint, self.token, self.jwt_service_token, self._request, self.timeout)
         plate.attributes["name"] = name
         plate.attributes["rows"] = rows
         plate.attributes["columns"] = columns
@@ -350,7 +391,7 @@ class DatabaseInteractor:
         if len(plate.attributes["wells"]) == 0 or plate.attributes["wells"] is None:
             for i in range(1, rows+1):
                 for j in range(1, columns+1):
-                    well = self.__Well(self.endpoint, self.token, self.jwt_service_token)
+                    well = self.__Well(self.endpoint, self.token, self.jwt_service_token, self._request, self.timeout)
                     well.attributes["name"] = plate.attributes["name"]+"_well_"+str(i)+str(j)
                     well.attributes["position_index"] = str(i) + str(j)
                     well.attributes["plate"] = plate.id
@@ -361,7 +402,7 @@ class DatabaseInteractor:
     
  
     def create_experiment(self, name, description):
-        experiment = self.__Experiment(self.endpoint, self.token, self.jwt_service_token)
+        experiment = self.__Experiment(self.endpoint, self.token, self.jwt_service_token, self._request, self.timeout)
         experiment.attributes["name"] = name
         experiment.attributes["description"] = description
         experiment.spawn()
@@ -373,7 +414,7 @@ class DatabaseInteractor:
         group_id = thing.attributes["shadow"]["group-id"]
         value = { uuid : group_id }
         if thing.attributes["current_plate"]:
-            plate = self.__Plate(self.endpoint, self.token, self.jwt_service_token)
+            plate = self.__Plate(self.endpoint, self.token, self.jwt_service_token, self._request, self.timeout)
             plate.id = thing.attributes["current_plate"][0]
             plate.pull()
             plate.add_uuid_to_image_params(value)
@@ -389,7 +430,7 @@ class DatabaseInteractor:
             filter += "&filters[marked_for_deletion][$eq]=false"
         url = self.endpoint + "/"+  api_object_id + filter +"&populate=%2A"
         headers = {"Authorization": "Bearer " + self.jwt_service_token['access_token']}
-        response = requests.get(url, headers=headers)
+        response = self._request("GET", url, headers=headers)
         return response.json()['data']
 
     def list_objects_with_name_and_id(self, api_object_id, filter="?", hide_deleted=True):
@@ -416,13 +457,13 @@ class DatabaseInteractor:
         return self.list_objects_with_name_and_id("interaction-things", "?filters[type][$eq]="+thingTypeName, hide_deleted)
 
     def get_device_state(self, thing_id):
-        thing = self.__Thing(self.endpoint, self.token, self.jwt_service_token)
+        thing = self.__Thing(self.endpoint, self.token, self.jwt_service_token, self._request, self.timeout)
         thing.id = thing_id
         thing.pull()
         return thing.attributes["shadow"]
 
     def get_device_state_by_name(self, thing_name):
-        thing = self.__Thing(self.endpoint, self.token, self.jwt_service_token)
+        thing = self.__Thing(self.endpoint, self.token, self.jwt_service_token, self._request, self.timeout)
         thing.get_by_name(thing_name)
         return thing.attributes["shadow"]
 
@@ -436,35 +477,35 @@ class DatabaseInteractor:
         if thing_id is None and name is None:
             raise Exception("must provide either thing_id or name")
         if name:
-            thing = self.__Thing(self.endpoint, self.token, self.jwt_service_token)
+            thing = self.__Thing(self.endpoint, self.token, self.jwt_service_token, self._request, self.timeout)
             thing.get_by_name(name)
             return thing
         else:
-            thing = self.__Thing(self.endpoint, self.token, self.jwt_service_token)
+            thing = self.__Thing(self.endpoint, self.token, self.jwt_service_token, self._request, self.timeout)
             thing.id = thing_id
             thing.pull()
             return thing
     
     def get_plate(self, plate_id):
-        plate = self.__Plate(self.endpoint, self.token, self.jwt_service_token)
+        plate = self.__Plate(self.endpoint, self.token, self.jwt_service_token, self._request, self.timeout)
         plate.id = plate_id
         plate.pull()
         return plate
 
     def get_experiment(self, experiment_id):
-        experiment = self.__Experiment(self.endpoint, self.token, self.jwt_service_token)
+        experiment = self.__Experiment(self.endpoint, self.token, self.jwt_service_token, self._request, self.timeout)
         experiment.id = experiment_id
         experiment.pull()
         return experiment
 
     def get_sample(self, sample_id):
-        sample = self.__Sample(self.endpoint, self.token, self.jwt_service_token)
+        sample = self.__Sample(self.endpoint, self.token, self.jwt_service_token, self._request, self.timeout)
         sample.id = sample_id
         sample.pull()
         return sample
 
     def get_well(self, well_id):
-        well = self.__Well(self.endpoint, self.token, self.jwt_service_token)
+        well = self.__Well(self.endpoint, self.token, self.jwt_service_token, self._request, self.timeout)
         well.id = well_id
         well.pull()
         return well

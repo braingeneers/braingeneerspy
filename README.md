@@ -319,7 +319,7 @@ The step by step directions for mounting the secrets volume and copying the file
 maintained in the `mission_control` repo linked above. The JWT service account token is found at:
 
 ```bash
-/secrets/braingeneers-jwt-service-account-token/braingeneners_jwt_token.json
+/secrets/braingeneers-jwt-service-account-token/config.json
 ```
 
 That file should be copied to the location specific to your docker container which you can find by running this command in yoru docker container:
@@ -396,7 +396,7 @@ The step by step directions for mounting the secrets volume and copying the file
 maintained in the `mission_control` repo linked above. The JWT service account token is found at:
 
 ```bash
-/secrets/braingeneers-jwt-service-account-token/braingeneners_jwt_token.json
+/secrets/braingeneers-jwt-service-account-token/config.json
 ```
 
 That file should be copied to the location specific to your docker container which you can find by running this command in yoru docker container:
