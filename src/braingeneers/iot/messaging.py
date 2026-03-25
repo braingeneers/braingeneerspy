@@ -13,7 +13,6 @@ import uuid
 import json
 import braingeneers.iot.shadows as sh
 import pickle
-import importlib
 import requests
 import datetime
 
@@ -21,6 +20,7 @@ from typing import Callable, Tuple, List, Dict, Union
 from deprecated import deprecated
 from paho.mqtt import client as mqtt_client
 from paho.mqtt.enums import CallbackAPIVersion
+from braingeneers.utils.auth_storage import load_token, resolve_service_account_token_path, save_token
 
 
 AWS_REGION = 'us-west-2'
@@ -930,31 +930,31 @@ class MessageBroker:
     @property
     def jwt_service_account_token(self) -> str:
         """ Lazy initialization of the JWT service account token. """
-        PACKAGE_NAME = "braingeneers.iot"
-        config_dir = os.path.join(importlib.resources.files(PACKAGE_NAME), 'service_account')
-        config_file = os.path.join(config_dir, 'config.json')
+        config_file = resolve_service_account_token_path()
 
         if self._jwt_service_account_token is None:
             # Check if the JWT token exists
             # This token is required for all operations that require web services.
             # The token is a (json) dict of form {'access_token': '----', 'expires_at': '2024-11-07 23:39:42 UTC'}
-            os.makedirs(config_dir, exist_ok=True)
-
-            # Try to load an existing JWT token locally if it exists
-            if os.path.exists(config_file):
-                with open(config_file, 'r') as f:
-                    self._jwt_service_account_token = json.load(f)
+            self._jwt_service_account_token = load_token(config_file)
 
             if self._jwt_service_account_token is None:
                 raise PermissionError('JWT service account token not found, please generate one using: python -m braingeneers.iot.authenticate')
 
         # Check if the token is still valid, this happens on every access, but takes no action while it's still valid.
         # If the token has less than JWT_TOKEN_REFRESH_DAYS days, refresh it, default tokens have 30 days at issuance.
-        expires_at = datetime.datetime.fromisoformat(self._jwt_service_account_token['expires_at'].replace(' UTC', ''))
-        if (expires_at - datetime.datetime.now()).days < JWT_TOKEN_REFRESH_DAYS:
-            self._jwt_service_account_token = requests.get(GENERATE_TOKEN_URL).json()
-            with open(config_file, 'w') as f:
-                json.dump(self._jwt_service_account_token, f)
+        expires_at = datetime.datetime.fromisoformat(
+            self._jwt_service_account_token['expires_at'].replace(' UTC', '')
+        ).replace(tzinfo=datetime.timezone.utc)
+        if (expires_at - datetime.datetime.now(datetime.timezone.utc)).days < JWT_TOKEN_REFRESH_DAYS:
+            self._jwt_service_account_token = requests.get(
+                GENERATE_TOKEN_URL,
+                headers={
+                    'Authorization': f"Bearer {self._jwt_service_account_token['access_token']}",
+                },
+                timeout=30,
+            ).json()
+            save_token(config_file, self._jwt_service_account_token)
 
         return self._jwt_service_account_token
 

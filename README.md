@@ -138,14 +138,103 @@ For most users, authentication is handled automatically by braingeneerspy. Howev
    python -m braingeneers.iot.authenticate
    ```
 
-2. This command will open the token generation page:
+2. This command will guide you through two steps:
+   - bootstrap the broad service-account token through:
+     `https://service-accounts.braingeneers.gi.ucsc.edu/generate_token`
+   - complete Keycloak device login for the interactive MCP user token through:
+     `https://oauth2.braingeneers.gi.ucsc.edu/realms/braingeneers`
 
-   https://service-accounts.braingeneers.gi.ucsc.edu/generate_token
+3. Sign in using your UCSC credentials where prompted.
+4. For the service-account token, you will still paste the JSON payload into the console.
+5. `braingeneerspy` will store two local credentials:
+   - `service-account-token.json`
+   - `user-token.json`
 
-3. Sign in using your UCSC credentials. 
-4. You will be prompted to copy the (full) JSON to the console which will then be stored locally.
+By default those files live in a normal per-user auth directory:
 
-Once authenticated, the token is valid for 1 months and will be automatically refreshed every month. If the token is revoked or expires, you'll need to re-authenticate manually using the same command above.
+- Linux:
+  - `${XDG_STATE_HOME:-~/.local/state}/braingeneers/auth/`
+- macOS:
+  - `~/Library/Application Support/Braingeneers/auth/`
+- Windows:
+  - `%LOCALAPPDATA%\\Braingeneers\\auth\\`
+
+You can override the directory with:
+
+```bash
+export BRAINGENEERS_AUTH_DIR=/path/to/auth-dir
+```
+
+Behavior:
+
+- the broad service-account token keeps the current auto-refresh behavior for
+  existing HTTP/web-service callers
+- the interactive user token is a Keycloak-issued OIDC token with a refresh
+  token and is used by the local MCP helper
+- if either token is revoked or the refresh window expires, rerun:
+  - `python -m braingeneers.iot.authenticate`
+
+## Local MCP Adapter
+
+The supported human-user MCP path is now a local stdio adapter:
+
+```bash
+python -m braingeneers.iot.authenticate
+```
+
+After bootstrapping your tokens once, configure your MCP client to launch:
+
+```bash
+python -m braingeneers.mcp
+```
+
+Normally you should let the MCP client launch that command for you rather than
+running it manually in a separate shell.
+
+The adapter:
+
+- loads the interactive user token from the auth directory above
+- refreshes it through the Keycloak token endpoint for the
+  `braingeneerspy-bridge` client
+- connects to the currently supported Braingeneers remote MCP service over HTTP with
+  `Authorization: Bearer ...`
+- does not rely on proxy-added user headers for authorization
+- keeps the remote MCP service as the real discovery and IAM authority
+
+### Client Setup Examples
+
+Codex CLI:
+
+```bash
+codex mcp add integrated-system-mcp -- python -m braingeneers.mcp
+codex mcp list
+```
+
+Claude Code:
+
+```bash
+claude mcp add integrated-system-mcp -- python -m braingeneers.mcp
+claude mcp list
+```
+
+Cursor:
+
+Create `~/.cursor/mcp.json` with a stdio server entry:
+
+```json
+{
+  "mcpServers": {
+    "integrated-system-mcp": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "braingeneers.mcp"]
+    }
+  }
+}
+```
+
+If `python` or `braingeneers` are not on your default PATH in that client, use
+the full interpreter path instead.
 
 ## Using the PRP Internal S3 Endpoint
 

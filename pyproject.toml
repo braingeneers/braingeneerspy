@@ -31,16 +31,21 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
+  "anyio>=4,<5",
   "awswrangler==3.*",
   "boto3==1.35.95",  # until https://github.com/boto/boto3/issues/4398 is fixed
   "braingeneers-smart-open==2023.10.6",
   "deprecated",
   "h5py",
+  "httpx>=0.28,<1",
+  "mcp>=1.26,<2",
   "matplotlib",
   "nptyping",
   "numpy",
   "paho-mqtt>=2",
   "pandas",
+  "PyJWT[crypto]>=2.10,<3",
+  "PyYAML>=6,<7",
   "redis",
   "requests",
   "schedule",
@@ -62,6 +67,7 @@ ml = [
   "torch",
   "scikit-learn",
 ]
+mcp = []
 dev = [
   "pytest >=6",
   "pytest-cov >=3",
