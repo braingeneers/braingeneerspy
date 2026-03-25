@@ -149,6 +149,14 @@ class IAMPolicyAdapter:
     ) -> AuthorizationDecision:
         raise NotImplementedError
 
+    def discover_resources(
+        self,
+        policy: AuthorizationPolicy,
+        principal: Principal,
+        principal_groups: set[str],
+    ) -> tuple[dict[str, Any], ...]:
+        return ()
+
     def summary(self, policy: AuthorizationPolicy) -> dict[str, Any]:
         return {}
 
@@ -356,6 +364,14 @@ class AuthorizationPolicy:
                 "command": command,
             },
             fallback_required_roles=fallback_required_roles,
+        )
+
+    def discover_resources(self, principal: Principal) -> tuple[dict[str, Any], ...]:
+        principal_groups = self.resolve_principal_groups(principal)
+        return self.grant_adapter.discover_resources(
+            self,
+            principal,
+            principal_groups,
         )
 
     def summary(

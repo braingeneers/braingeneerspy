@@ -302,6 +302,73 @@ class TestPolicyAdapter(IAMPolicyAdapter):
             grant_used=None,
         )
 
+    def discover_resources(
+        self,
+        policy: AuthorizationPolicy,
+        principal: Principal,
+        principal_groups: set[str],
+    ) -> tuple[dict[str, Any], ...]:
+        discoveries: dict[str, dict[str, Any]] = {}
+        for grant in policy.grants:
+            if not grant.matches_principal(principal, principal_groups):
+                continue
+            discovery = discoveries.setdefault(
+                grant.scope,
+                {
+                    "scope": grant.scope,
+                    "access": set(),
+                    "asset_patterns": set(),
+                    "assets": {},
+                    "matched_group_names": set(),
+                    "matched_grant_count": 0,
+                    "command_rule_count": 0,
+                },
+            )
+            discovery["access"].update(grant.access)
+            discovery["matched_group_names"].update(
+                group_name for group_name in grant.selector.groups if group_name in principal_groups
+            )
+            discovery["matched_grant_count"] += 1
+            discovery["command_rule_count"] += len(grant.command_rules)
+            for asset in grant.assets:
+                discovery["asset_patterns"].add(asset.name)
+                asset_entry = discovery["assets"].setdefault(
+                    asset.name,
+                    {
+                        "name": asset.name,
+                        "access": set(),
+                        "command_rule_count": 0,
+                    },
+                )
+                asset_entry["access"].update(asset.access)
+                asset_entry["command_rule_count"] += len(asset.command_rules)
+
+        results: list[dict[str, Any]] = []
+        for scope in sorted(discoveries):
+            discovery = discoveries[scope]
+            assets = []
+            for asset_name in sorted(discovery["assets"]):
+                asset = discovery["assets"][asset_name]
+                assets.append(
+                    {
+                        "name": asset_name,
+                        "access": sorted(asset["access"]),
+                        "command_rule_count": asset["command_rule_count"],
+                    }
+                )
+            results.append(
+                {
+                    "scope": scope,
+                    "access": sorted(discovery["access"]),
+                    "asset_patterns": sorted(discovery["asset_patterns"]),
+                    "assets": assets,
+                    "matched_group_names": sorted(discovery["matched_group_names"]),
+                    "matched_grant_count": discovery["matched_grant_count"],
+                    "command_rule_count": discovery["command_rule_count"],
+                }
+            )
+        return tuple(results)
+
     def _decision(
         self,
         *,
@@ -528,6 +595,81 @@ class MCPIAMTests(unittest.TestCase):
                 policy.summary(fallback_required_roles=("mcp",))["eligibility"]["source"],
                 "runtime_default",
             )
+
+    def test_policy_can_discover_principal_visible_scopes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_path = Path(tmpdir)
+            policy_path = self._write_policy_bundle(
+                temp_path,
+                groups_yaml=textwrap.dedent(
+                    """
+                    schema_version: 1
+                    kind: braingeneers-iam-groups
+                    groups:
+                      readers:
+                        principals:
+                          subjects:
+                            - user-123
+                      operators:
+                        principals:
+                          subjects:
+                            - user-123
+                    """
+                ),
+                policy_yaml=textwrap.dedent(
+                    """
+                    schema_version: 1
+                    kind: braingeneers-mcp-policy
+                    service: test-mcp
+                    group_files:
+                      - groups.yaml
+                    grants:
+                      - scope: sandbox
+                        principals:
+                          groups:
+                            - readers
+                        access:
+                          - read
+                        assets:
+                          - name: alpha
+                            access:
+                              - read
+                      - scope: sandbox
+                        principals:
+                          groups:
+                            - operators
+                        access:
+                          - operate
+                        assets:
+                          - name: alpha
+                            access:
+                              - operate
+                            command_rules:
+                              - effect: allow
+                                commands:
+                                  - PING
+                    """
+                ),
+            )
+            policy = PolicyLoader(
+                policy_path,
+                command_spec=TEST_COMMAND_SPEC,
+                grant_adapter=TEST_POLICY_ADAPTER,
+                cache_seconds=0,
+            ).get_policy()
+
+            discoveries = policy.discover_resources(
+                Principal(client_id="client-123", subject="user-123", roles=())
+            )
+
+            self.assertEqual(len(discoveries), 1)
+            self.assertEqual(discoveries[0]["scope"], "sandbox")
+            self.assertEqual(discoveries[0]["access"], ["operate", "read"])
+            self.assertEqual(discoveries[0]["asset_patterns"], ["alpha"])
+            self.assertEqual(discoveries[0]["assets"][0]["access"], ["operate", "read"])
+            self.assertEqual(discoveries[0]["matched_group_names"], ["operators", "readers"])
+            self.assertEqual(discoveries[0]["matched_grant_count"], 2)
+            self.assertEqual(discoveries[0]["assets"][0]["command_rule_count"], 1)
 
     def test_policy_declared_roles_override_runtime_identity_only_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
