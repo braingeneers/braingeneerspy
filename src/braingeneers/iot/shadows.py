@@ -145,11 +145,13 @@ class DatabaseInteractor:
             self.timeout = timeout
 
         def __str__(self):
-            var_list = filter(lambda x: x not in ["endpoint", "token", "api_object_id"], vars(self))
-            return str({var: getattr(self, var) for var in var_list})
+            return str(self.to_json())
 
         def to_json(self):
-            var_list = filter(lambda x: x not in ["endpoint", "token", "api_object_id"], vars(self))
+            var_list = filter(
+                lambda x: x not in ["endpoint", "token", "api_object_id"] and not x.startswith("_"),
+                vars(self),
+            )
             return {var: getattr(self, var) for var in var_list}
 
         def parse_API_response(self, response_data):
