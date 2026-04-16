@@ -449,6 +449,57 @@ port = 1883
             self.assertIsNone(self.broker._mqtt_connection)
 
 
+class FakeRedisMetadataStore:
+    def __init__(self):
+        self.data = {}
+
+    def set(self, key, value):
+        self.data[key] = value
+
+    def get(self, key):
+        value = self.data.get(key)
+        return None if value is None else value.encode("utf-8")
+
+
+class TestStreamMetadata(unittest.TestCase):
+    def setUp(self):
+        self.broker = messaging.MessageBroker.__new__(messaging.MessageBroker)
+        self.broker._redis_client = FakeRedisMetadataStore()
+
+    def test_set_and_get_stream_metadata_round_trip(self):
+        metadata = {"sample_rate": 25000, "channels": 32}
+
+        self.broker.set_metadata_for_stream("ephys/experiment_123", metadata)
+
+        self.assertEqual(
+            self.broker.get_metadata_for_stream("ephys/experiment_123"), metadata
+        )
+
+    def test_set_stream_metadata_overwrites_existing_value(self):
+        self.broker.set_metadata_for_stream(
+            "ephys/experiment_123", {"sample_rate": 20000}
+        )
+        self.broker.set_metadata_for_stream(
+            "ephys/experiment_123", {"sample_rate": 25000}
+        )
+
+        self.assertEqual(
+            self.broker.get_metadata_for_stream("ephys/experiment_123"),
+            {"sample_rate": 25000},
+        )
+
+    def test_get_stream_metadata_returns_empty_dict_when_missing(self):
+        self.assertEqual(
+            self.broker.get_metadata_for_stream("ephys/missing_experiment"), {}
+        )
+
+    def test_set_stream_metadata_requires_dict(self):
+        with self.assertRaises(TypeError):
+            self.broker.set_metadata_for_stream(
+                "ephys/experiment_123", ["not", "a", "dict"]
+            )
+
+
 class TestInterprocessQueue(unittest.TestCase):
     def setUp(self) -> None:
         self.mb = _make_message_broker()

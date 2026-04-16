@@ -473,6 +473,76 @@ class MessageBroker:
         topic_regex = _mqtt_topic_regex(topic)
         del self._subscribed_message_callback_map[topic_regex]
 
+    @staticmethod
+    def _stream_metadata_key(stream_name: str) -> str:
+        return f'_metadata_{stream_name}'
+
+    def set_metadata_for_stream(self, stream_name: str, metadata: dict) -> None:
+        """
+        Set metadata associated with a data stream.
+
+        This function stores a JSON-serializable dictionary as metadata for the given
+        stream name. The metadata is stored as a single Redis key and will overwrite
+        any previously stored metadata for that stream.
+
+        This is intended to hold descriptive or configuration information about a stream,
+        such as experiment parameters, schema definitions, or other contextual data that
+        applies to the entire stream rather than individual entries.
+
+        Relationship to data streams:
+            - This metadata is NOT part of the Redis stream created by
+            publish_data_stream(), and is not returned by subscribe_data_stream()
+            or poll_data_streams().
+            - Data streams (via XADD/XREAD) are append-only logs of time-series data.
+            - Metadata stored here is a separate key-value store intended for static
+            or infrequently changing information about the stream.
+
+        Example usage:
+            mb.set_metadata_for_stream(
+                "ephys/experiment_123",
+                {"sample_rate": 25000, "channels": 32}
+            )
+
+        :param stream_name: Name of the data stream.
+        :param metadata: A JSON-serializable dictionary of metadata.
+        """
+        if not isinstance(metadata, dict):
+            raise TypeError('metadata must be a dictionary.')
+
+        self.redis_client.set(
+            self._stream_metadata_key(stream_name), json.dumps(metadata)
+        )
+
+    def get_metadata_for_stream(self, stream_name: str) -> dict:
+        """
+        Retrieve metadata associated with a data stream.
+
+        Returns the metadata dictionary previously stored with
+        set_metadata_for_stream(). If no metadata exists for the given stream,
+        an empty dictionary is returned.
+
+        Relationship to data streams:
+            - This function does NOT read from the Redis stream used by
+            publish_data_stream().
+            - It only retrieves metadata stored separately from the stream data.
+            - Use this in conjunction with subscribe_data_stream() or
+            poll_data_streams() to obtain both the stream data and its
+            associated metadata.
+
+        Example usage:
+            metadata = mb.get_metadata_for_stream("ephys/experiment_123")
+            sample_rate = metadata.get("sample_rate")
+
+        :param stream_name: Name of the data stream.
+        :return: A dictionary containing the stored metadata, or {} if none exists.
+        """
+        value = self.redis_client.get(self._stream_metadata_key(stream_name))
+        if value is None:
+            return {}
+        if isinstance(value, bytes):
+            value = value.decode('utf-8')
+        return json.loads(value)
+
     def publish_data_stream(self, stream_name: str, data: Dict[Union[str, bytes], bytes], stream_size: int) -> None:
         """
         Publish (potentially large) data to a stream.
