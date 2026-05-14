@@ -455,6 +455,8 @@ class FakeRedisMetadataStore:
         del args, kwargs
         self.data = {}
         self.streams = {}
+        self.duplicate_scan_keys = []
+        self.xinfo_stream_calls = {}
 
     def config_set(self, *args, **kwargs):
         pass
@@ -472,8 +474,12 @@ class FakeRedisMetadataStore:
         for key in sorted([*self.data.keys(), *self.streams.keys()]):
             if key.startswith(prefix):
                 yield key.encode("utf-8")
+        for key in self.duplicate_scan_keys:
+            if key.startswith(prefix):
+                yield key.encode("utf-8")
 
     def xinfo_stream(self, key):
+        self.xinfo_stream_calls[key] = self.xinfo_stream_calls.get(key, 0) + 1
         if key not in self.streams:
             raise messaging.redis.exceptions.ResponseError("no such key")
         return self.streams[key]
@@ -625,6 +631,34 @@ class TestStreamMetadata(unittest.TestCase):
                     "metadata_keys": [],
                 },
             ],
+        )
+
+    def test_list_data_streams_deduplicates_scan_results_before_metadata_lookup(self):
+        self.broker.redis_client.streams["ephys/stream_1"] = {
+            "length": 2,
+            "first-entry": (b"1-0", {}),
+            "last-entry": (b"2-0", {}),
+        }
+        self.broker.set_metadata_for_stream("ephys/stream_1", {"sample_rate": 25000})
+        self.broker.redis_client.duplicate_scan_keys = [
+            "ephys/stream_1",
+            "ephys/stream_1",
+        ]
+
+        self.assertEqual(
+            self.broker.list_data_streams("ephys/*", include_metadata_keys=True),
+            [
+                {
+                    "name": "ephys/stream_1",
+                    "length": 2,
+                    "first_entry_id": "1-0",
+                    "last_entry_id": "2-0",
+                    "metadata_keys": ["sample_rate"],
+                },
+            ],
+        )
+        self.assertEqual(
+            self.broker.redis_client.xinfo_stream_calls["ephys/stream_1"], 1
         )
 
 

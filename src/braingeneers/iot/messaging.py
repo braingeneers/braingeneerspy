@@ -576,8 +576,12 @@ class MessageBroker:
         :return: A list of stream summary dictionaries sorted by stream name.
         """
         streams = []
+        seen_stream_names = set()
         for raw_key in self.redis_client.scan_iter(match=pattern, count=scan_count):
             stream_name = self._decode_redis_text(raw_key)
+            if stream_name in seen_stream_names:
+                continue
+            seen_stream_names.add(stream_name)
             try:
                 stream_info = self.get_data_stream_info(stream_name)
             except redis.exceptions.ResponseError:
