@@ -451,9 +451,13 @@ port = 1883
 
 
 class FakeRedisMetadataStore:
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        del args, kwargs
         self.data = {}
         self.streams = {}
+
+    def config_set(self, *args, **kwargs):
+        pass
 
     def set(self, key, value):
         self.data[key] = value
@@ -513,21 +517,63 @@ class TestStreamMetadata(unittest.TestCase):
                 "ephys/experiment_123", ["not", "a", "dict"]
             )
 
-    def test_message_broker_can_skip_shadow_interface_for_redis_only_use(self):
+    def test_message_broker_lazily_initializes_non_redis_interfaces(self):
         credentials = io.StringIO(
             "[redis]\n"
             "redis_password = test\n"
         )
+        redis_store = FakeRedisMetadataStore()
+        redis_store.streams["ephys/stream_1"] = {
+            "length": 1,
+            "first-entry": (b"1-0", {}),
+            "last-entry": (b"1-0", {}),
+        }
 
+        with patch.object(messaging.redis, "Redis", return_value=redis_store), \
+             patch.object(messaging.sh, "DatabaseInteractor") as database_interactor:
+            broker = messaging.MessageBroker(
+                name="redis-only-test",
+                credentials_file=credentials,
+            )
+
+            self.assertIsNone(broker._shadow_interface)
+            self.assertIsNone(broker._mqtt_connection)
+            database_interactor.assert_not_called()
+
+            self.assertEqual(
+                broker.list_data_streams("ephys/*"),
+                [
+                    {
+                        "name": "ephys/stream_1",
+                        "length": 1,
+                        "first_entry_id": "1-0",
+                        "last_entry_id": "1-0",
+                    },
+                ],
+            )
+            database_interactor.assert_not_called()
+
+            broker._jwt_service_account_token = {
+                "access_token": "test-token",
+                "expires_at": "2099-01-01 00:00:00 UTC",
+            }
+            shadow_interface = broker.shadow_interface
+
+            database_interactor.assert_called_once_with(
+                jwt_service_token=broker._jwt_service_account_token
+            )
+            self.assertIs(shadow_interface, database_interactor.return_value)
+
+    def test_mqtt_credentials_are_validated_when_mqtt_is_first_used(self):
         broker = messaging.MessageBroker(
             name="redis-only-test",
-            credentials_file=credentials,
-            enable_mqtt=False,
-            enable_shadow_interface=False,
+            credentials_file=io.StringIO(
+                "[redis]\n"
+                "redis_password = test\n"
+            ),
         )
 
-        self.assertIsNone(broker.shadow_interface)
-        with self.assertRaises(PermissionError):
+        with self.assertRaisesRegex(AssertionError, r"\[braingeneers-mqtt\]"):
             broker.mqtt_connection
 
     def test_get_data_stream_info_returns_json_friendly_subset(self):

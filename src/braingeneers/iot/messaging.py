@@ -117,8 +117,6 @@ class MessageBroker:
             name: str = None,
             credentials_file: (str, io.IOBase) = None,
             logger: logging.Logger = None,
-            enable_mqtt: bool = True,
-            enable_shadow_interface: bool = True,
     ):
         """
         Typical usage example:
@@ -135,13 +133,9 @@ class MessageBroker:
         :param endpoint: optional AWS endpoint, defaults to Braingeneers standard us-west-2
         :param credentials_file: optional file path string or file-like object containing the
             standard `~/.aws/credentials` file. See https://github.com/braingeneers/wiki/blob/main/shared/permissions.md
-            defaults to looking in `~/.aws/credentials` if left as None. This file expects to find profiles named
-            'aws-braingeneers-iot' and 'redis' in it.
+            defaults to looking in `~/.aws/credentials` if left as None. Each backing service validates its
+            own credentials lazily when first used.
         :param logger: optional logger object, defaults to a new logger with the name of this class.
-        :param enable_mqtt: read MQTT credentials and allow MQTT connection setup when True.
-            Set False for Redis-only use cases that should not require MQTT credentials.
-        :param enable_shadow_interface: initialize the Braingeneers device-shadow helper when True.
-            Set False for Redis-only use cases that should not require a JWT service account token.
         """
         self.logger = logger if logger is not None else logging.getLogger(__name__)
         self.name = name if name is not None else str(uuid.uuid4())
@@ -156,46 +150,19 @@ class MessageBroker:
             assert hasattr(credentials_file, 'read'), 'credentials_file parameter must be a filename string or file-like object.'
             self._credentials = credentials_file.read()
 
-        config = configparser.ConfigParser()
-        config.read_file(io.StringIO(self._credentials))
-
         self.certs_temp_dir = None
         self._mqtt_connection = None
         self._mqtt_loop_running = False
         self._mqtt_client_id = f"braingeneerspy-{uuid.uuid4()}"
-        self._mqtt_enabled = enable_mqtt
-        if enable_mqtt:
-            assert 'braingeneers-mqtt' in config, \
-                'Your AWS credentials_file file is missing a section [braingeneers-mqtt], you may have the wrong ' \
-                'version of the credentials_file file.'
-            assert 'profile-id' in config['braingeneers-mqtt'], \
-                'Your AWS credentials_file file is malformed, profile-id is missing from the [braingeneers-mqtt] section.'
-            assert 'profile-key' in config['braingeneers-mqtt'], \
-                'Your AWS credentials_file file is malformed, profile-key was not found under the [braingeneers-mqtt] section.'
-            assert 'endpoint' in config['braingeneers-mqtt'], \
-                'Your AWS credentials_file file is malformed, endpoint was not found under the [braingeneers-mqtt] section.'
-            assert 'port' in config['braingeneers-mqtt'], \
-                'Your AWS credentials_file file is malformed, ' \
-                                                          'port was not found under the [braingeneers-mqtt] section.'
-
-            self._mqtt_profile_id = config['braingeneers-mqtt']['profile-id']
-            self._mqtt_profile_key = config['braingeneers-mqtt']['profile-key']
-            self._mqtt_endpoint = config['braingeneers-mqtt']['endpoint']
-            self._mqtt_port = int(config['braingeneers-mqtt']['port'])
-        else:
-            self._mqtt_profile_id = None
-            self._mqtt_profile_key = None
-            self._mqtt_endpoint = None
-            self._mqtt_port = None
+        self._mqtt_profile_id = None
+        self._mqtt_profile_key = None
+        self._mqtt_endpoint = None
+        self._mqtt_port = None
         self._boto_iot_client = None
         self._boto_iot_data_client = None
         self._redis_client = None
         self._jwt_service_account_token = None
-
-        self.shadow_interface = (
-            sh.DatabaseInteractor(jwt_service_token=self.jwt_service_account_token)
-            if enable_shadow_interface else None
-        )
+        self._shadow_interface = None
 
         self._subscribed_data_streams = set()  # keep track of subscribed data streams
         self._recent_duplicate_mqtt_messages = OrderedDict()
@@ -976,8 +943,6 @@ class MessageBroker:
     @property
     def mqtt_connection(self):
         """ Lazy initialization of mqtt connection. """
-        if not getattr(self, "_mqtt_enabled", True):
-            raise PermissionError("MQTT is disabled for this MessageBroker instance.")
         self._ensure_mqtt_runtime_state()
 
         def _is_loop_alive(client) -> bool:
@@ -993,6 +958,7 @@ class MessageBroker:
             thread = getattr(client, "_thread", None)
             return bool(thread and thread.is_alive())
         if self._mqtt_connection is None:
+            self._load_mqtt_credentials()
             '''
             root certs only required for https connection our current mqtt broker does not have this yet
             '''
@@ -1059,6 +1025,31 @@ class MessageBroker:
 
         return self._mqtt_connection
 
+    def _load_mqtt_credentials(self) -> None:
+        if self._mqtt_profile_id is not None:
+            return
+
+        config = configparser.ConfigParser()
+        config.read_file(io.StringIO(self._credentials))
+
+        assert 'braingeneers-mqtt' in config, \
+            'Your AWS credentials_file file is missing a section [braingeneers-mqtt], you may have the wrong ' \
+            'version of the credentials_file file.'
+        assert 'profile-id' in config['braingeneers-mqtt'], \
+            'Your AWS credentials_file file is malformed, profile-id is missing from the [braingeneers-mqtt] section.'
+        assert 'profile-key' in config['braingeneers-mqtt'], \
+            'Your AWS credentials_file file is malformed, profile-key was not found under the [braingeneers-mqtt] section.'
+        assert 'endpoint' in config['braingeneers-mqtt'], \
+            'Your AWS credentials_file file is malformed, endpoint was not found under the [braingeneers-mqtt] section.'
+        assert 'port' in config['braingeneers-mqtt'], \
+            'Your AWS credentials_file file is malformed, ' \
+            'port was not found under the [braingeneers-mqtt] section.'
+
+        self._mqtt_profile_id = config['braingeneers-mqtt']['profile-id']
+        self._mqtt_profile_key = config['braingeneers-mqtt']['profile-key']
+        self._mqtt_endpoint = config['braingeneers-mqtt']['endpoint']
+        self._mqtt_port = int(config['braingeneers-mqtt']['port'])
+
     @property
     def redis_client(self) -> redis.Redis:
         """ Lazy initialization of the redis client. """
@@ -1075,6 +1066,17 @@ class MessageBroker:
             self._redis_client.config_set(name='notify-keyspace-events', value='t')
 
         return self._redis_client
+
+    @property
+    def shadow_interface(self):
+        """ Lazy initialization of the Braingeneers device-shadow interface. """
+        if self._shadow_interface is None:
+            self._shadow_interface = sh.DatabaseInteractor(jwt_service_token=self.jwt_service_account_token)
+        return self._shadow_interface
+
+    @shadow_interface.setter
+    def shadow_interface(self, value):
+        self._shadow_interface = value
 
     @property
     def jwt_service_account_token(self) -> str:
