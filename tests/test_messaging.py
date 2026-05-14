@@ -1,5 +1,6 @@
 """ Unit test for BraingeneersMqttClient, assumes Braingeneers ~/.aws/credentials file exists """
 import logging
+import io
 import queue
 import threading
 import time
@@ -452,6 +453,7 @@ port = 1883
 class FakeRedisMetadataStore:
     def __init__(self):
         self.data = {}
+        self.streams = {}
 
     def set(self, key, value):
         self.data[key] = value
@@ -459,6 +461,18 @@ class FakeRedisMetadataStore:
     def get(self, key):
         value = self.data.get(key)
         return None if value is None else value.encode("utf-8")
+
+    def scan_iter(self, match="*", count=2000):
+        del count
+        prefix = match.removesuffix("*")
+        for key in sorted([*self.data.keys(), *self.streams.keys()]):
+            if key.startswith(prefix):
+                yield key.encode("utf-8")
+
+    def xinfo_stream(self, key):
+        if key not in self.streams:
+            raise messaging.redis.exceptions.ResponseError("no such key")
+        return self.streams[key]
 
 
 class TestStreamMetadata(unittest.TestCase):
@@ -498,6 +512,74 @@ class TestStreamMetadata(unittest.TestCase):
             self.broker.set_metadata_for_stream(
                 "ephys/experiment_123", ["not", "a", "dict"]
             )
+
+    def test_message_broker_can_skip_shadow_interface_for_redis_only_use(self):
+        credentials = io.StringIO(
+            "[redis]\n"
+            "redis_password = test\n"
+        )
+
+        broker = messaging.MessageBroker(
+            name="redis-only-test",
+            credentials_file=credentials,
+            enable_mqtt=False,
+            enable_shadow_interface=False,
+        )
+
+        self.assertIsNone(broker.shadow_interface)
+        with self.assertRaises(PermissionError):
+            broker.mqtt_connection
+
+    def test_get_data_stream_info_returns_json_friendly_subset(self):
+        self.broker.redis_client.streams["ephys/stream_1"] = {
+            "length": 2,
+            "first-entry": (b"1-0", {}),
+            "last-entry": (b"2-0", {}),
+        }
+
+        self.assertEqual(
+            self.broker.get_data_stream_info("ephys/stream_1"),
+            {
+                "name": "ephys/stream_1",
+                "length": 2,
+                "first_entry_id": "1-0",
+                "last_entry_id": "2-0",
+            },
+        )
+
+    def test_list_data_streams_filters_non_stream_keys_and_includes_metadata_keys(self):
+        self.broker.redis_client.streams["ephys/stream_1"] = {
+            "length": 2,
+            "first-entry": (b"1-0", {}),
+            "last-entry": (b"2-0", {}),
+        }
+        self.broker.redis_client.streams["ephys/stream_2"] = {
+            "length": 1,
+            "first-entry": (b"3-0", {}),
+            "last-entry": (b"3-0", {}),
+        }
+        self.broker.set_metadata_for_stream("ephys/stream_1", {"sample_rate": 25000})
+        self.broker.redis_client.data["ephys/not_stream"] = "{}"
+
+        self.assertEqual(
+            self.broker.list_data_streams("ephys/*", include_metadata_keys=True),
+            [
+                {
+                    "name": "ephys/stream_1",
+                    "length": 2,
+                    "first_entry_id": "1-0",
+                    "last_entry_id": "2-0",
+                    "metadata_keys": ["sample_rate"],
+                },
+                {
+                    "name": "ephys/stream_2",
+                    "length": 1,
+                    "first_entry_id": "3-0",
+                    "last_entry_id": "3-0",
+                    "metadata_keys": [],
+                },
+            ],
+        )
 
 
 class TestInterprocessQueue(unittest.TestCase):

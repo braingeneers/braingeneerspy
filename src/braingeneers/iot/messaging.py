@@ -112,7 +112,14 @@ class MessageBroker:
         https://awslabs.github.io/aws-crt-python/
     """
 
-    def __init__(self, name: str = None, credentials_file: (str, io.IOBase) = None, logger: logging.Logger = None):
+    def __init__(
+            self,
+            name: str = None,
+            credentials_file: (str, io.IOBase) = None,
+            logger: logging.Logger = None,
+            enable_mqtt: bool = True,
+            enable_shadow_interface: bool = True,
+    ):
         """
         Typical usage example:
             mb = MessageBroker()
@@ -131,6 +138,10 @@ class MessageBroker:
             defaults to looking in `~/.aws/credentials` if left as None. This file expects to find profiles named
             'aws-braingeneers-iot' and 'redis' in it.
         :param logger: optional logger object, defaults to a new logger with the name of this class.
+        :param enable_mqtt: read MQTT credentials and allow MQTT connection setup when True.
+            Set False for Redis-only use cases that should not require MQTT credentials.
+        :param enable_shadow_interface: initialize the Braingeneers device-shadow helper when True.
+            Set False for Redis-only use cases that should not require a JWT service account token.
         """
         self.logger = logger if logger is not None else logging.getLogger(__name__)
         self.name = name if name is not None else str(uuid.uuid4())
@@ -148,33 +159,43 @@ class MessageBroker:
         config = configparser.ConfigParser()
         config.read_file(io.StringIO(self._credentials))
 
-        assert 'braingeneers-mqtt' in config, \
-            'Your AWS credentials_file file is missing a section [braingeneers-mqtt], you may have the wrong ' \
-            'version of the credentials_file file.'
-        assert 'profile-id' in config['braingeneers-mqtt'], \
-            'Your AWS credentials_file file is malformed, profile-id is missing from the [braingeneers-mqtt] section.'
-        assert 'profile-key' in config['braingeneers-mqtt'], \
-            'Your AWS credentials_file file is malformed, profile-key was not found under the [braingeneers-mqtt] section.'
-        assert 'endpoint' in config['braingeneers-mqtt'], \
-            'Your AWS credentials_file file is malformed, endpoint was not found under the [braingeneers-mqtt] section.'
-        assert 'port' in config['braingeneers-mqtt'], \
-            'Your AWS credentials_file file is malformed, ' \
-                                                      'port was not found under the [braingeneers-mqtt] section.'
-
         self.certs_temp_dir = None
         self._mqtt_connection = None
         self._mqtt_loop_running = False
         self._mqtt_client_id = f"braingeneerspy-{uuid.uuid4()}"
-        self._mqtt_profile_id = config['braingeneers-mqtt']['profile-id']
-        self._mqtt_profile_key = config['braingeneers-mqtt']['profile-key']
-        self._mqtt_endpoint = config['braingeneers-mqtt']['endpoint']
-        self._mqtt_port = int(config['braingeneers-mqtt']['port'])
+        self._mqtt_enabled = enable_mqtt
+        if enable_mqtt:
+            assert 'braingeneers-mqtt' in config, \
+                'Your AWS credentials_file file is missing a section [braingeneers-mqtt], you may have the wrong ' \
+                'version of the credentials_file file.'
+            assert 'profile-id' in config['braingeneers-mqtt'], \
+                'Your AWS credentials_file file is malformed, profile-id is missing from the [braingeneers-mqtt] section.'
+            assert 'profile-key' in config['braingeneers-mqtt'], \
+                'Your AWS credentials_file file is malformed, profile-key was not found under the [braingeneers-mqtt] section.'
+            assert 'endpoint' in config['braingeneers-mqtt'], \
+                'Your AWS credentials_file file is malformed, endpoint was not found under the [braingeneers-mqtt] section.'
+            assert 'port' in config['braingeneers-mqtt'], \
+                'Your AWS credentials_file file is malformed, ' \
+                                                          'port was not found under the [braingeneers-mqtt] section.'
+
+            self._mqtt_profile_id = config['braingeneers-mqtt']['profile-id']
+            self._mqtt_profile_key = config['braingeneers-mqtt']['profile-key']
+            self._mqtt_endpoint = config['braingeneers-mqtt']['endpoint']
+            self._mqtt_port = int(config['braingeneers-mqtt']['port'])
+        else:
+            self._mqtt_profile_id = None
+            self._mqtt_profile_key = None
+            self._mqtt_endpoint = None
+            self._mqtt_port = None
         self._boto_iot_client = None
         self._boto_iot_data_client = None
         self._redis_client = None
         self._jwt_service_account_token = None
 
-        self.shadow_interface = sh.DatabaseInteractor(jwt_service_token=self.jwt_service_account_token)
+        self.shadow_interface = (
+            sh.DatabaseInteractor(jwt_service_token=self.jwt_service_account_token)
+            if enable_shadow_interface else None
+        )
 
         self._subscribed_data_streams = set()  # keep track of subscribed data streams
         self._recent_duplicate_mqtt_messages = OrderedDict()
@@ -543,6 +564,62 @@ class MessageBroker:
             value = value.decode('utf-8')
         return json.loads(value)
 
+    @staticmethod
+    def _decode_redis_text(value: Union[str, bytes]) -> str:
+        return value.decode('utf-8') if isinstance(value, bytes) else value
+
+    def get_data_stream_info(self, stream_name: str) -> dict:
+        """
+        Retrieve Redis stream metadata for a data stream.
+
+        This wraps Redis XINFO STREAM and returns a small JSON-friendly subset
+        of the stream info that is useful for discovery and diagnostics.
+
+        :param stream_name: Name of the data stream.
+        :return: A dictionary with name, length, first_entry_id, and last_entry_id.
+        """
+        info = self.redis_client.xinfo_stream(stream_name)
+        first_entry = info.get("first-entry")
+        last_entry = info.get("last-entry")
+        return {
+            "name": stream_name,
+            "length": info.get("length"),
+            "first_entry_id": self._decode_redis_text(first_entry[0]) if first_entry else None,
+            "last_entry_id": self._decode_redis_text(last_entry[0]) if last_entry else None,
+        }
+
+    def list_data_streams(
+        self,
+        pattern: str = "*",
+        *,
+        include_metadata_keys: bool = False,
+        scan_count: int = 2000,
+    ) -> List[dict]:
+        """
+        Discover Redis data streams matching a key pattern.
+
+        This scans Redis keys, keeps only keys that are Redis Streams, and
+        returns a JSON-friendly summary for each stream. Non-stream keys that
+        match the pattern are ignored.
+
+        :param pattern: Redis key pattern, for example "braindance/*".
+        :param include_metadata_keys: Include sorted metadata key names from
+            get_metadata_for_stream() when True.
+        :param scan_count: Redis SCAN count hint.
+        :return: A list of stream summary dictionaries sorted by stream name.
+        """
+        streams = []
+        for raw_key in self.redis_client.scan_iter(match=pattern, count=scan_count):
+            stream_name = self._decode_redis_text(raw_key)
+            try:
+                stream_info = self.get_data_stream_info(stream_name)
+            except redis.exceptions.ResponseError:
+                continue
+            if include_metadata_keys:
+                stream_info["metadata_keys"] = sorted(self.get_metadata_for_stream(stream_name).keys())
+            streams.append(stream_info)
+        return sorted(streams, key=lambda stream: stream["name"])
+
     def publish_data_stream(self, stream_name: str, data: Dict[Union[str, bytes], bytes], stream_size: int) -> None:
         """
         Publish (potentially large) data to a stream.
@@ -899,6 +976,8 @@ class MessageBroker:
     @property
     def mqtt_connection(self):
         """ Lazy initialization of mqtt connection. """
+        if not getattr(self, "_mqtt_enabled", True):
+            raise PermissionError("MQTT is disabled for this MessageBroker instance.")
         self._ensure_mqtt_runtime_state()
 
         def _is_loop_alive(client) -> bool:
