@@ -112,7 +112,12 @@ class MessageBroker:
         https://awslabs.github.io/aws-crt-python/
     """
 
-    def __init__(self, name: str = None, credentials_file: (str, io.IOBase) = None, logger: logging.Logger = None):
+    def __init__(
+            self,
+            name: str = None,
+            credentials_file: (str, io.IOBase) = None,
+            logger: logging.Logger = None,
+    ):
         """
         Typical usage example:
             mb = MessageBroker()
@@ -128,8 +133,8 @@ class MessageBroker:
         :param endpoint: optional AWS endpoint, defaults to Braingeneers standard us-west-2
         :param credentials_file: optional file path string or file-like object containing the
             standard `~/.aws/credentials` file. See https://github.com/braingeneers/wiki/blob/main/shared/permissions.md
-            defaults to looking in `~/.aws/credentials` if left as None. This file expects to find profiles named
-            'aws-braingeneers-iot' and 'redis' in it.
+            defaults to looking in `~/.aws/credentials` if left as None. Each backing service validates its
+            own credentials lazily when first used.
         :param logger: optional logger object, defaults to a new logger with the name of this class.
         """
         self.logger = logger if logger is not None else logging.getLogger(__name__)
@@ -145,36 +150,19 @@ class MessageBroker:
             assert hasattr(credentials_file, 'read'), 'credentials_file parameter must be a filename string or file-like object.'
             self._credentials = credentials_file.read()
 
-        config = configparser.ConfigParser()
-        config.read_file(io.StringIO(self._credentials))
-
-        assert 'braingeneers-mqtt' in config, \
-            'Your AWS credentials_file file is missing a section [braingeneers-mqtt], you may have the wrong ' \
-            'version of the credentials_file file.'
-        assert 'profile-id' in config['braingeneers-mqtt'], \
-            'Your AWS credentials_file file is malformed, profile-id is missing from the [braingeneers-mqtt] section.'
-        assert 'profile-key' in config['braingeneers-mqtt'], \
-            'Your AWS credentials_file file is malformed, profile-key was not found under the [braingeneers-mqtt] section.'
-        assert 'endpoint' in config['braingeneers-mqtt'], \
-            'Your AWS credentials_file file is malformed, endpoint was not found under the [braingeneers-mqtt] section.'
-        assert 'port' in config['braingeneers-mqtt'], \
-            'Your AWS credentials_file file is malformed, ' \
-                                                      'port was not found under the [braingeneers-mqtt] section.'
-
         self.certs_temp_dir = None
         self._mqtt_connection = None
         self._mqtt_loop_running = False
         self._mqtt_client_id = f"braingeneerspy-{uuid.uuid4()}"
-        self._mqtt_profile_id = config['braingeneers-mqtt']['profile-id']
-        self._mqtt_profile_key = config['braingeneers-mqtt']['profile-key']
-        self._mqtt_endpoint = config['braingeneers-mqtt']['endpoint']
-        self._mqtt_port = int(config['braingeneers-mqtt']['port'])
+        self._mqtt_profile_id = None
+        self._mqtt_profile_key = None
+        self._mqtt_endpoint = None
+        self._mqtt_port = None
         self._boto_iot_client = None
         self._boto_iot_data_client = None
         self._redis_client = None
         self._jwt_service_account_token = None
-
-        self.shadow_interface = sh.DatabaseInteractor(jwt_service_token=self.jwt_service_account_token)
+        self._shadow_interface = None
 
         self._subscribed_data_streams = set()  # keep track of subscribed data streams
         self._recent_duplicate_mqtt_messages = OrderedDict()
@@ -542,6 +530,66 @@ class MessageBroker:
         if isinstance(value, bytes):
             value = value.decode('utf-8')
         return json.loads(value)
+
+    @staticmethod
+    def _decode_redis_text(value: Union[str, bytes]) -> str:
+        return value.decode('utf-8') if isinstance(value, bytes) else value
+
+    def get_data_stream_info(self, stream_name: str) -> dict:
+        """
+        Retrieve Redis stream metadata for a data stream.
+
+        This wraps Redis XINFO STREAM and returns a small JSON-friendly subset
+        of the stream info that is useful for discovery and diagnostics.
+
+        :param stream_name: Name of the data stream.
+        :return: A dictionary with name, length, first_entry_id, and last_entry_id.
+        """
+        info = self.redis_client.xinfo_stream(stream_name)
+        first_entry = info.get("first-entry")
+        last_entry = info.get("last-entry")
+        return {
+            "name": stream_name,
+            "length": info.get("length"),
+            "first_entry_id": self._decode_redis_text(first_entry[0]) if first_entry else None,
+            "last_entry_id": self._decode_redis_text(last_entry[0]) if last_entry else None,
+        }
+
+    def list_data_streams(
+        self,
+        pattern: str = "*",
+        *,
+        include_metadata_keys: bool = False,
+        scan_count: int = 2000,
+    ) -> List[dict]:
+        """
+        Discover Redis data streams matching a key pattern.
+
+        This scans Redis keys, keeps only keys that are Redis Streams, and
+        returns a JSON-friendly summary for each stream. Non-stream keys that
+        match the pattern are ignored.
+
+        :param pattern: Redis key pattern, for example "braindance/*".
+        :param include_metadata_keys: Include sorted metadata key names from
+            get_metadata_for_stream() when True.
+        :param scan_count: Redis SCAN count hint.
+        :return: A list of stream summary dictionaries sorted by stream name.
+        """
+        streams = []
+        seen_stream_names = set()
+        for raw_key in self.redis_client.scan_iter(match=pattern, count=scan_count):
+            stream_name = self._decode_redis_text(raw_key)
+            if stream_name in seen_stream_names:
+                continue
+            seen_stream_names.add(stream_name)
+            try:
+                stream_info = self.get_data_stream_info(stream_name)
+            except redis.exceptions.ResponseError:
+                continue
+            if include_metadata_keys:
+                stream_info["metadata_keys"] = sorted(self.get_metadata_for_stream(stream_name).keys())
+            streams.append(stream_info)
+        return sorted(streams, key=lambda stream: stream["name"])
 
     def publish_data_stream(self, stream_name: str, data: Dict[Union[str, bytes], bytes], stream_size: int) -> None:
         """
@@ -914,6 +962,7 @@ class MessageBroker:
             thread = getattr(client, "_thread", None)
             return bool(thread and thread.is_alive())
         if self._mqtt_connection is None:
+            self._load_mqtt_credentials()
             '''
             root certs only required for https connection our current mqtt broker does not have this yet
             '''
@@ -980,6 +1029,31 @@ class MessageBroker:
 
         return self._mqtt_connection
 
+    def _load_mqtt_credentials(self) -> None:
+        if self._mqtt_profile_id is not None:
+            return
+
+        config = configparser.ConfigParser()
+        config.read_file(io.StringIO(self._credentials))
+
+        assert 'braingeneers-mqtt' in config, \
+            'Your AWS credentials_file file is missing a section [braingeneers-mqtt], you may have the wrong ' \
+            'version of the credentials_file file.'
+        assert 'profile-id' in config['braingeneers-mqtt'], \
+            'Your AWS credentials_file file is malformed, profile-id is missing from the [braingeneers-mqtt] section.'
+        assert 'profile-key' in config['braingeneers-mqtt'], \
+            'Your AWS credentials_file file is malformed, profile-key was not found under the [braingeneers-mqtt] section.'
+        assert 'endpoint' in config['braingeneers-mqtt'], \
+            'Your AWS credentials_file file is malformed, endpoint was not found under the [braingeneers-mqtt] section.'
+        assert 'port' in config['braingeneers-mqtt'], \
+            'Your AWS credentials_file file is malformed, ' \
+            'port was not found under the [braingeneers-mqtt] section.'
+
+        self._mqtt_profile_id = config['braingeneers-mqtt']['profile-id']
+        self._mqtt_profile_key = config['braingeneers-mqtt']['profile-key']
+        self._mqtt_endpoint = config['braingeneers-mqtt']['endpoint']
+        self._mqtt_port = int(config['braingeneers-mqtt']['port'])
+
     @property
     def redis_client(self) -> redis.Redis:
         """ Lazy initialization of the redis client. """
@@ -996,6 +1070,17 @@ class MessageBroker:
             self._redis_client.config_set(name='notify-keyspace-events', value='t')
 
         return self._redis_client
+
+    @property
+    def shadow_interface(self):
+        """ Lazy initialization of the Braingeneers device-shadow interface. """
+        if self._shadow_interface is None:
+            self._shadow_interface = sh.DatabaseInteractor(jwt_service_token=self.jwt_service_account_token)
+        return self._shadow_interface
+
+    @shadow_interface.setter
+    def shadow_interface(self, value):
+        self._shadow_interface = value
 
     @property
     def jwt_service_account_token(self) -> str:
